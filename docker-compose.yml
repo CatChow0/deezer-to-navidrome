@@ -1,0 +1,38 @@
+version: "3.8"
+
+services:
+  deezer-to-navidrome:
+    image: catchow/deezer-to-navidrome:1.0.43
+    container_name: deezer-to-navidrome
+    restart: unless-stopped
+
+    ports:
+      - "8080:8080"
+
+    environment:
+      SECRET_KEY: "change-this-to-a-random-string"
+      DATA_DIR: "/data"
+
+      # Music library paths (comma-separated)
+      SCAN_DIRS: "/music/deezer-dl,/music/library"
+
+      # Where to write M3U8 playlists
+      PLAYLISTS_BASE_DIR: "/music/playlists"
+
+      # Map container paths to Navidrome paths
+      # Format: /container/path:/navidrome/path
+      HOST_TO_NAVIDROME_ROOT: "/music/deezer-dl:/deezer-dl,/music/library:/music"
+
+      # Optional: Deezer Downloader service URL
+      DEEZER_DL_BASE_URL: "https://deezer-downloader.example.com"
+
+    volumes:
+      # Persistent data (config, cache, covers)
+      - ./data:/data
+
+      # Music library directories
+      - /path/on/host/deezer-dl:/music/deezer-dl
+      - /path/on/host/library:/music/library
+
+      # Playlist output directory
+      - /path/on/host/playlists:/music/playlists

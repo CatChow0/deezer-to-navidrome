@@ -1,0 +1,191 @@
+{% extends 'base.html' %}
+{% block content %}
+
+<div id="task-modal" class="task-modal hidden">
+  <div class="task-box">
+    <div class="task-header">
+      <h3>Tâche en cours</h3>
+      <button type="button" onclick="closeTaskModal()">×</button>
+    </div>
+
+    <div class="task-progress">
+      <div id="task-progress-bar" class="task-progress-bar"></div>
+    </div>
+
+    <div id="task-stage" class="task-stage">Initialisation…</div>
+    <pre id="task-log" class="task-log"></pre>
+  </div>
+</div>
+
+<h1>Configuration</h1>
+
+<form method="post" class="config-form">
+  <label>
+    Dossiers sources
+    <textarea name="scan_dirs" rows="6">{{ config.scan_dirs | join('\n') }}</textarea>
+  </label>
+
+  <label>
+    Dossier playlists
+    <input type="text" name="playlists_base_dir" value="{{ config.playlists_base_dir }}">
+  </label>
+
+  <label>
+    Chemin deezer_playlist_ids.json
+    <input type="text" name="playlist_ids_file" value="{{ config.playlist_ids_file }}">
+  </label>
+
+  <label>
+    Chemin music_library_cache.json
+    <input type="text" name="library_cache_file" value="{{ config.library_cache_file }}">
+  </label>
+
+  <label>
+    Chemin playlist_preview_state.json
+    <input type="text" name="preview_state_file"
+           value="{{ config.preview_state_file or '' }}"
+           placeholder="/data/playlist_preview_state.json">
+  </label>
+
+  <label>
+    URL de base Deezer Downloader
+    <input type="text" name="deezer_dl_base_url"
+           value="{{ config.deezer_dl_base_url or '' }}"
+           placeholder="https://dzr-dl.ton-domaine.fr">
+  </label>
+
+  <div class="mapping-block">
+    <h2>Mappings Navidrome</h2>
+
+    {% for m in config.host_to_navidrome_roots %}
+    <div class="mapping-row">
+      <input type="text" name="mapping_host[]" value="{{ m.host }}" placeholder="Dossier source hôte/container">
+      <input type="text" name="mapping_navidrome[]" value="{{ m.navidrome }}" placeholder="Chemin vu par Navidrome">
+    </div>
+    {% endfor %}
+
+    <div class="mapping-row">
+      <input type="text" name="mapping_host[]" placeholder="Ajouter un dossier source">
+      <input type="text" name="mapping_navidrome[]" placeholder="Ajouter un chemin Navidrome">
+    </div>
+  </div>
+
+  <div class="button-row">
+    <button type="submit">Sauvegarder</button>
+  </div>
+</form>
+
+<div class="button-row top-gap">
+  <button type="button" onclick="startCacheRebuild('full')">Rebuild complet du cache de la bibliothèque musicale</button>
+  <button type="button" onclick="startCacheRebuild('incremental')">Refresh incrémental du cache de la bibliothèque musicale</button>
+</div>
+
+<!-- Zone dangereuse dépliante -->
+<details class="danger-section top-gap">
+  <summary>Zone dangereuse (Clear)</summary>
+
+  <p class="danger-hint">
+    Ces actions sont destructives. Utilise-les uniquement si tu sais exactement ce que tu fais.
+  </p>
+
+  <div class="button-row">
+    <form method="post" action="{{ url_for('clear_library_cache_route') }}">
+      <button type="submit" class="danger"
+              onclick="return confirm('Vider complètement music_library_cache ?');">
+        Clear music_library_cache
+      </button>
+    </form>
+
+    <form method="post" action="{{ url_for('clear_preview_state_route') }}">
+      <button type="submit" class="danger"
+              onclick="return confirm('Vider playlist_preview_state ?');">
+        Clear playlist_preview_state cache
+      </button>
+    </form>
+  </div>
+
+  <div class="button-row top-gap">
+    <form method="post" action="{{ url_for('clear_playlists_route') }}">
+      <button type="submit" class="danger"
+              onclick="return confirm('Supprimer toutes les playlists, covers et playlist_preview_state ?');">
+        Clear playlists
+      </button>
+    </form>
+
+    <form method="post" action="{{ url_for('clear_all_route') }}">
+      <button type="submit" class="danger"
+              onclick="return confirm('Tout effacer (playlists, covers, preview_state, music_library_cache) ?');">
+        Clear ALL
+      </button>
+    </form>
+  </div>
+</details>
+
+
+<script>
+let currentSource = null;
+
+function openTaskModal() {
+  document.getElementById('task-modal').classList.remove('hidden');
+  document.getElementById('task-log').textContent = '';
+  document.getElementById('task-stage').textContent = 'Initialisation…';
+  document.getElementById('task-progress-bar').style.width = '0%';
+}
+
+function closeTaskModal() {
+  document.getElementById('task-modal').classList.add('hidden');
+  if (currentSource) {
+    currentSource.close();
+    currentSource = null;
+  }
+}
+
+async function startCacheRebuild(mode) {
+  openTaskModal();
+
+  const response = await fetch(`/cache/${mode}/start`, {
+    method: 'POST'
+  });
+
+  const data = await response.json();
+  const taskId = data.task_id;
+
+  currentSource = new EventSource(`/tasks/${taskId}/stream`);
+
+  currentSource.onmessage = function(event) {
+    const payload = JSON.parse(event.data);
+    const log = document.getElementById('task-log');
+    const stage = document.getElementById('task-stage');
+    const bar = document.getElementById('task-progress-bar');
+
+    if (payload.message) {
+      log.textContent += payload.message + "\n";
+      log.scrollTop = log.scrollHeight;
+    }
+
+    if (payload.stage) {
+      stage.textContent = `Étape : ${payload.stage}`;
+    }
+
+    if (typeof payload.progress === 'number') {
+      bar.style.width = payload.progress + '%';
+    }
+
+    if (payload.done) {
+      currentSource.close();
+      currentSource = null;
+      stage.textContent = payload.error ? 'Erreur' : 'Terminé';
+    }
+  };
+
+  currentSource.onerror = function() {
+    const log = document.getElementById('task-log');
+    log.textContent += "Connexion au flux interrompue\n";
+    if (currentSource) {
+      currentSource.close();
+      currentSource = null;
+    }
+  };
+}
+</script>
+{% endblock %}

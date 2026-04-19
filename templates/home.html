@@ -1,0 +1,1669 @@
+{% extends 'base.html' %}
+{% block content %}
+<section class="section-head section-head-search">
+  <div class="section-head-left">
+    <h1>Playlists enregistrées</h1>
+
+    <form method="post" action="{{ url_for('add_playlist') }}" class="inline-form">
+      <input type="text" name="playlist_input" placeholder="ID ou URL Deezer" required>
+      <button type="submit">Ajouter une playlist</button>
+    </form>
+
+    <button type="button" onclick="startCacheRefreshIncremental()">
+      Refresh cache incrémental
+    </button>
+    <button id="start-dedup-btn" type="button">Scan dedup</button>
+  </div>
+
+  <div class="section-head-right">
+    <form id="deezer-search-form" class="search-form search-form-inline">
+      <input
+        type="text"
+        id="deezer-search-input"
+        name="q"
+        placeholder="Rechercher une musique, un album ou un artiste"
+        autocomplete="off"
+        required
+      >
+      <button type="submit">Rechercher</button>
+    </form>
+
+    <div class="search-toolbar search-toolbar-inline">
+      <button type="button" class="search-type-btn active" data-type="track">Musiques</button>
+      <button type="button" class="search-type-btn" data-type="album">Albums</button>
+      <button type="button" class="search-type-btn" data-type="artist">Artistes</button>
+    </div>
+  </div>
+</section>
+
+<section class="search-shell">
+  <details class="search-panel" open>
+    <summary class="search-panel-summary">
+      Recherche Deezer
+    </summary>
+
+    <div class="search-panel-body">
+      <div id="deezer-search-status" class="search-status"></div>
+      <div id="deezer-search-results" class="search-results"></div>
+    </div>
+  </details>
+</section>
+
+<section class="grid playlists-grid">
+  {% for playlist in playlists %}
+  <article class="playlist-card" id="playlist-card-{{ playlist.id }}">
+    <button class="cover-button" type="button" onclick="openPlaylist('{{ playlist.id }}')">
+      {% if playlist.cover_cached %}
+        <img src="{{ url_for('serve_cover', filename=playlist.cover_cached) }}" alt="Cover {{ playlist.title }}">
+      {% else %}
+        <div class="cover-placeholder">No cover</div>
+      {% endif %}
+    </button>
+
+    <div class="playlist-meta">
+      <h2>{{ playlist.title }}</h2>
+      <p>[{{ playlist.id }}]</p>
+    </div>
+
+    <div class="playlist-preview hidden" id="playlist-preview-{{ playlist.id }}">
+      <div class="playlist-open-header">
+        <div class="playlist-open-left">
+          {% if playlist.cover_cached %}
+            <img class="playlist-open-cover" src="{{ url_for('serve_cover', filename=playlist.cover_cached) }}" alt="Cover {{ playlist.title }}">
+          {% else %}
+            <div class="playlist-open-cover cover-placeholder">No cover</div>
+          {% endif %}
+        </div>
+
+        <div class="playlist-open-center">
+          <h3>{{ playlist.title }}</h3>
+          <p>ID {{ playlist.id }}</p>
+          <p id="playlist-stats-{{ playlist.id }}" class="playlist-stats">Chargement…</p>
+        </div>
+
+        <div class="playlist-open-right">
+          <button type="button" onclick="startConversion('{{ playlist.id }}')">Convert</button>
+
+          <form method="post"
+                action="{{ url_for('delete_playlist', playlist_id=playlist.id) }}"
+                onsubmit="return confirm('Supprimer cette playlist ?');">
+            <button type="submit" class="danger">Delete</button>
+          </form>
+
+          <button type="button" class="secondary" onclick="startDownloadMissing('{{ playlist.id }}')">
+            Download Missing
+          </button>
+
+          <button type="button" class="secondary" onclick="closePlaylist('{{ playlist.id }}')">Fermer</button>
+        </div>
+      </div>
+
+      <div class="playlist-table-wrap">
+        <table class="playlist-table">
+          <thead>
+            <tr>
+              <th>Convert</th>
+              <th>Download</th>
+              <th>Number</th>
+              <th>Name from deezer playlist</th>
+              <th>Name from source matching</th>
+            </tr>
+          </thead>
+          <tbody id="playlist-table-body-{{ playlist.id }}">
+            <tr>
+              <td colspan="5" class="loading-cell">Chargement de la playlist…</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </article>
+  {% else %}
+  <p>Aucune playlist enregistrée.</p>
+  {% endfor %}
+</section>
+
+<div id="task-modal" class="task-modal hidden">
+  <div class="task-box">
+    <div class="task-header">
+      <h3>Conversion en cours</h3>
+      <button type="button" onclick="closeTaskModal()">×</button>
+    </div>
+
+    <div class="task-progress">
+      <div id="task-progress-bar" class="task-progress-bar"></div>
+    </div>
+
+    <div id="task-stage" class="task-stage">Initialisation…</div>
+    <pre id="task-log" class="task-log"></pre>
+  </div>
+</div>
+
+<div id="dedup-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="dedup-modal-title" aria-describedby="dedup-summary" aria-hidden="true">
+  <div class="modal-backdrop" data-close-dedup></div>
+
+  <div class="modal-panel" role="document">
+    <div class="modal-header">
+      <div>
+        <h2 id="dedup-modal-title">Analyse des doublons</h2>
+        <p class="dedup-summary" id="dedup-summary">
+          Aucun rapport chargé.
+        </p>
+      </div>
+
+      <button type="button" class="secondary" data-close-dedup aria-label="Fermer le modal dedup">
+        Fermer
+      </button>
+    </div>
+
+    <div class="modal-toolbar">
+      <div class="button-row">
+        <button type="button" id="start-dedup-btn-modal">
+          Scan dedup
+        </button>
+
+        <button type="button" class="secondary" id="dedup-keep-all">
+          Tout garder
+        </button>
+
+        <button type="button" class="secondary" id="dedup-delete-all-dup">
+          Garder seulement les keepers
+        </button>
+      </div>
+
+      <div class="button-row">
+        <button type="button" class="secondary" id="dedup-apply-quarantine">
+          Quarantaine
+        </button>
+
+        <button type="button" class="danger" id="dedup-apply-delete">
+          Supprimer définitivement
+        </button>
+      </div>
+    </div>
+
+    <div id="dedup-groups"></div>
+  </div>
+</div>
+
+<script>
+let currentSource = null;
+const loadedPreviews = new Set();
+let currentSearchType = "track";
+let currentSearchResults = [];
+const openedSearchCards = new Set();
+
+const dedupState = {
+  report: null,
+  selections: {},
+};
+
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#039;');
+}
+
+async function startCacheRefreshIncremental() {
+  openTaskModal();
+
+  const titleEl = document.querySelector('#task-modal .task-header h3');
+  if (titleEl) titleEl.textContent = 'Refresh cache incrémental';
+
+  const stageEl = document.getElementById('task-stage');
+  const logEl = document.getElementById('task-log');
+  const barEl = document.getElementById('task-progress-bar');
+  if (stageEl) stageEl.textContent = 'Initialisation…';
+  if (logEl) logEl.textContent = '';
+  if (barEl) barEl.style.width = '0%';
+
+  try {
+    const response = await fetch('/cache/incremental/start', {
+      method: 'POST'
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      if (logEl) logEl.textContent = data.error || 'Erreur de lancement';
+      return;
+    }
+
+    if (!data.task_id) {
+      if (logEl) logEl.textContent = 'task_id manquant dans la réponse serveur';
+      return;
+    }
+
+    if (currentSource) {
+      currentSource.close();
+      currentSource = null;
+    }
+
+    currentSource = new EventSource(`/tasks/${data.task_id}/stream`);
+
+    currentSource.onmessage = function(event) {
+      const payload = JSON.parse(event.data);
+
+      if (payload.message && logEl) {
+        logEl.textContent += payload.message + '\n';
+        logEl.scrollTop = logEl.scrollHeight;
+      }
+
+      if (payload.stage && stageEl) {
+        stageEl.textContent = `Étape : ${payload.stage}`;
+      }
+
+      if (typeof payload.progress === 'number' && barEl) {
+        barEl.style.width = `${payload.progress}%`;
+      }
+
+      if (payload.done) {
+        currentSource.close();
+        currentSource = null;
+        if (stageEl) stageEl.textContent = payload.error ? 'Erreur' : 'Terminé';
+        setTimeout(() => {
+          closeTaskModal();
+        }, 1200);
+      }
+    };
+
+    currentSource.onerror = function() {
+      if (logEl) logEl.textContent += '\nConnexion au flux interrompue';
+      if (currentSource) {
+        currentSource.close();
+        currentSource = null;
+      }
+    };
+  } catch (err) {
+    const logEl = document.getElementById('task-log');
+    if (logEl) logEl.textContent = `Erreur réseau : ${err}`;
+  }
+}
+
+document.querySelectorAll(".search-type-btn").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll(".search-type-btn").forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+    currentSearchType = btn.dataset.type;
+  });
+});
+
+document.getElementById("deezer-search-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+
+  const q = document.getElementById("deezer-search-input").value.trim();
+  const status = document.getElementById("deezer-search-status");
+  const results = document.getElementById("deezer-search-results");
+
+  if (!q) return;
+
+  status.textContent = "Recherche en cours…";
+  results.innerHTML = "";
+  currentSearchResults = [];
+  openedSearchCards.clear();
+
+  try {
+    const resp = await fetch(`/search?q=${encodeURIComponent(q)}&type=${encodeURIComponent(currentSearchType)}`);
+    const data = await resp.json();
+
+    if (!data.ok) {
+      status.textContent = data.error || "Erreur de recherche";
+      return;
+    }
+
+    currentSearchResults = data.results || [];
+    status.textContent = `${currentSearchResults.length} résultat(s)`;
+
+    results.innerHTML = currentSearchResults.map(item => buildSearchCard(item)).join("");
+  } catch (err) {
+    status.textContent = "Erreur réseau";
+  }
+});
+
+document.addEventListener("click", async (e) => {
+  const dlBtn = e.target.closest(".download-result-btn");
+  if (dlBtn) {
+    e.stopPropagation();
+    await handleSearchDownload(dlBtn);
+    return;
+  }
+
+  const closeBtn = e.target.closest(".search-card-close-btn");
+  if (closeBtn) {
+    e.stopPropagation();
+    const cardId = closeBtn.dataset.cardId;
+    closeSearchCard(cardId);
+    return;
+  }
+
+  const openCardButton = e.target.closest(".search-card-open-btn");
+  if (openCardButton) {
+    e.preventDefault();
+    const type = openCardButton.dataset.resultType;
+    const id = openCardButton.dataset.resultId;
+
+    if (type === "album") {
+      await openSearchAlbumCard(id);
+      return;
+    }
+
+    if (type === "artist") {
+      await openSearchArtistCard(id);
+      return;
+    }
+
+    return;
+  }
+
+  const albumLinkCard = e.target.closest(".artist-album-link-card");
+  if (albumLinkCard) {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const albumId = albumLinkCard.dataset.albumId;
+    const container = albumLinkCard.closest(".artist-inline-albums");
+    if (!container || !albumId) return;
+
+    await openArtistAlbumInline(albumId, container);
+  }
+});
+
+function buildSearchCard(item) {
+  const type = item.type || "track";
+  const expandable = type === "album" || type === "artist";
+  const cardId = `search-card-${type}-${item.id}`;
+
+  return `
+    <article class="search-card search-card-type-${escapeHtml(type)}" id="${escapeHtml(cardId)}" data-card-id="${escapeHtml(cardId)}">
+      <div class="search-card-main">
+        <div class="search-card-cover">
+          ${item.cover ? `<img src="${escapeHtml(item.cover)}" alt="${escapeHtml(item.title)}">` : `<div class="search-card-placeholder">No cover</div>`}
+        </div>
+
+        <div class="search-card-body">
+          <h3>${escapeHtml(item.title)}</h3>
+          <p>${escapeHtml(item.subtitle || "")}</p>
+        </div>
+
+        <div class="search-card-actions">
+          <button
+            type="button"
+            class="download-result-btn"
+            data-download-type="${escapeHtml(item.download_type || type)}"
+            data-download-id="${escapeHtml(item.download_id || item.id)}"
+          >
+            Télécharger
+          </button>
+
+          ${expandable ? `
+            <button
+              type="button"
+              class="secondary search-card-open-btn"
+              data-result-type="${escapeHtml(type)}"
+              data-result-id="${escapeHtml(item.id)}"
+            >
+              Ouvrir
+            </button>
+          ` : ""}
+        </div>
+      </div>
+
+      ${expandable ? `
+        <div class="search-card-preview hidden" id="${escapeHtml(cardId)}-preview">
+          <div class="search-card-preview-body" id="${escapeHtml(cardId)}-preview-body">
+            <div class="loading-cell">Chargement…</div>
+          </div>
+        </div>
+      ` : ""}
+    </article>
+  `;
+}
+
+async function handleSearchDownload(btn) {
+  const type = btn.dataset.downloadType;
+  const musicId = btn.dataset.downloadId;
+
+  btn.disabled = true;
+  btn.textContent = "Lancement…";
+
+  try {
+    const resp = await fetch("/deezer-dl/download/start", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        type,
+        music_id: musicId
+      })
+    });
+
+    const data = await resp.json();
+
+    if (!resp.ok) {
+      btn.textContent = "Erreur";
+      btn.disabled = false;
+      return;
+    }
+
+    btn.textContent = "Lancé";
+    if (data.task_id) {
+      pollDownloadTask(data.task_id, btn, musicId);
+    }
+  } catch (err) {
+    btn.textContent = "Erreur";
+    btn.disabled = false;
+  }
+}
+
+async function openSearchAlbumCard(albumId) {
+  const cardId = `search-card-album-${albumId}`;
+  const card = document.getElementById(cardId);
+  const preview = document.getElementById(`${cardId}-preview`);
+  const body = document.getElementById(`${cardId}-preview-body`);
+  if (!card || !preview || !body) return;
+
+  if (openedSearchCards.has(cardId)) {
+    preview.classList.remove("hidden");
+    card.classList.add("search-card-open");
+    return;
+  }
+
+  preview.classList.remove("hidden");
+  card.classList.add("search-card-open");
+  body.innerHTML = `<div class="loading-cell">Chargement de l'album…</div>`;
+
+  try {
+    const resp = await fetch(`/search/album/${encodeURIComponent(albumId)}`);
+    const data = await resp.json();
+
+    if (!data.ok) {
+      body.innerHTML = `<div class="loading-cell">Erreur : ${escapeHtml(data.error || "Erreur de chargement")}</div>`;
+      return;
+    }
+
+    body.innerHTML = renderAlbumInlineDetail(data.album, cardId);
+    openedSearchCards.add(cardId);
+  } catch (err) {
+    body.innerHTML = `<div class="loading-cell">Erreur réseau</div>`;
+  }
+}
+
+async function openSearchArtistCard(artistId) {
+  const cardId = `search-card-artist-${artistId}`;
+  const card = document.getElementById(cardId);
+  const preview = document.getElementById(`${cardId}-preview`);
+  const body = document.getElementById(`${cardId}-preview-body`);
+  if (!card || !preview || !body) return;
+
+  if (openedSearchCards.has(cardId)) {
+    preview.classList.remove("hidden");
+    card.classList.add("search-card-open");
+    return;
+  }
+
+  preview.classList.remove("hidden");
+  card.classList.add("search-card-open");
+  body.innerHTML = `<div class="loading-cell">Chargement de l'artiste…</div>`;
+
+  try {
+    const resp = await fetch(`/search/artist/${encodeURIComponent(artistId)}`);
+    const data = await resp.json();
+
+    if (!data.ok) {
+      body.innerHTML = `<div class="loading-cell">Erreur : ${escapeHtml(data.error || "Erreur de chargement")}</div>`;
+      return;
+    }
+
+    body.innerHTML = renderArtistInlineDetail(data.artist, cardId);
+    openedSearchCards.add(cardId);
+  } catch (err) {
+    body.innerHTML = `<div class="loading-cell">Erreur réseau</div>`;
+  }
+}
+
+function closeSearchCard(cardId) {
+  const card = document.getElementById(cardId);
+  const preview = document.getElementById(`${cardId}-preview`);
+  if (!card || !preview) return;
+
+  preview.classList.add("hidden");
+  card.classList.remove("search-card-open");
+}
+
+function renderAlbumInlineDetail(album, cardId) {
+  const tracks = Array.isArray(album.tracks) ? album.tracks : [];
+
+  return `
+    <div class="search-inline-detail">
+      <div class="search-inline-header">
+        <div class="search-inline-meta">
+          <h4>${escapeHtml(album.title || "")}</h4>
+          <p>${escapeHtml(album.artist || "")}</p>
+          <p>${tracks.length} morceau(x)</p>
+        </div>
+
+        <div class="search-inline-actions">
+          <button
+            type="button"
+            class="download-result-btn"
+            data-download-type="album"
+            data-download-id="${escapeHtml(album.id)}"
+          >
+            Télécharger l'album
+          </button>
+
+          <button
+            type="button"
+            class="secondary search-card-close-btn"
+            data-card-id="${escapeHtml(cardId)}"
+          >
+            Fermer
+          </button>
+        </div>
+      </div>
+
+      <div class="playlist-table-wrap">
+        <table class="playlist-table">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Titre</th>
+              <th>Artiste</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${tracks.map(track => `
+              <tr>
+                <td>${escapeHtml(track.position)}</td>
+                <td>${escapeHtml(track.title)}</td>
+                <td>${escapeHtml(track.artist || "")}</td>
+                <td>
+                  <button
+                    type="button"
+                    class="download-result-btn"
+                    data-download-type="track"
+                    data-download-id="${escapeHtml(track.track_id)}"
+                  >
+                    Télécharger
+                  </button>
+                </td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+}
+
+function renderArtistInlineDetail(artist, cardId) {
+  const albums = Array.isArray(artist.albums) ? artist.albums : [];
+
+  return `
+    <div class="search-inline-detail">
+      <div class="search-inline-header">
+        <div class="search-inline-meta">
+          <h4>${escapeHtml(artist.name || "")}</h4>
+          <p>${escapeHtml(String(artist.nb_album || 0))} album(s)</p>
+        </div>
+
+        <div class="search-inline-actions">
+          <button
+            type="button"
+            class="secondary search-card-close-btn"
+            data-card-id="${escapeHtml(cardId)}"
+          >
+            Fermer
+          </button>
+        </div>
+      </div>
+
+      <div class="artist-inline-albums">
+        ${albums.map(album => `
+          <article class="artist-album-row">
+            <button
+              type="button"
+              class="artist-album-link-card"
+              data-album-id="${escapeHtml(album.id)}"
+            >
+              <div class="artist-album-row-cover">
+                ${album.cover ? `<img src="${escapeHtml(album.cover)}" alt="${escapeHtml(album.title)}">` : `<div class="search-card-placeholder">No cover</div>`}
+              </div>
+              <div class="artist-album-row-meta">
+                <strong>${escapeHtml(album.title)}</strong>
+                <span>${escapeHtml(album.release_date || "")}</span>
+              </div>
+            </button>
+
+            <div class="artist-album-inline-preview hidden" id="artist-album-inline-${escapeHtml(album.id)}"></div>
+          </article>
+        `).join("")}
+      </div>
+    </div>
+  `;
+}
+
+async function openArtistAlbumInline(albumId, albumsContainer) {
+  const previewId = `artist-album-inline-${albumId}`;
+  const preview = albumsContainer.querySelector(`#${CSS.escape(previewId)}`);
+  if (!preview) return;
+
+  const isOpen = !preview.classList.contains("hidden");
+
+  albumsContainer.querySelectorAll(".artist-album-inline-preview").forEach(el => {
+    el.classList.add("hidden");
+    el.innerHTML = "";
+  });
+
+  if (isOpen) {
+    return;
+  }
+
+  preview.classList.remove("hidden");
+  preview.innerHTML = `<div class="loading-cell">Chargement de l'album…</div>`;
+
+  try {
+    const resp = await fetch(`/search/album/${encodeURIComponent(albumId)}`);
+    const data = await resp.json();
+
+    if (!data.ok) {
+      preview.innerHTML = `<div class="loading-cell">Erreur : ${escapeHtml(data.error || "Erreur de chargement")}</div>`;
+      return;
+    }
+
+    const album = data.album;
+    const tracks = Array.isArray(album.tracks) ? album.tracks : [];
+
+    preview.innerHTML = `
+      <div class="artist-album-inline-box">
+        <div class="search-inline-header">
+          <div class="search-inline-meta">
+            <h4>${escapeHtml(album.title || "")}</h4>
+            <p>${escapeHtml(album.artist || "")}</p>
+            <p>${tracks.length} morceau(x)</p>
+          </div>
+
+          <div class="search-inline-actions">
+            <button
+              type="button"
+              class="download-result-btn"
+              data-download-type="album"
+              data-download-id="${escapeHtml(album.id)}"
+            >
+              Télécharger l'album
+            </button>
+          </div>
+        </div>
+
+        <div class="playlist-table-wrap">
+          <table class="playlist-table">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Titre</th>
+                <th>Artiste</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${tracks.map(track => `
+                <tr>
+                  <td>${escapeHtml(track.position)}</td>
+                  <td>${escapeHtml(track.title)}</td>
+                  <td>${escapeHtml(track.artist || "")}</td>
+                  <td>
+                    <button
+                      type="button"
+                      class="download-result-btn"
+                      data-download-type="track"
+                      data-download-id="${escapeHtml(track.track_id)}"
+                    >
+                      Télécharger
+                    </button>
+                  </td>
+                </tr>
+              `).join("")}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `;
+  } catch (err) {
+    preview.innerHTML = `<div class="loading-cell">Erreur réseau</div>`;
+  }
+}
+
+function openTaskModal() {
+  document.getElementById('task-modal').classList.remove('hidden');
+  document.getElementById('task-log').textContent = '';
+  document.getElementById('task-stage').textContent = 'Initialisation…';
+  document.getElementById('task-progress-bar').style.width = '0%';
+}
+
+function closeTaskModal() {
+  document.getElementById('task-modal').classList.add('hidden');
+  if (currentSource) { currentSource.close(); currentSource = null; }
+}
+
+async function startDownloadMissing(playlistId) {
+  openTaskModal();
+
+  const titleEl = document.querySelector('#task-modal .task-header h3');
+  if (titleEl) titleEl.textContent = 'Download Missing';
+
+  let response;
+  try {
+    response = await fetch(`/playlist/${playlistId}/download-missing/start`, {
+      method: 'POST'
+    });
+  } catch (e) {
+    document.getElementById('task-log').textContent = 'Erreur réseau lors du lancement du téléchargement.';
+    return;
+  }
+
+  let data;
+  try {
+    data = await response.json();
+  } catch (e) {
+    document.getElementById('task-log').textContent = 'Réponse invalide du serveur.';
+    return;
+  }
+
+  if (!response.ok) {
+    document.getElementById('task-log').textContent = data.error || 'Erreur inconnue.';
+    return;
+  }
+
+  const taskId = data.task_id;
+
+  if (currentSource) {
+    currentSource.close();
+    currentSource = null;
+  }
+
+  currentSource = new EventSource(`/tasks/${taskId}/stream`);
+
+  currentSource.onmessage = function(event) {
+    const payload = JSON.parse(event.data);
+    const log = document.getElementById('task-log');
+    const stage = document.getElementById('task-stage');
+    const bar = document.getElementById('task-progress-bar');
+
+    if (payload.type === 'row_update' && payload.row) {
+      applyRowUpdate(playlistId, payload.row);
+      updatePreviewStats(playlistId);
+      return;
+    }
+
+    if (payload.message) {
+      log.textContent = payload.message;
+      log.scrollTop = log.scrollHeight;
+    }
+
+    if (payload.stage) {
+      stage.textContent = `Étape : ${payload.stage}`;
+    }
+
+    if (typeof payload.progress === 'number') {
+      bar.style.width = `${payload.progress}%`;
+    }
+
+    if (payload.done) {
+      currentSource.close();
+      currentSource = null;
+      stage.textContent = payload.error ? 'Erreur' : 'Terminé';
+
+      setTimeout(async () => {
+        await refreshPlaylistPreview(playlistId);
+        closeTaskModal();
+      }, 1200);
+    }
+  };
+
+  currentSource.onerror = function() {
+    document.getElementById('task-log').textContent = 'Connexion au flux interrompue.';
+    if (currentSource) {
+      currentSource.close();
+      currentSource = null;
+    }
+  };
+}
+
+async function refreshPlaylistPreview(playlistId) {
+  loadedPreviews.delete(String(playlistId));
+  await openPlaylist(playlistId);
+}
+
+async function startConversion(playlistId) {
+  openTaskModal();
+  const response = await fetch(`/playlist/${playlistId}/convert/start`, { method: 'POST' });
+  const data = await response.json();
+  const taskId = data.task_id;
+
+  currentSource = new EventSource(`/tasks/${taskId}/stream`);
+
+  currentSource.onmessage = function(event) {
+    const payload = JSON.parse(event.data);
+    const log = document.getElementById('task-log');
+    const stage = document.getElementById('task-stage');
+    const bar = document.getElementById('task-progress-bar');
+
+    if (payload.type === 'row_update' && payload.row) {
+      applyRowUpdate(playlistId, payload.row);
+      return;
+    }
+
+    if (payload.message) { log.textContent += payload.message + "\n"; log.scrollTop = log.scrollHeight; }
+    if (payload.stage) { stage.textContent = `Étape : ${payload.stage}`; }
+    if (typeof payload.progress === 'number') { bar.style.width = payload.progress + '%'; }
+
+    if (payload.done) {
+      currentSource.close(); currentSource = null;
+      stage.textContent = payload.error ? 'Erreur' : 'Terminé';
+
+      setTimeout(() => {
+        closeTaskModal();
+      }, 1200);
+    }
+  };
+
+  currentSource.onerror = function() {
+    document.getElementById('task-log').textContent += "Connexion au flux interrompue\n";
+    if (currentSource) { currentSource.close(); currentSource = null; }
+  };
+}
+
+async function openPlaylist(playlistId) {
+  document.getElementById(`playlist-preview-${playlistId}`).classList.remove('hidden');
+  document.getElementById(`playlist-card-${playlistId}`).classList.add('playlist-card-open');
+
+  if (loadedPreviews.has(playlistId)) {
+    return;
+  }
+
+  const tbody = document.getElementById(`playlist-table-body-${playlistId}`);
+  const stats = document.getElementById(`playlist-stats-${playlistId}`);
+  tbody.innerHTML = `<tr><td colspan="5" class="loading-cell">Chargement de la playlist…</td></tr>`;
+
+  try {
+    const response = await fetch(`/playlist/${playlistId}/preview`);
+    const data = await response.json();
+
+    if (!data.ok) {
+      tbody.innerHTML = `<tr><td colspan="5" class="loading-cell">Erreur : ${escapeHtml(data.error)}</td></tr>`;
+      stats.textContent = "Erreur de chargement";
+      return;
+    }
+
+    const playlist = data.playlist;
+    stats.textContent = buildStatsText(playlist.matched_count, playlist.unmatched_count, playlist.unchecked_count);
+    tbody.innerHTML = playlist.rows.map(row => buildRow(row)).join("");
+
+    await refreshDownloadStateFromQueue(playlistId);
+
+    loadedPreviews.add(playlistId);
+  } catch (err) {
+    tbody.innerHTML = `<tr><td colspan="5" class="loading-cell">Erreur réseau</td></tr>`;
+    stats.textContent = "Erreur réseau";
+  }
+}
+
+function closePlaylist(playlistId) {
+  document.getElementById(`playlist-preview-${playlistId}`).classList.add('hidden');
+  document.getElementById(`playlist-card-${playlistId}`).classList.remove('playlist-card-open');
+}
+
+function buildRow(row) {
+  const state =
+    row.matched === true  ? 'true'  :
+    row.matched === false ? 'false' : 'none';
+
+  const cls =
+    row.matched === true  ? 'row-found'    :
+    row.matched === false ? 'row-missing'  : 'row-unchecked';
+
+  const dlCell = buildDownloadCell(row);
+  const downloaded = row.downloaded ? 'true' : 'false';
+
+  return `
+    <tr
+      data-number="${row.number}"
+      data-matched="${state}"
+      data-track-id="${escapeHtml(String(row.track_id ?? ''))}"
+      data-downloaded="${downloaded}"
+      class="${cls}"
+    >
+      <td>${escapeHtml(row.convert)}</td>
+      <td>${dlCell}</td>
+      <td>${row.number}</td>
+      <td>${escapeHtml(row.deezer_name)}</td>
+      <td>${escapeHtml(row.source_name || '')}</td>
+    </tr>
+  `;
+}
+
+function buildDownloadCell(row) {
+  if (!row.track_id) {
+    return '<span class="dl-na">—</span>';
+  }
+
+  if (row.matched === true) {
+    return '<span class="dl-na" title="Déjà dans la librairie">✓</span>';
+  }
+
+  if (row.downloaded) {
+    return '<span class="dl-na" title="Téléchargé via Deezer Downloader">📥</span>';
+  }
+
+  return `
+    <button
+      class="btn-dl"
+      title="Télécharger via Deezer Downloader"
+      onclick="downloadTrack(${row.track_id}, this)"
+    >⬇</button>
+  `;
+}
+
+async function downloadTrack(trackId, btn) {
+  btn.disabled = true;
+  btn.textContent = '⏳';
+
+  try {
+    const res = await fetch(`/deezer-dl/track/${trackId}`, { method: 'POST' });
+    const data = await res.json();
+
+    if (!res.ok || data.error) {
+      btn.textContent = '❌';
+      btn.title = data.error || 'Erreur';
+      btn.disabled = false;
+      return;
+    }
+
+    btn.textContent = '⬇';
+    pollDownloadTask(data.task_id, btn, trackId);
+  } catch (err) {
+    btn.textContent = '❌';
+    btn.title = 'Erreur réseau';
+    btn.disabled = false;
+  }
+}
+
+async function pollDownloadTask(taskId, btn, trackId) {
+  const src = new EventSource(`/tasks/${taskId}/stream`);
+
+  src.onmessage = function(event) {
+    const payload = JSON.parse(event.data);
+
+    if (payload.message && btn) {
+      btn.title = payload.message;
+    }
+
+    if (payload.done) {
+      src.close();
+      if (payload.error) {
+        btn.textContent = '❌';
+        btn.disabled = false;
+      } else {
+        btn.textContent = '✅';
+        btn.title = 'Téléchargé';
+      }
+    }
+  };
+
+  src.onerror = function() {
+    src.close();
+    btn.textContent = '❌';
+    btn.title = 'Connexion interrompue';
+    btn.disabled = false;
+  };
+}
+
+async function refreshDownloadStateFromQueue(playlistId) {
+  let res;
+  try {
+    res = await fetch('/deezer-dl/queue');
+  } catch (e) {
+    return;
+  }
+  if (!res.ok) return;
+
+  let queue;
+  try {
+    queue = await res.json();
+  } catch (e) {
+    return;
+  }
+
+  const items = Array.isArray(queue) ? queue : [];
+  const finishedIds = new Set();
+
+  for (const it of items) {
+    if (it.state !== 'mission accomplished') continue;
+    if (typeof it.args !== 'string') continue;
+
+    const m = it.args.match(/'track_id'\s*:\s*(\d+)/);
+    if (m) {
+      finishedIds.add(m[1]);
+    }
+  }
+
+  if (!finishedIds.size) return;
+
+  const tbody = document.getElementById(`playlist-table-body-${playlistId}`);
+  if (!tbody) return;
+
+  const rows = Array.from(tbody.querySelectorAll('tr[data-track-id]'));
+  for (const tr of rows) {
+    const tid = tr.dataset.trackId;
+    if (!tid) continue;
+
+    const downloaded = finishedIds.has(tid);
+    if (!downloaded) continue;
+
+    tr.dataset.downloaded = 'true';
+
+    const number = parseInt(tr.dataset.number, 10);
+    const rowObj = {
+      convert: tr.querySelector('td:nth-child(1)').textContent.trim(),
+      number,
+      deezer_name: tr.querySelector('td:nth-child(4)').textContent,
+      source_name: tr.querySelector('td:nth-child(5)').textContent,
+      matched:
+        tr.dataset.matched === 'true'
+          ? true
+          : tr.dataset.matched === 'false'
+            ? false
+            : null,
+      track_id: tid,
+      downloaded: true,
+    };
+
+    tr.querySelector('td:nth-child(2)').innerHTML = buildDownloadCell(rowObj);
+  }
+}
+
+function applyRowUpdate(playlistId, row) {
+  const tbody = document.getElementById(`playlist-table-body-${playlistId}`);
+  if (!tbody) return;
+
+  const tr = tbody.querySelector(`tr[data-number="${row.number}"]`);
+  if (!tr) return;
+
+  const state =
+    row.matched === true  ? 'true'  :
+    row.matched === false ? 'false' : 'none';
+
+  const cls =
+    row.matched === true  ? 'row-found'    :
+    row.matched === false ? 'row-missing'  : 'row-unchecked';
+
+  const newRow = document.createElement('tr');
+  newRow.innerHTML = buildRow(row);
+
+  tr.dataset.matched = state;
+  tr.dataset.trackId = row.track_id ?? '';
+  tr.className = cls;
+
+  const cells = newRow.querySelectorAll('td');
+  tr.innerHTML = '';
+  cells.forEach(cell => tr.appendChild(cell));
+
+  updatePreviewStats(playlistId);
+}
+
+function updatePreviewStats(playlistId) {
+  const tbody = document.getElementById(`playlist-table-body-${playlistId}`);
+  const stats = document.getElementById(`playlist-stats-${playlistId}`);
+  if (!tbody || !stats) return;
+
+  const rows = Array.from(tbody.querySelectorAll('tr[data-number]'));
+  let matched = 0, unmatched = 0, unchecked = 0;
+  for (const tr of rows) {
+    const s = tr.dataset.matched;
+    if (s === 'true') matched++;
+    else if (s === 'false') unmatched++;
+    else unchecked++;
+  }
+  stats.textContent = buildStatsText(matched, unmatched, unchecked);
+}
+
+function buildStatsText(m, u, n) {
+  return `${m} trouvées · ${u} non trouvées · ${n} non vérifiées`;
+}
+
+function openDedupModal() {
+  const modal = document.getElementById('dedup-modal');
+  modal.classList.remove('hidden');
+  modal.setAttribute('aria-hidden', 'false');
+}
+
+function closeDedupModal() {
+  const modal = document.getElementById('dedup-modal');
+  modal.classList.add('hidden');
+  modal.setAttribute('aria-hidden', 'true');
+}
+
+function dedupDefaultSelections(report) {
+  const selections = {};
+
+  // Initialiser toutes les sélections
+  for (const group of report.groups || []) {
+    const keep = new Set();
+    selections[group.group_id] = keep;
+  }
+
+  // Pré-cocher les anciens choix validés (keeper_hints)
+  const hints = report.keeper_hints || {};
+  for (const [groupId, keepPaths] of Object.entries(hints)) {
+    if (Array.isArray(keepPaths) && selections[groupId]) {
+      selections[groupId] = new Set(keepPaths);
+    }
+  }
+
+  // Pour les groupes sans keeper_hints, cocher le keeper par défaut
+  for (const group of report.groups || []) {
+    if (!hints[group.group_id] && group.keeper && group.keeper.path_str) {
+      selections[group.group_id].add(group.keeper.path_str);
+    }
+  }
+
+  return selections;
+}
+
+function buildDedupColumn(group, col, colIndex, maxRows) {
+  const entries = Array.isArray(col.entries) ? col.entries : [];
+  const keepDefault = !!col.keep_by_default;
+
+  return `
+    <div class="dedup-column ${keepDefault ? 'dedup-column-default' : ''}" data-folder="${escapeHtml(col.folder || '')}">
+      <div class="dedup-column-head">
+        <div class="dedup-column-path">
+          <strong>${escapeHtml(col.folder || 'Unknown folder')}</strong>
+          <span>${entries.length} piste(s)</span>
+        </div>
+
+        <div class="dedup-column-actions">
+          <button type="button" class="dedup-column-btn" data-dedup-col-action="keep-column" data-group-id="${escapeHtml(group.group_id)}" data-col-index="${colIndex}">
+            Tout garder
+          </button>
+          <button type="button" class="dedup-column-btn" data-dedup-col-action="clear-column" data-group-id="${escapeHtml(group.group_id)}" data-col-index="${colIndex}">
+            Tout décocher
+          </button>
+        </div>
+      </div>
+
+      <div class="dedup-column-rows">
+        ${Array.from({ length: maxRows }, (_, rowIndex) => {
+          const entry = entries[rowIndex];
+          if (!entry) {
+            return `<div class="dedup-row dedup-row-empty"></div>`;
+          }
+
+          const checked = dedupState.selections[group.group_id]?.has(entry.path_str) ? 'checked' : '';
+          const isKeeper = entry.path_str === group.keeper?.path_str;
+
+          return `
+            <div class="dedup-row ${isKeeper ? 'dedup-row-keeper' : 'dedup-row-dup'}">
+              <label class="dedup-row-label">
+                <input
+                  type="checkbox"
+                  class="dedup-keep-checkbox"
+                  data-group-id="${escapeHtml(group.group_id)}"
+                  data-path="${escapeHtml(entry.path_str)}"
+                  ${checked}
+                >
+                <span class="dedup-row-main">
+                  <span class="dedup-row-title">
+                    ${escapeHtml(entry.track_number ? String(entry.track_number).padStart(2, '0') + ' - ' : '')}
+                    ${escapeHtml(entry.tag_title || entry.parsed_track_title || entry.stem_norm || 'Unknown title')}
+                  </span>
+                  <span class="dedup-row-meta">
+                    ${escapeHtml(entry.tag_artist || entry.parsed_artist || 'Unknown artist')}
+                    · ${escapeHtml(entry.tag_album || entry.album_dir_norm || 'Unknown album')}
+                    · #${entry.track_number ?? 'n/a'}
+                    · ${Math.round(entry.duration || 0)}s
+                  </span>
+                  <span class="dedup-row-path">${escapeHtml(entry.path_str || '')}</span>
+                </span>
+                <span class="dedup-row-tags">
+                  <span class="dedup-badge ${isKeeper ? 'keeper' : 'dup'}">${isKeeper ? 'KEEPER' : 'DUP'}</span>
+                </span>
+              </label>
+            </div>
+          `;
+        }).join('')}
+      </div>
+    </div>
+  `;
+}
+
+function sumDuplicateFilesInAlbum(album) {
+  return (album.tracks || []).reduce((sum, group) => {
+    return sum + (group.entries ? group.entries.length : 0);
+  }, 0);
+}
+
+function sumDuplicateFilesInGroup(group) {
+  return (group.entries ? group.entries.length : 0);
+}
+
+function renderDedupReport() {
+  const groupsWrap = document.getElementById('dedup-groups');
+  const summary = document.getElementById('dedup-summary');
+  const report = dedupState.report;
+  if (!report || !groupsWrap || !summary) return;
+
+  summary.innerHTML = `
+    <p>
+      ${escapeHtml(report.group_count ?? 0)} groupe(s) à vérifier
+      ${(report.total_group_count ?? 0) > (report.group_count ?? 0) ? `· ${escapeHtml((report.total_group_count ?? 0) - (report.group_count ?? 0))} groupe(s) déjà validé(s)` : ''}
+      · ${escapeHtml(report.duplicate_file_count ?? 0)} doublons candidats
+      ${report.ignored_group_count ? `· ${escapeHtml(report.ignored_group_count)} groupe(s) ignoré(s)` : ''}
+    </p>
+  `;
+
+  // Utiliser album_groups si disponible, sinon fallback sur groups
+  const albumGroups = report.album_groups || [];
+
+  groupsWrap.innerHTML = albumGroups.map(album => {
+    // Collecter tous les dossiers uniques et organiser par track+folder
+    const allFolders = new Set();
+    const tracksByFolder = {};
+
+    album.tracks.forEach(group => {
+      const trackName = group.identity?.base_title || 'Unknown';
+      const keeper = group.keeper || {};
+
+      if (!tracksByFolder[trackName]) {
+        tracksByFolder[trackName] = {};
+      }
+
+      group.folders.forEach(folder => {
+        allFolders.add(folder.folder);
+
+        tracksByFolder[trackName][folder.folder] = (folder.entries || []).map(entry => ({
+          entry: entry,
+          isKeeper: entry.path_str === keeper.path_str,
+          groupId: group.group_id
+        }));
+      });
+    });
+
+    const folders = Array.from(allFolders).sort();
+    const tracks = Object.keys(tracksByFolder).sort();
+
+    return `
+      <section class="dedup-album-section" data-album="${escapeHtml(album.album)}">
+        <div class="dedup-album-head">
+          <div class="dedup-album-title">
+            <h2>${escapeHtml(album.artist || 'Unknown artist')} — ${escapeHtml(album.album || 'Unknown album')}</h2>
+            <p>${tracks.length} chanson(s) · ${sumDuplicateFilesInAlbum(album)} fichiers</p>
+          </div>
+        </div>
+
+        <div class="dedup-album-table-wrap">
+          <table class="dedup-album-table">
+            <thead>
+              <tr>
+                <th>Track</th>
+                ${folders.map(folder => `
+                  <th>
+                    <div class="dedup-column-header">
+                      <div class="dedup-column-path">${escapeHtml(folder)}</div>
+                      <div class="dedup-column-header-buttons">
+                        <button type="button" class="dedup-source-btn keep" data-action="keep-source" data-folder="${escapeHtml(folder)}">Keep</button>
+                        <button type="button" class="dedup-source-btn delete" data-action="delete-source" data-folder="${escapeHtml(folder)}">Delete</button>
+                      </div>
+                    </div>
+                  </th>
+                `).join('')}
+              </tr>
+            </thead>
+            <tbody>
+              ${tracks.map(track => `
+                <tr>
+                  <td class="dedup-track-cell">${escapeHtml(track)}</td>
+                  ${folders.map(folder => `
+                    <td class="dedup-folder-cell">
+                      ${(tracksByFolder[track][folder] || []).map(item => {
+                        const formatSize = (bytes) => {
+                          if (!bytes) return '—';
+                          if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+                          return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+                        };
+                        const formatDuration = (seconds) => {
+                          if (!seconds) return '—';
+                          const mins = Math.floor(seconds / 60);
+                          const secs = Math.round(seconds % 60);
+                          return `${mins}:${String(secs).padStart(2, '0')}`;
+                        };
+                        return `
+                          <div class="dedup-entry-item">
+                            <label class="dedup-entry-label">
+                              <input
+                                type="checkbox"
+                                class="dedup-keep-checkbox"
+                                data-group-id="${escapeHtml(item.groupId)}"
+                                data-path="${escapeHtml(item.entry.path_str)}"
+                                ${dedupState.selections[item.groupId]?.has(item.entry.path_str) ? 'checked' : ''}
+                              >
+                              <span class="dedup-entry-info">
+                                <span class="dedup-entry-title">
+                                  ${item.entry.track_number ? String(item.entry.track_number).padStart(2, '0') + '. ' : ''}${escapeHtml(item.entry.tag_title || item.entry.parsed_track_title || item.entry.stem_norm || 'Unknown')}
+                                </span>
+                                <span class="dedup-entry-meta">
+                                  ${formatDuration(item.entry.duration)} · ${formatSize(item.entry.size)} · <span title="Quality score">${(item.entry.quality_score || 0).toFixed(1)}</span>
+                                </span>
+                              </span>
+                              <span class="dedup-badge ${item.isKeeper ? 'keeper' : 'dup'}">
+                                ${item.isKeeper ? 'KEEPER' : 'DUP'}
+                              </span>
+                            </label>
+                          </div>
+                        `;
+                      }).join('')}
+                    </td>
+                  `).join('')}
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    `;
+  }).join('');
+
+  bindDedupCheckboxes();
+}
+
+function bindDedupCheckboxes() {
+  document.querySelectorAll('#dedup-groups .dedup-keep-checkbox').forEach(input => {
+    input.addEventListener('change', () => {
+      const groupId = input.dataset.groupId;
+      const path = input.dataset.path;
+      if (!dedupState.selections[groupId]) dedupState.selections[groupId] = new Set();
+      if (input.checked) dedupState.selections[groupId].add(path);
+      else dedupState.selections[groupId].delete(path);
+    });
+  });
+
+  // Source-level action buttons (Keep/Delete per folder)
+  document.querySelectorAll('#dedup-groups .dedup-source-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const folder = btn.dataset.folder;
+      const action = btn.dataset.action;
+      const report = dedupState.report;
+      if (!report || !folder || !action) return;
+
+      // Find all groups and folders that match this folder path
+      (report.album_groups || []).forEach(album => {
+        (album.tracks || []).forEach(group => {
+          (group.folders || []).forEach(folderObj => {
+            if (folderObj.folder === folder) {
+              if (!dedupState.selections[group.group_id]) {
+                dedupState.selections[group.group_id] = new Set();
+              }
+
+              // Get entries from this folder
+              const entries = folderObj.entries || [];
+              if (action === 'keep-source') {
+                // Check all entries in this folder
+                entries.forEach(entry => {
+                  dedupState.selections[group.group_id].add(entry.path_str);
+                });
+              } else if (action === 'delete-source') {
+                // Uncheck all entries in this folder
+                entries.forEach(entry => {
+                  dedupState.selections[group.group_id].delete(entry.path_str);
+                });
+              }
+            }
+          });
+        });
+      });
+
+      renderDedupReport();
+    });
+  });
+
+  document.querySelectorAll('#dedup-groups [data-dedup-col-action]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const groupId = btn.dataset.groupId;
+      const colIndex = parseInt(btn.dataset.colIndex || '0', 10);
+      const group = (dedupState.report?.groups || []).find(g => g.group_id === groupId);
+      if (!group) return;
+
+      const folders = Array.isArray(group.folders) ? group.folders : [];
+      const folder = folders[colIndex];
+      if (!folder) return;
+
+      if (btn.dataset.dedupColAction === 'keep-column') {
+        dedupState.selections[groupId] = new Set((folder.entries || []).map(e => e.path_str));
+      } else if (btn.dataset.dedupColAction === 'clear-column') {
+        const current = dedupState.selections[groupId] || new Set();
+        (folder.entries || []).forEach(e => current.delete(e.path_str));
+        dedupState.selections[groupId] = current;
+      }
+
+      renderDedupReport();
+    });
+  });
+
+  document.querySelectorAll('#dedup-groups [data-dedup-action]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const groupId = btn.dataset.groupId;
+      const group = (dedupState.report?.groups || []).find(g => g.group_id === groupId);
+      if (!group) return;
+
+      if (btn.dataset.dedupAction === 'keep-all') {
+        const set = new Set();
+        for (const entry of group.entries || []) {
+          if (entry.path_str) set.add(entry.path_str);
+        }
+        dedupState.selections[groupId] = set;
+      }
+
+      if (btn.dataset.dedupAction === 'keep-only-default') {
+        const keeperPath = group.keeper?.path_str;
+        dedupState.selections[groupId] = keeperPath ? new Set([keeperPath]) : new Set();
+      }
+
+      if (btn.dataset.dedupAction === 'keep-folder') {
+        const keeperFolder = group.keeper?.path_str ? String((new URL('file://' + group.keeper.path_str)).pathname) : null;
+        if (keeperFolder) {
+          const set = new Set(
+            (group.entries || [])
+              .filter(e => String(e.path_str || '').startsWith(keeperFolder))
+              .map(e => e.path_str)
+          );
+          if (!set.size && group.keeper?.path_str) set.add(group.keeper.path_str);
+          dedupState.selections[groupId] = set;
+        } else if (group.keeper?.path_str) {
+          dedupState.selections[groupId] = new Set([group.keeper.path_str]);
+        }
+      }
+
+      renderDedupReport();
+    });
+  });
+}
+
+function buildDedupDecisions() {
+  return Object.entries(dedupState.selections).map(([group_id, set]) => ({
+    group_id,
+    keep_paths: Array.from(set),
+  }));
+}
+
+async function fetchDedupReportAndOpen() {
+  const res = await fetch('/dedup/report');
+  const data = await res.json();
+  if (!data.ok) {
+    alert(data.error || 'Impossible de charger le rapport dedup');
+    return;
+  }
+  dedupState.report = data.report;
+  dedupState.selections = dedupDefaultSelections(data.report);
+  renderDedupReport();
+  openDedupModal();
+}
+
+async function startDedupScan() {
+  const btn = document.getElementById('start-dedup-btn');
+  const summary = document.getElementById('dedup-summary');
+  const groups = document.getElementById('dedup-groups');
+
+  openDedupModal();
+  if (summary) summary.innerHTML = '<p>Scan dedup en cours…</p>';
+  if (groups) groups.innerHTML = '';
+
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = 'Scan en cours...';
+  }
+
+  try {
+    const res = await fetch('/dedup/start', { method: 'POST' });
+    const data = await res.json();
+
+    if (!res.ok) {
+      if (summary) summary.innerHTML = `<p>Erreur : ${escapeHtml(data.error || 'Impossible de lancer le scan')}</p>`;
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = 'Scan dedup';
+      }
+      return;
+    }
+
+    const taskId = data.task_id;
+    if (!taskId) {
+      if (summary) summary.innerHTML = '<p>Réponse invalide du serveur.</p>';
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = 'Scan dedup';
+      }
+      return;
+    }
+
+    if (currentSource) {
+      currentSource.close();
+      currentSource = null;
+    }
+
+    currentSource = new EventSource(`/tasks/${taskId}/stream`);
+
+    currentSource.onmessage = async (evt) => {
+      const payload = JSON.parse(evt.data);
+
+      if (payload.type === 'status') {
+        const stageText = payload.stage ? `Étape : ${payload.stage}` : 'Analyse...';
+        const progressText = typeof payload.progress === 'number' ? ` (${payload.progress}%)` : '';
+        if (summary) summary.innerHTML = `<p>${escapeHtml(payload.message || stageText)}${escapeHtml(progressText)}</p>`;
+      }
+
+      if (payload.type === 'dedup_result') {
+        await fetchDedupReportAndOpen();
+      }
+
+      if (payload.done) {
+        if (btn) {
+          btn.disabled = false;
+          btn.textContent = 'Scan dedup';
+        }
+        currentSource.close();
+        currentSource = null;
+      }
+    };
+
+    currentSource.onerror = () => {
+      if (summary) summary.innerHTML = '<p>Flux SSE interrompu.</p>';
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = 'Scan dedup';
+      }
+      if (currentSource) {
+        currentSource.close();
+        currentSource = null;
+      }
+    };
+  } catch (err) {
+    if (summary) summary.innerHTML = `<p>Erreur réseau : ${escapeHtml(err.message || String(err))}</p>`;
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = 'Scan dedup';
+    }
+  }
+}
+
+async function applyDedup(mode) {
+  const decisions = buildDedupDecisions();
+  const res = await fetch('/dedup/apply', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ decisions, mode }),
+  });
+  const data = await res.json();
+  if (!data.ok) {
+    alert(data.error || 'Erreur application dedup');
+    return;
+  }
+  alert(`Traitement terminé: ${data.processed} fichier(s)`);
+  closeDedupModal();
+}
+
+function applyDedupQuickAllKeep() {
+  for (const group of dedupState.report?.groups || []) {
+    const set = new Set();
+    for (const entry of group.entries || []) {
+      if (entry.path_str) set.add(entry.path_str);
+    }
+    dedupState.selections[group.group_id] = set;
+  }
+  renderDedupReport();
+}
+
+function applyDedupQuickAllDup() {
+  for (const group of dedupState.report?.groups || []) {
+    dedupState.selections[group.group_id] = group.keeper?.path_str ? new Set([group.keeper.path_str]) : new Set();
+  }
+  renderDedupReport();
+}
+
+document.getElementById('start-dedup-btn')?.addEventListener('click', startDedupScan);
+document.getElementById('start-dedup-btn-modal')?.addEventListener('click', startDedupScan);
+document.querySelectorAll('[data-close-dedup]').forEach(el => el.addEventListener('click', closeDedupModal));
+
+document.getElementById('dedup-keep-all')?.addEventListener('click', applyDedupQuickAllKeep);
+document.getElementById('dedup-delete-all-dup')?.addEventListener('click', applyDedupQuickAllDup);
+
+document.getElementById('dedup-apply-quarantine')?.addEventListener('click', () => applyDedup('quarantine'));
+document.getElementById('dedup-apply-delete')?.addEventListener('click', () => {
+  if (!confirm('Confirmer la suppression définitive des éléments non séléctionnés ?')) return;
+  applyDedup('delete');
+});
+
+document.addEventListener('click', (event) => {
+  const preview = event.target.closest('.playlist-preview');
+  const openBtn = event.target.closest('.cover-button');
+  const searchCard = event.target.closest('.search-card');
+  const searchPanel = event.target.closest('.search-panel');
+  const dedupModal = event.target.closest('#dedup-modal');
+  const keepOpen = preview || openBtn || searchCard || searchPanel || dedupModal;
+
+  if (keepOpen) return;
+
+  document.querySelectorAll('.playlist-card-open').forEach(card => {
+    const id = card.id.replace('playlist-card-', '');
+    closePlaylist(id);
+  });
+
+  document.querySelectorAll('.search-card.search-card-open').forEach(card => {
+    const cardId = card.dataset.cardId;
+    closeSearchCard(cardId);
+  });
+});
+</script>
+{% endblock %}

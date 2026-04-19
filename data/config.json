@@ -1,0 +1,21 @@
+{
+  "scan_dirs": [
+    "Y:\\deezer-dl\\downloads",
+    "Z:\\lidarr\\media"
+  ],
+  "playlists_base_dir": "Y:\\deezer-dl\\downloads\\playlists",
+  "playlist_ids_file": "data\\deezer_playlist_ids.json",
+  "library_cache_file": "data\\music_library_cache.json",
+  "preview_state_file": "data\\playlist_preview_state.json",
+  "host_to_navidrome_roots": [
+    {
+      "host": "Y:\\deezer-dl\\downloads",
+      "navidrome": "/deezer-dl"
+    },
+    {
+      "host": "Z:\\lidarr\\media",
+      "navidrome": "/music"
+    }
+  ],
+  "deezer_dl_base_url": "https://dzr-dl.shiba-server.fr"
+}
