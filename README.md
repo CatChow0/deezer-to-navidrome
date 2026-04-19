@@ -2,7 +2,7 @@
 
 **A comprehensive web application that converts Deezer playlists to Navidrome-compatible `.m3u8` playlists by matching them against your local music library.**
 
-[![Docker Image Version](https://img.shields.io/badge/version-1.1.0-blue)](https://hub.docker.com/r/catchow/deezer-to-navidrome)
+[![Docker Image Version](https://img.shields.io/badge/version-1.1.1-blue)](https://hub.docker.com/r/catchow/deezer-to-navidrome)
 [![Python 3.11](https://img.shields.io/badge/python-3.11-blue)](https://www.python.org/)
 [![Flask](https://img.shields.io/badge/flask-web%20app-brightgreen)](https://flask.palletsprojects.com/)
 
@@ -11,16 +11,22 @@
 - [Overview](#overview)
 - [Features](#features)
 - [Architecture](#architecture)
+- [Cache System](#cache-system)
+- [Deduplication System](#deduplication-system)
 - [Installation](#installation)
 - [Configuration](#configuration)
 - [Usage](#usage)
-- [Advanced Features](#advanced-features)
 - [API Reference](#api-reference)
 - [Troubleshooting](#troubleshooting)
 - [Development](#development)
+- [Notes](#notes)
+- [License](#license)
+- [Contributing](#contributing)
+- [Support](#support)
 
 ---
 
+<a id ="overview"></a>
 ## 🎯 Overview
 
 Deezer-To-Navidrome is a Flask web application that bridges the gap between Deezer's streaming service and self-hosted music servers like [Navidrome](https://www.navidrome.org/). It allows you to:
@@ -45,6 +51,7 @@ If you're self-hosting music with Navidrome but also subscribe to Deezer, you wa
 
 ---
 
+<a id ="features"></a>
 ## ✨ Features
 
 ### Core Playlist Management
@@ -81,6 +88,7 @@ If you're self-hosting music with Navidrome but also subscribe to Deezer, you wa
 
 ---
 
+<a id ="architecture"></a>
 ## 🏗️ Architecture
 
 ### System Overview
@@ -177,6 +185,7 @@ For each Deezer track:
 
 ---
 
+<a id ="cache-system"></a>
 ## 📦 Cache System
 
 ### Cache Files Overview
@@ -246,7 +255,7 @@ During cache build, the app pre-computes:
 This makes matching and dedup analysis much faster.
 
 ---
-
+<a id ="deduplication-system"></a>
 ## 🔍 Deduplication System
 
 ### Dedup Workflow
@@ -353,6 +362,7 @@ Structure:
 
 ---
 
+<a id ="installation"></a>
 ## 🚀 Installation
 
 ### Prerequisites
@@ -434,6 +444,7 @@ flask run
 
 ---
 
+<a id ="configuration"></a>
 ## ⚙️ Configuration
 
 ### Environment Variables (Bootstrap Only)
@@ -544,7 +555,7 @@ After starting, open **Config** page to:
 Changes are saved to `config.json` and take effect immediately.
 
 ---
-
+<a id ="usage"></a>
 ## 📖 Usage
 
 ### Typical Workflow
@@ -639,7 +650,7 @@ Changes are saved to `config.json` and take effect immediately.
    - Clear everything
 
 ---
-
+<a id ="api-reference"></a>
 ## 🔌 API Reference
 
 ### REST Endpoints
@@ -692,7 +703,7 @@ Changes are saved to `config.json` and take effect immediately.
 | `/tasks/<id>/stream` | GET | SSE progress |
 
 ---
-
+<a id ="troubleshooting"></a>
 ## 🛠️ Troubleshooting
 
 ### "Unknown" displayed in version tag
@@ -797,7 +808,7 @@ volumes:
 - Or use Config page: Danger Zone → Clear Everything
 
 ---
-
+<a id ="development"></a>
 ## 💻 Development
 
 ### Building Locally
@@ -900,7 +911,7 @@ for pid, rows in state.items():
 ```
 
 ---
-
+<a id ="notes"></a>
 ## 📝 Notes
 
 - **Matching quality depends on tag and filename quality** - Well-tagged files match much better
@@ -911,15 +922,17 @@ for pid, rows in state.items():
 - **Large libraries benefit from incremental refresh** - Full rebuild on 50,000+ files can take time
 
 ---
-
+<a id ="license"></a>
 ## 📄 License
 
 See LICENSE file for details.
 
+<a id ="contributing"></a>
 ## 🤝 Contributing
 
 Contributions welcome! Please submit issues or pull requests.
 
+<a id ="support"></a>
 ## 🆘 Support
 
 For bugs or questions:
@@ -930,5 +943,5 @@ For bugs or questions:
 
 ---
 
-**Last Updated:** 2025
-**Version:** 1.0.45
+**Last Updated:** 2026
+**Version:** 1.1.1
