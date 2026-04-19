@@ -43,6 +43,39 @@ body {
 
 .brand {
   font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.new-version-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  background: linear-gradient(135deg, #f59e0b 0%, #f97316 100%);
+  color: white;
+  text-decoration: none;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+  box-shadow: 0 2px 8px rgba(245, 158, 11, 0.4);
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+}
+
+.new-version-badge:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(245, 158, 11, 0.6);
+  background: linear-gradient(135deg, #f97316 0%, #ea580c 100%);
+}
+
+.new-version-badge.hidden {
+  display: none;
+}
+
+.badge-content {
+  display: inline-block;
 }
 
 .page {

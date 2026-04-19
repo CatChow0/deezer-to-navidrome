@@ -9,7 +9,11 @@
 <body>
   <header class="topbar">
     <div class="brand">
-      Deezer → Navidrome<sub id="version-tag" style="font-size: 0.65rem; opacity: 0.7;"></sub>
+      Deezer → Navidrome
+      <sub id="version-tag" style="font-size: 0.65rem; opacity: 0.7;"></sub>
+      <a id="new-version-tag" class="new-version-badge hidden" href="#" target="_blank" title="Click to view release">
+        <span class="badge-content">New version available</span>
+      </a>
     </div>
     <nav>
       <a href="{{ url_for('home') }}">Home</a>
@@ -32,16 +36,51 @@
   </main>
 
   <script>
-    // Charger et afficher la version
-    fetch('/api/version')
-      .then(r => r.json())
-      .then(data => {
-        const tag = document.getElementById('version-tag');
-        if (tag && data.version) {
-          tag.textContent = 'v' + data.version;
+    // Configuration
+    const VERSION_CHECK_INTERVAL = 15 * 60 * 1000; // 15 minutes
+
+    // Display current version
+    function displayCurrentVersion() {
+      fetch('/api/version')
+        .then(r => r.json())
+        .then(data => {
+          const tag = document.getElementById('version-tag');
+          if (tag && data.version) {
+            tag.textContent = 'v' + data.version;
+          }
+        })
+        .catch(err => console.log('Version check skipped'));
+    }
+
+    // Check for latest version
+    async function checkForLatestVersion() {
+      try {
+        const response = await fetch('/api/latest-version');
+        const data = await response.json();
+
+        if (data.update_available && data.latest_version) {
+          const badge = document.getElementById('new-version-tag');
+          if (badge) {
+            badge.href = data.url || '#';
+            badge.classList.remove('hidden');
+            const contentSpan = badge.querySelector('.badge-content');
+            if (contentSpan) {
+              contentSpan.textContent = `New: v${data.latest_version}`;
+              contentSpan.title = `Update available from v${data.current_version} to v${data.latest_version}`;
+            }
+          }
         }
-      })
-      .catch(err => console.log('Version check skipped'));
+      } catch (err) {
+        console.log('Latest version check skipped:', err);
+      }
+    }
+
+    // Initialize version checking
+    displayCurrentVersion();
+    checkForLatestVersion();
+
+    // Check for updates periodically
+    setInterval(checkForLatestVersion, VERSION_CHECK_INTERVAL);
   </script>
 </body>
 </html>
