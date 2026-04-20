@@ -2,7 +2,7 @@
 
 **Convert Deezer playlists to Navidrome-compatible `.m3u8` playlists by matching them against your local music library.**
 
-[![Version](https://img.shields.io/badge/version-1.2.0-blue)](https://hub.docker.com/r/catchow/deezer-to-navidrome)
+[![Version](https://img.shields.io/badge/version-1.2.1-blue)](https://hub.docker.com/r/catchow/deezer-to-navidrome)
 [![Python 3.11](https://img.shields.io/badge/python-3.11-blue)](https://www.python.org/)
 [![Flask](https://img.shields.io/badge/flask-web%20app-brightgreen)](https://flask.palletsprojects.com/)
 [![GitHub](https://img.shields.io/badge/GitHub-source%20%26%20full%20docs-black)](https://github.com/CatChow0/deezer-to-navidrome)

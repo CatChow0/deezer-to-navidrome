@@ -1,9 +1,9 @@
 {% extends 'base.html' %}
 {% block content %}
+<h1 class="page-title">Saved Playlists</h1>
+
 <section class="section-head section-head-search">
   <div class="section-head-left">
-    <h1>Saved Playlists</h1>
-
     <form method="post" action="{{ url_for('playlists.add_playlist') }}" class="inline-form">
       <input type="text" name="playlist_input" placeholder="Deezer ID or URL" required>
       <button type="submit">Add playlist</button>
