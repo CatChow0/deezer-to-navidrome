@@ -141,7 +141,8 @@ body {
 
 input,
 textarea,
-button {
+button,
+select {
   font: inherit;
   border-radius: 10px;
   border: 1px solid var(--border);
@@ -256,6 +257,22 @@ button.search-type-btn.active {
 .config-form label {
   display: grid;
   gap: 8px;
+}
+
+.config-form select {
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%239ca3af' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  padding-right: 36px;
+  cursor: pointer;
+}
+
+.config-form small {
+  color: var(--muted);
+  font-size: 0.8rem;
+  line-height: 1.4;
 }
 
 .mapping-block {

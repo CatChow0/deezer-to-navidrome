@@ -2,9 +2,16 @@ version: "3.8"
 
 services:
   deezer-to-navidrome:
-    image: catchow/deezer-to-navidrome:1.0.43
+    image: catchow/deezer-to-navidrome:latest
     container_name: deezer-to-navidrome
     restart: unless-stopped
+
+    # Allow the container to use all available CPU cores.
+    # Without this, Docker may throttle the process and prevent
+    # the library scanner from running its per-HDD thread pools
+    # at full speed.
+    cpus: "4.0"          # set to your actual core count
+    cpu_shares: 1024     # default share weight (relative priority)
 
     ports:
       - "8080:8080"
@@ -25,6 +32,17 @@ services:
 
       # Optional: Deezer Downloader service URL
       DEEZER_DL_BASE_URL: "https://deezer-downloader.example.com"
+
+      # Threads per source directory during library scan.
+      # Each SCAN_DIR gets its own isolated thread pool of this size.
+      #   2 (default) - spinning HDD
+      #   4           - fast HDD or RAID array
+      #   8           - SSD or NVMe
+      LIBRARY_WORKERS_PER_DIR: "2"
+
+      # Parallel threads for playlist matching. rapidfuzz releases the GIL so
+      # threads run on separate cores. Set to your Docker CPU count. Default: 4.
+      MATCH_WORKERS: "4"
 
     volumes:
       # Persistent data (config, cache, covers)

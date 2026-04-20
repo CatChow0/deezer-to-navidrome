@@ -2,7 +2,7 @@
 
 **A comprehensive web application that converts Deezer playlists to Navidrome-compatible `.m3u8` playlists by matching them against your local music library.**
 
-[![Docker Image Version](https://img.shields.io/badge/version-1.1.7-blue)](https://hub.docker.com/r/catchow/deezer-to-navidrome)
+[![Docker Image Version](https://img.shields.io/badge/version-1.2.0-blue)](https://hub.docker.com/r/catchow/deezer-to-navidrome)
 [![Python 3.11](https://img.shields.io/badge/python-3.11-blue)](https://www.python.org/)
 [![Flask](https://img.shields.io/badge/flask-web%20app-brightgreen)](https://flask.palletsprojects.com/)
 
@@ -170,18 +170,21 @@ For each Deezer track:
 ├─ Album Matching (8% weight)
 │  └─ Compare against: tag_album, album directory name
 │
-└─ Duration Matching (5% weight)
-   └─ Check: ±2 seconds tolerance (high score)
-              ±5 seconds (medium score)
-              ±10 seconds (low score)
-              >20 seconds (reject candidate)
+├─ Duration Matching (up to +0.10 / -0.08)
+│  └─ ±2s: +0.10 | ±5s: +0.07 | ±10s: +0.04 | >20s: -0.08
+│
+└─ Version Flag Matching (up to +0.08 / -0.18)
+   └─ Exact flag match (both remix, both live…): +0.08
+      Only remaster differs: -0.03
+      Real version conflict (remix vs original, live vs studio…): -0.18
 ```
 
 **Matching Algorithm:**
-- Uses Python's `SequenceMatcher.ratio()` for string similarity (0.0 to 1.0)
+- Uses `rapidfuzz` (C++ implementation, GIL-releasing) for fast string similarity
+- Inverted title-word index narrows candidates from the full library to a small set before scoring
 - Thresholds: Title ≥ 0.72, Artist ≥ 0.45 (if known)
-- Returns best candidate above thresholds
-- Falls back to "missing" if no match found
+- Returns best candidate above thresholds, falls back to "missing"
+- Parallel matching via `ThreadPoolExecutor` — threads run on separate cores thanks to rapidfuzz releasing the GIL
 
 ---
 
@@ -314,24 +317,35 @@ score =
 
 ### Version Flag Detection
 
-The app recognizes these variants:
+The app detects version flags from **raw** tag values (including content inside parentheses/brackets) for both library files and Deezer tracks. Flags are used both for dedup grouping and for match scoring — a version conflict applies a `-0.18` penalty so the correct variant is preferred.
 
-| Type | Keywords |
-|------|----------|
-| Remix | remix, rmx, mix |
-| Live | live |
-| Instrumental | instrumental, instr |
-| Remaster | remaster, remastered |
-| Acoustic | acoustic |
-| Unplugged | unplugged |
-| Radio Edit | radio edit |
-| Extended | extended, extended mix |
-| Demo | demo |
-| Bonus | bonus, bonus track |
-| Alternate | alternate, alt version, alternative |
-| A Cappella | acapella, a cappella |
-| Session | session, garage session, studio session |
-| Original | original, original version, original mix |
+| Flag | Detected keywords |
+|------|------------------|
+| `remix` | remix, rmx |
+| `live` | live |
+| `instrumental` | instrumental, instr |
+| `remaster` | remaster, remastered |
+| `radio_edit` | radio edit, radio mix, radio version |
+| `extended` | extended, extended mix, extended version |
+| `edit` | club edit, single edit, album edit, special edit |
+| `demo` | demo |
+| `session` | session, garage session, studio session |
+| `original` | original, original version, original mix |
+| `bonus` | bonus, bonus track |
+| `alt` | alternate, alt version, alternative |
+| `acapella` | acapella, a cappella |
+| `mono` | mono |
+| `stereo` | stereo |
+| `explicit` | explicit |
+| `clean` | clean version, clean edit |
+
+**Examples of correctly detected flags:**
+- `"Feather (Live Version)"` → `["live"]`
+- `"Blue (Da Ba Dee) [Radio Edit]"` → `["radio_edit"]`
+- `"Song - Garage Session"` → `["session"]`
+- `"Track (Remastered 2021)"` → `["remaster"]`
+
+> **Note:** `remaster` is treated as a minor conflict during matching (`-0.03`) since remastered and original versions are generally interchangeable. All other version conflicts apply a full `-0.18` penalty.
 
 ### Persistent Dedup Choices
 
@@ -381,9 +395,16 @@ version: "3.8"
 
 services:
   deezer-to-navidrome:
-    image: catchow/deezer-to-navidrome:1.0.43
+    image: catchow/deezer-to-navidrome:latest
     container_name: deezer-to-navidrome
     restart: unless-stopped
+
+    # Allow the container to use all available CPU cores.
+    # Without this, Docker may throttle the process and prevent
+    # the library scanner from running its per-HDD thread pools
+    # at full speed.
+    cpus: "4.0"          # set to your actual core count
+    cpu_shares: 1024     # default share weight (relative priority)
 
     ports:
       - "8080:8080"
@@ -404,6 +425,15 @@ services:
 
       # Optional: Deezer Downloader service URL
       DEEZER_DL_BASE_URL: "https://deezer-downloader.example.com"
+
+      # Threads per source directory during library scan.
+      # Each SCAN_DIR gets its own isolated thread pool of this size.
+      # Recommended: 2 (HDD), 4 (fast HDD/RAID), 8 (SSD/NVMe)
+      LIBRARY_WORKERS_PER_DIR: "2"
+
+      # Parallel threads for playlist matching (rapidfuzz releases the GIL,
+      # so threads run on separate cores). Set to your Docker CPU count.
+      MATCH_WORKERS: "4"
 
     volumes:
       # Persistent data (config, cache, covers)
@@ -530,6 +560,40 @@ DATA_DIR=/data
 
 **Must be persistent volume** to preserve settings and choices across container restarts.
 
+#### `LIBRARY_WORKERS_PER_DIR`
+
+Number of worker threads per source directory during library cache builds. Each `SCAN_DIR` gets its own isolated thread pool so multiple HDDs are processed truly in parallel.
+
+```env
+LIBRARY_WORKERS_PER_DIR=2
+```
+
+| Value | Recommended for |
+|-------|----------------|
+| `2` | Spinning HDD (default) — sequential I/O, more threads cause random seeks |
+| `4` | Fast HDD or RAID array |
+| `8` | SSD or NVMe |
+
+#### `MATCH_WORKERS`
+
+Number of parallel threads used when matching playlist tracks against the library. Uses `rapidfuzz` (C++ implementation that releases the Python GIL), so threads run on separate CPU cores and give genuine parallelism.
+
+```env
+MATCH_WORKERS=4
+```
+
+| Value | Recommended for |
+|-------|----------------|
+| `1` | Single-threaded (debug / minimal CPU) |
+| `4` | Default — good for most setups |
+| `8` | Large playlists (200+ tracks) on fast hardware |
+
+Set this to your Docker CPU count (`cpus` value) for best results.
+
+> **Multi-core tip:** Set `cpus` in your `docker-compose.yml` to your actual CPU core count so Docker doesn't throttle the thread pools. See the Quick Start example above.
+
+> Both `LIBRARY_WORKERS_PER_DIR` and `MATCH_WORKERS` can also be changed at any time from the **Config** page without restarting the container.
+
 #### `SECRET_KEY`
 
 Flask secret key for session signing.
@@ -546,13 +610,13 @@ python -c "import secrets; print(secrets.token_urlsafe(32))"
 ### Web Configuration UI
 
 After starting, open **Config** page to:
-- Edit scan directories
-- Modify playlist output directory
-- Add/remove path mappings
+- Edit scan directories, playlist output directory, path mappings
 - Change Deezer Downloader URL
-- Clean up cache, playlists, or covers
+- Tune **Library scan workers per directory** (`LIBRARY_WORKERS_PER_DIR`)
+- Tune **Playlist matching workers** (`MATCH_WORKERS`)
+- Clean up cache, playlists, dedup reports, or dedup choices
 
-Changes are saved to `config.json` and take effect immediately.
+Changes are saved to `config.json` and take effect immediately (no restart needed).
 
 ---
 <a id ="usage"></a>
@@ -601,19 +665,28 @@ Changes are saved to `config.json` and take effect immediately.
 
 #### Step 6: Refresh Cache (After Downloads)
 
-1. Go to home, click **Refresh cache incremental**
+1. Go to home, click **Incremental cache refresh**
 2. Wait for completion
 3. Re-open playlist preview
-4. Click **Convert** to re-analyze with new files
+4. Click **Quick Scan** to pick up newly downloaded tracks
 
 #### Step 7: Convert to M3U8
 
-1. In playlist preview, click **Convert**
-2. App generates M3U8 file
-3. Creates `report.json` with statistics
-4. Creates `missing.txt` if applicable
-5. Status updates in preview
-6. Navidrome auto-imports M3U8
+Two scan modes are available in the playlist preview header:
+
+| Button | Behaviour |
+|--------|-----------|
+| **Quick Scan** | Reuses cached matches for already-matched tracks, only re-matches missing/unchecked ones. Fast for playlists that are mostly matched. |
+| **Full Scan** | Re-matches every track from scratch against the full library. Use after a library restructure or when match quality needs re-evaluation. |
+
+Both modes:
+1. Generate the M3U8 file
+2. Create `report.json` with statistics
+3. Create `missing.txt` for unmatched tracks
+4. Update the preview state
+5. Navidrome auto-imports M3U8
+
+> The first Full Scan on a large playlist builds the cache used by all future Quick Scans.
 
 ### Advanced Usage
 
@@ -647,6 +720,8 @@ Changes are saved to `config.json` and take effect immediately.
    - Clear library cache
    - Clear playlist previews
    - Clear all playlists
+   - Clear dedup report
+   - Clear dedup choices (⚠ permanent — all saved keeper decisions are lost)
    - Clear everything
 
 ---
@@ -663,9 +738,9 @@ Changes are saved to `config.json` and take effect immediately.
 | `/playlist/add` | POST | Add Deezer playlist |
 | `/playlist/<id>/delete` | POST | Remove playlist |
 | `/playlist/<id>/preview` | GET | Get match state |
-| `/playlist/<id>/convert` | POST | Convert to M3U8 |
-| `/playlist/<id>/convert/start` | POST | Async convert |
-| `/playlist/<id>/download-missing/start` | POST | Download missing |
+| `/playlist/<id>/convert` | POST | Convert to M3U8 (blocking) |
+| `/playlist/<id>/convert/start` | POST | Async convert — body `{"mode":"quick"\|"full"}` |
+| `/playlist/<id>/download-missing/start` | POST | Download missing tracks |
 
 #### Cache
 
@@ -697,10 +772,16 @@ Changes are saved to `config.json` and take effect immediately.
 | Endpoint | Method | Purpose |
 |----------|--------|---------|
 | `/config` | GET/POST | View/edit config |
-| `/admin/clear/*` | POST | Delete caches |
+| `/admin/clear/library-cache` | POST | Clear library cache |
+| `/admin/clear/preview-state` | POST | Clear playlist preview state |
+| `/admin/clear/playlists` | POST | Clear playlists + covers |
+| `/admin/clear/dedup-report` | POST | Clear dedup report |
+| `/admin/clear/dedup-choices` | POST | Clear saved dedup decisions |
+| `/admin/clear/all` | POST | Clear everything |
 | `/health` | GET | Health check |
-| `/api/version` | GET | Get app version |
-| `/tasks/<id>/stream` | GET | SSE progress |
+| `/api/version` | GET | Current app version |
+| `/api/latest-version` | GET | Latest available version |
+| `/tasks/<id>/stream` | GET | SSE progress stream |
 
 ---
 <a id ="troubleshooting"></a>
@@ -759,11 +840,30 @@ curl https://deezer-downloader.example.com/health
 1. Very large library (100,000+ files)
 2. Slow storage (network mount)
 3. Many files without tags
+4. Docker CPU throttling (container limited to 1 core)
 
 **Solutions:**
-- Use incremental refresh after initial build
-- Add only frequently-changed directories
+- Set `cpus` in `docker-compose.yml` to your actual core count (e.g. `cpus: "4.0"`)
+- Tune `LIBRARY_WORKERS_PER_DIR` to match your storage: `2` for HDD, `4` for RAID, `8` for SSD
+- Each `SCAN_DIR` is scanned in its own thread pool — multiple HDDs are processed in parallel automatically
+- Use **Incremental cache refresh** after adding new files instead of a full rebuild
 - Ensure good tag coverage (helps matching)
+
+### Playlist conversion is slow
+
+**Issue:** Matching a playlist takes a long time
+**Causes:**
+1. Library cache not built yet (first run)
+2. Docker CPU throttling (`cpus` not set)
+3. `MATCH_WORKERS` set to 1
+
+**Solutions:**
+- Build the library cache first (full rebuild) — matching requires the cache
+- Set `cpus` in `docker-compose.yml` to your actual core count
+- Increase `MATCH_WORKERS` to match your CPU count (Config page or env var)
+- Use **Quick Scan** after an initial Full Scan: already-matched tracks are reused from cache, only unmatched/new ones are re-matched
+
+> The matching engine uses an inverted title index and `rapidfuzz` (C++ with GIL release), so a Full Scan of a 100-track playlist against a 50,000-file library typically completes in under 5 seconds with default settings.
 
 ### No matches found
 
@@ -849,44 +949,52 @@ flask run  # Runs on http://localhost:5000
 ### Code Structure
 
 ```
-app.py (2650+ lines)
-├── Initialization & Config
-├── Library Scanning & Caching
-├── Matching Engine
-├── M3U8 Generation
-├── Deduplication System
-├── Task Management & SSE
-├── Flask Routes
-└── Helper Functions
+app.py                  # Flask init + blueprint registration only
+
+core/
+├── config.py           # Paths, task management, config load/save
+├── normalization.py    # Text normalization, quality scoring, dedup helpers
+├── utils.py            # Audio extensions, tag reading, file signatures
+├── library.py          # Library scanning, cache build (threaded, per-HDD)
+├── dedup.py            # Deduplication analysis and apply logic
+├── deezer.py           # Deezer API, track matching, M3U8 generation
+└── version.py          # Version checking (current + latest on Docker Hub)
+
+routes/
+├── playlists.py        # / and /playlist/* endpoints
+├── cache.py            # /cache/* endpoints
+├── dedup.py            # /dedup/* endpoints
+├── search.py           # /search/* endpoints
+└── system.py           # /config, /health, /api/*, /tasks/*, /admin/*
 
 templates/
-├── base.html      # Layout & version tag
-├── home.html      # Playlist list & search
-└── config.html    # Settings & cleanup
+├── base.html           # Layout & version tag
+├── home.html           # Playlist list & search
+└── config.html         # Settings & cleanup
 
 static/
-├── style.css      # Responsive styling
+├── style.css           # Responsive styling
 └── (JavaScript in templates)
 ```
 
 ### Key Functions
 
-| Function | Purpose |
-|----------|---------|
-| `scan_audio_files()` | Find all audio files recursively |
-| `build_library_entry()` | Extract tags and metadata |
-| `score_candidate()` | Calculate match score |
-| `find_best_match()` | Find best matching file |
-| `convert_playlist()` | Generate M3U8 |
-| `build_dedup_groups()` | Identify duplicates |
-| `apply_dedup_decisions()` | Quarantine/delete duplicates |
+| Function | Module | Purpose |
+|----------|--------|---------|
+| `scan_audio_files()` | `core/library.py` | Find all audio files (parallel, per-HDD) |
+| `build_library_entry()` | `core/library.py` | Extract tags and metadata |
+| `score_candidate()` | `core/deezer.py` | Calculate match score |
+| `find_best_match()` | `core/deezer.py` | Find best matching file |
+| `convert_playlist()` | `core/deezer.py` | Generate M3U8 |
+| `build_dedup_groups()` | `core/dedup.py` | Identify duplicates |
+| `apply_dedup_decisions()` | `core/dedup.py` | Quarantine/delete duplicates |
 
 ### Adding Features
 
-1. **New route:** Add `@app.route()` in `app.py`
+1. **New route:** Create or add to the appropriate file in `routes/`
 2. **New template:** Create `.html` in `templates/`
-3. **New function:** Add to appropriate section in `app.py`
-4. **Cache changes:** Update cache JSON structure + loader/saver
+3. **New core logic:** Add to the relevant module in `core/`
+4. **Cache changes:** Update cache JSON structure + loader/saver in `core/library.py`
 5. **UI changes:** Update `home.html` or `config.html`
 
 ### Testing
@@ -944,4 +1052,4 @@ For bugs or questions:
 ---
 
 **Last Updated:** 2026
-**Version:** 1.1.7
+**Version:** 1.2.0

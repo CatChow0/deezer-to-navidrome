@@ -2,15 +2,15 @@
 {% block content %}
 <section class="section-head section-head-search">
   <div class="section-head-left">
-    <h1>Playlists enregistrées</h1>
+    <h1>Saved Playlists</h1>
 
-    <form method="post" action="{{ url_for('add_playlist') }}" class="inline-form">
-      <input type="text" name="playlist_input" placeholder="ID ou URL Deezer" required>
-      <button type="submit">Ajouter une playlist</button>
+    <form method="post" action="{{ url_for('playlists.add_playlist') }}" class="inline-form">
+      <input type="text" name="playlist_input" placeholder="Deezer ID or URL" required>
+      <button type="submit">Add playlist</button>
     </form>
 
     <button type="button" onclick="startCacheRefreshIncremental()">
-      Refresh cache incrémental
+      Incremental cache refresh
     </button>
     <button id="start-dedup-btn" type="button">Scan dedup</button>
   </div>
@@ -21,17 +21,17 @@
         type="text"
         id="deezer-search-input"
         name="q"
-        placeholder="Rechercher une musique, un album ou un artiste"
+        placeholder="Search for a track, album or artist"
         autocomplete="off"
         required
       >
-      <button type="submit">Rechercher</button>
+      <button type="submit">Search</button>
     </form>
 
     <div class="search-toolbar search-toolbar-inline">
-      <button type="button" class="search-type-btn active" data-type="track">Musiques</button>
+      <button type="button" class="search-type-btn active" data-type="track">Tracks</button>
       <button type="button" class="search-type-btn" data-type="album">Albums</button>
-      <button type="button" class="search-type-btn" data-type="artist">Artistes</button>
+      <button type="button" class="search-type-btn" data-type="artist">Artists</button>
     </div>
   </div>
 </section>
@@ -39,7 +39,7 @@
 <section class="search-shell">
   <details class="search-panel" open>
     <summary class="search-panel-summary">
-      Recherche Deezer
+      Deezer Search
     </summary>
 
     <div class="search-panel-body">
@@ -54,7 +54,7 @@
   <article class="playlist-card" id="playlist-card-{{ playlist.id }}">
     <button class="cover-button" type="button" onclick="openPlaylist('{{ playlist.id }}')">
       {% if playlist.cover_cached %}
-        <img src="{{ url_for('serve_cover', filename=playlist.cover_cached) }}" alt="Cover {{ playlist.title }}">
+        <img src="{{ url_for('system.serve_cover', filename=playlist.cover_cached) }}" alt="Cover {{ playlist.title }}">
       {% else %}
         <div class="cover-placeholder">No cover</div>
       {% endif %}
@@ -69,7 +69,7 @@
       <div class="playlist-open-header">
         <div class="playlist-open-left">
           {% if playlist.cover_cached %}
-            <img class="playlist-open-cover" src="{{ url_for('serve_cover', filename=playlist.cover_cached) }}" alt="Cover {{ playlist.title }}">
+            <img class="playlist-open-cover" src="{{ url_for('system.serve_cover', filename=playlist.cover_cached) }}" alt="Cover {{ playlist.title }}">
           {% else %}
             <div class="playlist-open-cover cover-placeholder">No cover</div>
           {% endif %}
@@ -78,15 +78,16 @@
         <div class="playlist-open-center">
           <h3>{{ playlist.title }}</h3>
           <p>ID {{ playlist.id }}</p>
-          <p id="playlist-stats-{{ playlist.id }}" class="playlist-stats">Chargement…</p>
+          <p id="playlist-stats-{{ playlist.id }}" class="playlist-stats">Loading…</p>
         </div>
 
         <div class="playlist-open-right">
-          <button type="button" onclick="startConversion('{{ playlist.id }}')">Convert</button>
+          <button type="button" onclick="startConversion('{{ playlist.id }}', 'quick')" title="Re-match only unmatched/unchecked tracks, reuse cached matches">Quick Scan</button>
+          <button type="button" class="secondary" onclick="startConversion('{{ playlist.id }}', 'full')" title="Re-match every track from scratch">Full Scan</button>
 
           <form method="post"
-                action="{{ url_for('delete_playlist', playlist_id=playlist.id) }}"
-                onsubmit="return confirm('Supprimer cette playlist ?');">
+                action="{{ url_for('playlists.delete_playlist', playlist_id=playlist.id) }}"
+                onsubmit="return confirm('Delete this playlist?');">
             <button type="submit" class="danger">Delete</button>
           </form>
 
@@ -94,7 +95,7 @@
             Download Missing
           </button>
 
-          <button type="button" class="secondary" onclick="closePlaylist('{{ playlist.id }}')">Fermer</button>
+          <button type="button" class="secondary" onclick="closePlaylist('{{ playlist.id }}')">Close</button>
         </div>
       </div>
 
@@ -105,13 +106,13 @@
               <th>Convert</th>
               <th>Download</th>
               <th>Number</th>
-              <th>Name from deezer playlist</th>
+              <th>Name from Deezer playlist</th>
               <th>Name from source matching</th>
             </tr>
           </thead>
           <tbody id="playlist-table-body-{{ playlist.id }}">
             <tr>
-              <td colspan="5" class="loading-cell">Chargement de la playlist…</td>
+              <td colspan="5" class="loading-cell">Loading playlist…</td>
             </tr>
           </tbody>
         </table>
@@ -119,14 +120,14 @@
     </div>
   </article>
   {% else %}
-  <p>Aucune playlist enregistrée.</p>
+  <p>No saved playlists.</p>
   {% endfor %}
 </section>
 
 <div id="task-modal" class="task-modal hidden">
   <div class="task-box">
     <div class="task-header">
-      <h3>Conversion en cours</h3>
+      <h3>Task in progress</h3>
       <button type="button" onclick="closeTaskModal()">×</button>
     </div>
 
@@ -134,7 +135,7 @@
       <div id="task-progress-bar" class="task-progress-bar"></div>
     </div>
 
-    <div id="task-stage" class="task-stage">Initialisation…</div>
+    <div id="task-stage" class="task-stage">Initializing…</div>
     <pre id="task-log" class="task-log"></pre>
   </div>
 </div>
@@ -145,14 +146,14 @@
   <div class="modal-panel" role="document">
     <div class="modal-header">
       <div>
-        <h2 id="dedup-modal-title">Analyse des doublons</h2>
+        <h2 id="dedup-modal-title">Duplicate Analysis</h2>
         <p class="dedup-summary" id="dedup-summary">
-          Aucun rapport chargé.
+          No report loaded.
         </p>
       </div>
 
-      <button type="button" class="secondary" data-close-dedup aria-label="Fermer le modal dedup">
-        Fermer
+      <button type="button" class="secondary" data-close-dedup aria-label="Close dedup modal">
+        Close
       </button>
     </div>
 
@@ -163,21 +164,21 @@
         </button>
 
         <button type="button" class="secondary" id="dedup-keep-all">
-          Tout garder
+          Keep all
         </button>
 
         <button type="button" class="secondary" id="dedup-delete-all-dup">
-          Garder seulement les keepers
+          Keep keepers only
         </button>
       </div>
 
       <div class="button-row">
         <button type="button" class="secondary" id="dedup-apply-quarantine">
-          Quarantaine
+          Quarantine unchecked
         </button>
 
         <button type="button" class="danger" id="dedup-apply-delete">
-          Supprimer définitivement
+          Delete unchecked
         </button>
       </div>
     </div>
@@ -211,12 +212,12 @@ async function startCacheRefreshIncremental() {
   openTaskModal();
 
   const titleEl = document.querySelector('#task-modal .task-header h3');
-  if (titleEl) titleEl.textContent = 'Refresh cache incrémental';
+  if (titleEl) titleEl.textContent = 'Incremental cache refresh';
 
   const stageEl = document.getElementById('task-stage');
   const logEl = document.getElementById('task-log');
   const barEl = document.getElementById('task-progress-bar');
-  if (stageEl) stageEl.textContent = 'Initialisation…';
+  if (stageEl) stageEl.textContent = 'Initializing…';
   if (logEl) logEl.textContent = '';
   if (barEl) barEl.style.width = '0%';
 
@@ -228,12 +229,12 @@ async function startCacheRefreshIncremental() {
     const data = await response.json();
 
     if (!response.ok) {
-      if (logEl) logEl.textContent = data.error || 'Erreur de lancement';
+      if (logEl) logEl.textContent = data.error || 'Launch error';
       return;
     }
 
     if (!data.task_id) {
-      if (logEl) logEl.textContent = 'task_id manquant dans la réponse serveur';
+      if (logEl) logEl.textContent = 'Missing task_id in server response';
       return;
     }
 
@@ -253,7 +254,7 @@ async function startCacheRefreshIncremental() {
       }
 
       if (payload.stage && stageEl) {
-        stageEl.textContent = `Étape : ${payload.stage}`;
+        stageEl.textContent = `Step: ${payload.stage}`;
       }
 
       if (typeof payload.progress === 'number' && barEl) {
@@ -263,7 +264,7 @@ async function startCacheRefreshIncremental() {
       if (payload.done) {
         currentSource.close();
         currentSource = null;
-        if (stageEl) stageEl.textContent = payload.error ? 'Erreur' : 'Terminé';
+        if (stageEl) stageEl.textContent = payload.error ? 'Error' : 'Done';
         setTimeout(() => {
           closeTaskModal();
         }, 1200);
@@ -271,7 +272,7 @@ async function startCacheRefreshIncremental() {
     };
 
     currentSource.onerror = function() {
-      if (logEl) logEl.textContent += '\nConnexion au flux interrompue';
+      if (logEl) logEl.textContent += '\nStream connection interrupted';
       if (currentSource) {
         currentSource.close();
         currentSource = null;
@@ -279,7 +280,7 @@ async function startCacheRefreshIncremental() {
     };
   } catch (err) {
     const logEl = document.getElementById('task-log');
-    if (logEl) logEl.textContent = `Erreur réseau : ${err}`;
+    if (logEl) logEl.textContent = `Network error: ${err}`;
   }
 }
 
@@ -300,7 +301,7 @@ document.getElementById("deezer-search-form").addEventListener("submit", async (
 
   if (!q) return;
 
-  status.textContent = "Recherche en cours…";
+  status.textContent = "Searching…";
   results.innerHTML = "";
   currentSearchResults = [];
   openedSearchCards.clear();
@@ -310,16 +311,16 @@ document.getElementById("deezer-search-form").addEventListener("submit", async (
     const data = await resp.json();
 
     if (!data.ok) {
-      status.textContent = data.error || "Erreur de recherche";
+      status.textContent = data.error || "Search error";
       return;
     }
 
     currentSearchResults = data.results || [];
-    status.textContent = `${currentSearchResults.length} résultat(s)`;
+    status.textContent = `${currentSearchResults.length} result(s)`;
 
     results.innerHTML = currentSearchResults.map(item => buildSearchCard(item)).join("");
   } catch (err) {
-    status.textContent = "Erreur réseau";
+    status.textContent = "Network error";
   }
 });
 
@@ -395,7 +396,7 @@ function buildSearchCard(item) {
             data-download-type="${escapeHtml(item.download_type || type)}"
             data-download-id="${escapeHtml(item.download_id || item.id)}"
           >
-            Télécharger
+            Download
           </button>
 
           ${expandable ? `
@@ -405,7 +406,7 @@ function buildSearchCard(item) {
               data-result-type="${escapeHtml(type)}"
               data-result-id="${escapeHtml(item.id)}"
             >
-              Ouvrir
+              Open
             </button>
           ` : ""}
         </div>
@@ -414,7 +415,7 @@ function buildSearchCard(item) {
       ${expandable ? `
         <div class="search-card-preview hidden" id="${escapeHtml(cardId)}-preview">
           <div class="search-card-preview-body" id="${escapeHtml(cardId)}-preview-body">
-            <div class="loading-cell">Chargement…</div>
+            <div class="loading-cell">Loading…</div>
           </div>
         </div>
       ` : ""}
@@ -427,7 +428,7 @@ async function handleSearchDownload(btn) {
   const musicId = btn.dataset.downloadId;
 
   btn.disabled = true;
-  btn.textContent = "Lancement…";
+  btn.textContent = "Starting…";
 
   try {
     const resp = await fetch("/deezer-dl/download/start", {
@@ -442,17 +443,17 @@ async function handleSearchDownload(btn) {
     const data = await resp.json();
 
     if (!resp.ok) {
-      btn.textContent = "Erreur";
+      btn.textContent = "Error";
       btn.disabled = false;
       return;
     }
 
-    btn.textContent = "Lancé";
+    btn.textContent = "Started";
     if (data.task_id) {
       pollDownloadTask(data.task_id, btn, musicId);
     }
   } catch (err) {
-    btn.textContent = "Erreur";
+    btn.textContent = "Error";
     btn.disabled = false;
   }
 }
@@ -472,21 +473,21 @@ async function openSearchAlbumCard(albumId) {
 
   preview.classList.remove("hidden");
   card.classList.add("search-card-open");
-  body.innerHTML = `<div class="loading-cell">Chargement de l'album…</div>`;
+  body.innerHTML = `<div class="loading-cell">Loading album…</div>`;
 
   try {
     const resp = await fetch(`/search/album/${encodeURIComponent(albumId)}`);
     const data = await resp.json();
 
     if (!data.ok) {
-      body.innerHTML = `<div class="loading-cell">Erreur : ${escapeHtml(data.error || "Erreur de chargement")}</div>`;
+      body.innerHTML = `<div class="loading-cell">Error: ${escapeHtml(data.error || "Load error")}</div>`;
       return;
     }
 
     body.innerHTML = renderAlbumInlineDetail(data.album, cardId);
     openedSearchCards.add(cardId);
   } catch (err) {
-    body.innerHTML = `<div class="loading-cell">Erreur réseau</div>`;
+    body.innerHTML = `<div class="loading-cell">Network error</div>`;
   }
 }
 
@@ -505,21 +506,21 @@ async function openSearchArtistCard(artistId) {
 
   preview.classList.remove("hidden");
   card.classList.add("search-card-open");
-  body.innerHTML = `<div class="loading-cell">Chargement de l'artiste…</div>`;
+  body.innerHTML = `<div class="loading-cell">Loading artist…</div>`;
 
   try {
     const resp = await fetch(`/search/artist/${encodeURIComponent(artistId)}`);
     const data = await resp.json();
 
     if (!data.ok) {
-      body.innerHTML = `<div class="loading-cell">Erreur : ${escapeHtml(data.error || "Erreur de chargement")}</div>`;
+      body.innerHTML = `<div class="loading-cell">Error: ${escapeHtml(data.error || "Load error")}</div>`;
       return;
     }
 
     body.innerHTML = renderArtistInlineDetail(data.artist, cardId);
     openedSearchCards.add(cardId);
   } catch (err) {
-    body.innerHTML = `<div class="loading-cell">Erreur réseau</div>`;
+    body.innerHTML = `<div class="loading-cell">Network error</div>`;
   }
 }
 
@@ -541,7 +542,7 @@ function renderAlbumInlineDetail(album, cardId) {
         <div class="search-inline-meta">
           <h4>${escapeHtml(album.title || "")}</h4>
           <p>${escapeHtml(album.artist || "")}</p>
-          <p>${tracks.length} morceau(x)</p>
+          <p>${tracks.length} track(s)</p>
         </div>
 
         <div class="search-inline-actions">
@@ -551,7 +552,7 @@ function renderAlbumInlineDetail(album, cardId) {
             data-download-type="album"
             data-download-id="${escapeHtml(album.id)}"
           >
-            Télécharger l'album
+            Download album
           </button>
 
           <button
@@ -559,7 +560,7 @@ function renderAlbumInlineDetail(album, cardId) {
             class="secondary search-card-close-btn"
             data-card-id="${escapeHtml(cardId)}"
           >
-            Fermer
+            Close
           </button>
         </div>
       </div>
@@ -569,8 +570,8 @@ function renderAlbumInlineDetail(album, cardId) {
           <thead>
             <tr>
               <th>#</th>
-              <th>Titre</th>
-              <th>Artiste</th>
+              <th>Title</th>
+              <th>Artist</th>
               <th>Action</th>
             </tr>
           </thead>
@@ -587,7 +588,7 @@ function renderAlbumInlineDetail(album, cardId) {
                     data-download-type="track"
                     data-download-id="${escapeHtml(track.track_id)}"
                   >
-                    Télécharger
+                    Download
                   </button>
                 </td>
               </tr>
@@ -616,7 +617,7 @@ function renderArtistInlineDetail(artist, cardId) {
             class="secondary search-card-close-btn"
             data-card-id="${escapeHtml(cardId)}"
           >
-            Fermer
+            Close
           </button>
         </div>
       </div>
@@ -663,14 +664,14 @@ async function openArtistAlbumInline(albumId, albumsContainer) {
   }
 
   preview.classList.remove("hidden");
-  preview.innerHTML = `<div class="loading-cell">Chargement de l'album…</div>`;
+  preview.innerHTML = `<div class="loading-cell">Loading album…</div>`;
 
   try {
     const resp = await fetch(`/search/album/${encodeURIComponent(albumId)}`);
     const data = await resp.json();
 
     if (!data.ok) {
-      preview.innerHTML = `<div class="loading-cell">Erreur : ${escapeHtml(data.error || "Erreur de chargement")}</div>`;
+      preview.innerHTML = `<div class="loading-cell">Error: ${escapeHtml(data.error || "Load error")}</div>`;
       return;
     }
 
@@ -683,7 +684,7 @@ async function openArtistAlbumInline(albumId, albumsContainer) {
           <div class="search-inline-meta">
             <h4>${escapeHtml(album.title || "")}</h4>
             <p>${escapeHtml(album.artist || "")}</p>
-            <p>${tracks.length} morceau(x)</p>
+            <p>${tracks.length} track(s)</p>
           </div>
 
           <div class="search-inline-actions">
@@ -693,7 +694,7 @@ async function openArtistAlbumInline(albumId, albumsContainer) {
               data-download-type="album"
               data-download-id="${escapeHtml(album.id)}"
             >
-              Télécharger l'album
+              Download album
             </button>
           </div>
         </div>
@@ -703,8 +704,8 @@ async function openArtistAlbumInline(albumId, albumsContainer) {
             <thead>
               <tr>
                 <th>#</th>
-                <th>Titre</th>
-                <th>Artiste</th>
+                <th>Title</th>
+                <th>Artist</th>
                 <th>Action</th>
               </tr>
             </thead>
@@ -721,7 +722,7 @@ async function openArtistAlbumInline(albumId, albumsContainer) {
                       data-download-type="track"
                       data-download-id="${escapeHtml(track.track_id)}"
                     >
-                      Télécharger
+                      Download
                     </button>
                   </td>
                 </tr>
@@ -732,14 +733,14 @@ async function openArtistAlbumInline(albumId, albumsContainer) {
       </div>
     `;
   } catch (err) {
-    preview.innerHTML = `<div class="loading-cell">Erreur réseau</div>`;
+    preview.innerHTML = `<div class="loading-cell">Network error</div>`;
   }
 }
 
 function openTaskModal() {
   document.getElementById('task-modal').classList.remove('hidden');
   document.getElementById('task-log').textContent = '';
-  document.getElementById('task-stage').textContent = 'Initialisation…';
+  document.getElementById('task-stage').textContent = 'Initializing…';
   document.getElementById('task-progress-bar').style.width = '0%';
 }
 
@@ -760,7 +761,7 @@ async function startDownloadMissing(playlistId) {
       method: 'POST'
     });
   } catch (e) {
-    document.getElementById('task-log').textContent = 'Erreur réseau lors du lancement du téléchargement.';
+    document.getElementById('task-log').textContent = 'Network error starting download.';
     return;
   }
 
@@ -768,12 +769,12 @@ async function startDownloadMissing(playlistId) {
   try {
     data = await response.json();
   } catch (e) {
-    document.getElementById('task-log').textContent = 'Réponse invalide du serveur.';
+    document.getElementById('task-log').textContent = 'Invalid server response.';
     return;
   }
 
   if (!response.ok) {
-    document.getElementById('task-log').textContent = data.error || 'Erreur inconnue.';
+    document.getElementById('task-log').textContent = data.error || 'Unknown error.';
     return;
   }
 
@@ -804,7 +805,7 @@ async function startDownloadMissing(playlistId) {
     }
 
     if (payload.stage) {
-      stage.textContent = `Étape : ${payload.stage}`;
+      stage.textContent = `Step: ${payload.stage}`;
     }
 
     if (typeof payload.progress === 'number') {
@@ -814,7 +815,7 @@ async function startDownloadMissing(playlistId) {
     if (payload.done) {
       currentSource.close();
       currentSource = null;
-      stage.textContent = payload.error ? 'Erreur' : 'Terminé';
+      stage.textContent = payload.error ? 'Error' : 'Done';
 
       setTimeout(async () => {
         await refreshPlaylistPreview(playlistId);
@@ -824,7 +825,7 @@ async function startDownloadMissing(playlistId) {
   };
 
   currentSource.onerror = function() {
-    document.getElementById('task-log').textContent = 'Connexion au flux interrompue.';
+    document.getElementById('task-log').textContent = 'Stream connection interrupted.';
     if (currentSource) {
       currentSource.close();
       currentSource = null;
@@ -837,9 +838,16 @@ async function refreshPlaylistPreview(playlistId) {
   await openPlaylist(playlistId);
 }
 
-async function startConversion(playlistId) {
+async function startConversion(playlistId, mode = 'full') {
   openTaskModal();
-  const response = await fetch(`/playlist/${playlistId}/convert/start`, { method: 'POST' });
+  const titleEl = document.querySelector('#task-modal .task-header h3');
+  if (titleEl) titleEl.textContent = mode === 'quick' ? 'Quick Scan' : 'Full Scan';
+
+  const response = await fetch(`/playlist/${playlistId}/convert/start`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ mode }),
+  });
   const data = await response.json();
   const taskId = data.task_id;
 
@@ -857,12 +865,12 @@ async function startConversion(playlistId) {
     }
 
     if (payload.message) { log.textContent += payload.message + "\n"; log.scrollTop = log.scrollHeight; }
-    if (payload.stage) { stage.textContent = `Étape : ${payload.stage}`; }
+    if (payload.stage) { stage.textContent = `Step: ${payload.stage}`; }
     if (typeof payload.progress === 'number') { bar.style.width = payload.progress + '%'; }
 
     if (payload.done) {
       currentSource.close(); currentSource = null;
-      stage.textContent = payload.error ? 'Erreur' : 'Terminé';
+      stage.textContent = payload.error ? 'Error' : 'Done';
 
       setTimeout(() => {
         closeTaskModal();
@@ -871,7 +879,7 @@ async function startConversion(playlistId) {
   };
 
   currentSource.onerror = function() {
-    document.getElementById('task-log').textContent += "Connexion au flux interrompue\n";
+    document.getElementById('task-log').textContent += "Stream connection interrupted\n";
     if (currentSource) { currentSource.close(); currentSource = null; }
   };
 }
@@ -886,15 +894,15 @@ async function openPlaylist(playlistId) {
 
   const tbody = document.getElementById(`playlist-table-body-${playlistId}`);
   const stats = document.getElementById(`playlist-stats-${playlistId}`);
-  tbody.innerHTML = `<tr><td colspan="5" class="loading-cell">Chargement de la playlist…</td></tr>`;
+  tbody.innerHTML = `<tr><td colspan="5" class="loading-cell">Loading playlist…</td></tr>`;
 
   try {
     const response = await fetch(`/playlist/${playlistId}/preview`);
     const data = await response.json();
 
     if (!data.ok) {
-      tbody.innerHTML = `<tr><td colspan="5" class="loading-cell">Erreur : ${escapeHtml(data.error)}</td></tr>`;
-      stats.textContent = "Erreur de chargement";
+      tbody.innerHTML = `<tr><td colspan="5" class="loading-cell">Error: ${escapeHtml(data.error)}</td></tr>`;
+      stats.textContent = "Load error";
       return;
     }
 
@@ -906,8 +914,8 @@ async function openPlaylist(playlistId) {
 
     loadedPreviews.add(playlistId);
   } catch (err) {
-    tbody.innerHTML = `<tr><td colspan="5" class="loading-cell">Erreur réseau</td></tr>`;
-    stats.textContent = "Erreur réseau";
+    tbody.innerHTML = `<tr><td colspan="5" class="loading-cell">Network error</td></tr>`;
+    stats.textContent = "Network error";
   }
 }
 
@@ -951,17 +959,17 @@ function buildDownloadCell(row) {
   }
 
   if (row.matched === true) {
-    return '<span class="dl-na" title="Déjà dans la librairie">✓</span>';
+    return '<span class="dl-na" title="Already in library">✓</span>';
   }
 
   if (row.downloaded) {
-    return '<span class="dl-na" title="Téléchargé via Deezer Downloader">📥</span>';
+    return '<span class="dl-na" title="Downloaded via Deezer Downloader">📥</span>';
   }
 
   return `
     <button
       class="btn-dl"
-      title="Télécharger via Deezer Downloader"
+      title="Download via Deezer Downloader"
       onclick="downloadTrack(${row.track_id}, this)"
     >⬇</button>
   `;
@@ -977,7 +985,7 @@ async function downloadTrack(trackId, btn) {
 
     if (!res.ok || data.error) {
       btn.textContent = '❌';
-      btn.title = data.error || 'Erreur';
+      btn.title = data.error || 'Error';
       btn.disabled = false;
       return;
     }
@@ -986,7 +994,7 @@ async function downloadTrack(trackId, btn) {
     pollDownloadTask(data.task_id, btn, trackId);
   } catch (err) {
     btn.textContent = '❌';
-    btn.title = 'Erreur réseau';
+    btn.title = 'Network error';
     btn.disabled = false;
   }
 }
@@ -1008,7 +1016,7 @@ async function pollDownloadTask(taskId, btn, trackId) {
         btn.disabled = false;
       } else {
         btn.textContent = '✅';
-        btn.title = 'Téléchargé';
+        btn.title = 'Downloaded';
       }
     }
   };
@@ -1016,7 +1024,7 @@ async function pollDownloadTask(taskId, btn, trackId) {
   src.onerror = function() {
     src.close();
     btn.textContent = '❌';
-    btn.title = 'Connexion interrompue';
+    btn.title = 'Stream interrupted';
     btn.disabled = false;
   };
 }
@@ -1131,7 +1139,7 @@ function updatePreviewStats(playlistId) {
 }
 
 function buildStatsText(m, u, n) {
-  return `${m} trouvées · ${u} non trouvées · ${n} non vérifiées`;
+  return `${m} matched · ${u} not found · ${n} unchecked`;
 }
 
 function openDedupModal() {
@@ -1149,13 +1157,11 @@ function closeDedupModal() {
 function dedupDefaultSelections(report) {
   const selections = {};
 
-  // Initialiser toutes les sélections
   for (const group of report.groups || []) {
     const keep = new Set();
     selections[group.group_id] = keep;
   }
 
-  // Pré-cocher les anciens choix validés (keeper_hints)
   const hints = report.keeper_hints || {};
   for (const [groupId, keepPaths] of Object.entries(hints)) {
     if (Array.isArray(keepPaths) && selections[groupId]) {
@@ -1163,7 +1169,6 @@ function dedupDefaultSelections(report) {
     }
   }
 
-  // Pour les groupes sans keeper_hints, cocher le keeper par défaut
   for (const group of report.groups || []) {
     if (!hints[group.group_id] && group.keeper && group.keeper.path_str) {
       selections[group.group_id].add(group.keeper.path_str);
@@ -1182,15 +1187,15 @@ function buildDedupColumn(group, col, colIndex, maxRows) {
       <div class="dedup-column-head">
         <div class="dedup-column-path">
           <strong>${escapeHtml(col.folder || 'Unknown folder')}</strong>
-          <span>${entries.length} piste(s)</span>
+          <span>${entries.length} track(s)</span>
         </div>
 
         <div class="dedup-column-actions">
           <button type="button" class="dedup-column-btn" data-dedup-col-action="keep-column" data-group-id="${escapeHtml(group.group_id)}" data-col-index="${colIndex}">
-            Tout garder
+            Keep all
           </button>
           <button type="button" class="dedup-column-btn" data-dedup-col-action="clear-column" data-group-id="${escapeHtml(group.group_id)}" data-col-index="${colIndex}">
-            Tout décocher
+            Uncheck all
           </button>
         </div>
       </div>
@@ -1258,18 +1263,16 @@ function renderDedupReport() {
 
   summary.innerHTML = `
     <p>
-      ${escapeHtml(report.group_count ?? 0)} groupe(s) à vérifier
-      ${(report.total_group_count ?? 0) > (report.group_count ?? 0) ? `· ${escapeHtml((report.total_group_count ?? 0) - (report.group_count ?? 0))} groupe(s) déjà validé(s)` : ''}
-      · ${escapeHtml(report.duplicate_file_count ?? 0)} doublons candidats
-      ${report.ignored_group_count ? `· ${escapeHtml(report.ignored_group_count)} groupe(s) ignoré(s)` : ''}
+      ${escapeHtml(report.group_count ?? 0)} group(s) to review
+      ${(report.total_group_count ?? 0) > (report.group_count ?? 0) ? `· ${escapeHtml((report.total_group_count ?? 0) - (report.group_count ?? 0))} group(s) already validated` : ''}
+      · ${escapeHtml(report.duplicate_file_count ?? 0)} duplicate candidates
+      ${report.ignored_group_count ? `· ${escapeHtml(report.ignored_group_count)} group(s) ignored` : ''}
     </p>
   `;
 
-  // Utiliser album_groups si disponible, sinon fallback sur groups
   const albumGroups = report.album_groups || [];
 
   groupsWrap.innerHTML = albumGroups.map(album => {
-    // Collecter tous les dossiers uniques et organiser par track+folder
     const allFolders = new Set();
     const tracksByFolder = {};
 
@@ -1300,7 +1303,7 @@ function renderDedupReport() {
         <div class="dedup-album-head">
           <div class="dedup-album-title">
             <h2>${escapeHtml(album.artist || 'Unknown artist')} — ${escapeHtml(album.album || 'Unknown album')}</h2>
-            <p>${tracks.length} chanson(s) · ${sumDuplicateFilesInAlbum(album)} fichiers</p>
+            <p>${tracks.length} track(s) · ${sumDuplicateFilesInAlbum(album)} files</p>
           </div>
         </div>
 
@@ -1315,7 +1318,7 @@ function renderDedupReport() {
                       <div class="dedup-column-path">${escapeHtml(folder)}</div>
                       <div class="dedup-column-header-buttons">
                         <button type="button" class="dedup-source-btn keep" data-action="keep-source" data-folder="${escapeHtml(folder)}">Keep</button>
-                        <button type="button" class="dedup-source-btn delete" data-action="delete-source" data-folder="${escapeHtml(folder)}">Delete</button>
+                        <button type="button" class="dedup-source-btn delete" data-action="delete-source" data-folder="${escapeHtml(folder)}">Uncheck</button>
                       </div>
                     </div>
                   </th>
@@ -1390,7 +1393,6 @@ function bindDedupCheckboxes() {
     });
   });
 
-  // Source-level action buttons (Keep/Delete per folder)
   document.querySelectorAll('#dedup-groups .dedup-source-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       const folder = btn.dataset.folder;
@@ -1398,7 +1400,6 @@ function bindDedupCheckboxes() {
       const report = dedupState.report;
       if (!report || !folder || !action) return;
 
-      // Find all groups and folders that match this folder path
       (report.album_groups || []).forEach(album => {
         (album.tracks || []).forEach(group => {
           (group.folders || []).forEach(folderObj => {
@@ -1407,15 +1408,12 @@ function bindDedupCheckboxes() {
                 dedupState.selections[group.group_id] = new Set();
               }
 
-              // Get entries from this folder
               const entries = folderObj.entries || [];
               if (action === 'keep-source') {
-                // Check all entries in this folder
                 entries.forEach(entry => {
                   dedupState.selections[group.group_id].add(entry.path_str);
                 });
               } else if (action === 'delete-source') {
-                // Uncheck all entries in this folder
                 entries.forEach(entry => {
                   dedupState.selections[group.group_id].delete(entry.path_str);
                 });
@@ -1502,7 +1500,7 @@ async function fetchDedupReportAndOpen() {
   const res = await fetch('/dedup/report');
   const data = await res.json();
   if (!data.ok) {
-    alert(data.error || 'Impossible de charger le rapport dedup');
+    alert(data.error || 'Unable to load dedup report');
     return;
   }
   dedupState.report = data.report;
@@ -1517,12 +1515,12 @@ async function startDedupScan() {
   const groups = document.getElementById('dedup-groups');
 
   openDedupModal();
-  if (summary) summary.innerHTML = '<p>Scan dedup en cours…</p>';
+  if (summary) summary.innerHTML = '<p>Running dedup scan…</p>';
   if (groups) groups.innerHTML = '';
 
   if (btn) {
     btn.disabled = true;
-    btn.textContent = 'Scan en cours...';
+    btn.textContent = 'Scanning...';
   }
 
   try {
@@ -1530,7 +1528,7 @@ async function startDedupScan() {
     const data = await res.json();
 
     if (!res.ok) {
-      if (summary) summary.innerHTML = `<p>Erreur : ${escapeHtml(data.error || 'Impossible de lancer le scan')}</p>`;
+      if (summary) summary.innerHTML = `<p>Error: ${escapeHtml(data.error || 'Unable to start scan')}</p>`;
       if (btn) {
         btn.disabled = false;
         btn.textContent = 'Scan dedup';
@@ -1540,7 +1538,7 @@ async function startDedupScan() {
 
     const taskId = data.task_id;
     if (!taskId) {
-      if (summary) summary.innerHTML = '<p>Réponse invalide du serveur.</p>';
+      if (summary) summary.innerHTML = '<p>Invalid server response.</p>';
       if (btn) {
         btn.disabled = false;
         btn.textContent = 'Scan dedup';
@@ -1559,7 +1557,7 @@ async function startDedupScan() {
       const payload = JSON.parse(evt.data);
 
       if (payload.type === 'status') {
-        const stageText = payload.stage ? `Étape : ${payload.stage}` : 'Analyse...';
+        const stageText = payload.stage ? `Step: ${payload.stage}` : 'Analyzing...';
         const progressText = typeof payload.progress === 'number' ? ` (${payload.progress}%)` : '';
         if (summary) summary.innerHTML = `<p>${escapeHtml(payload.message || stageText)}${escapeHtml(progressText)}</p>`;
       }
@@ -1579,7 +1577,7 @@ async function startDedupScan() {
     };
 
     currentSource.onerror = () => {
-      if (summary) summary.innerHTML = '<p>Flux SSE interrompu.</p>';
+      if (summary) summary.innerHTML = '<p>SSE stream interrupted.</p>';
       if (btn) {
         btn.disabled = false;
         btn.textContent = 'Scan dedup';
@@ -1590,7 +1588,7 @@ async function startDedupScan() {
       }
     };
   } catch (err) {
-    if (summary) summary.innerHTML = `<p>Erreur réseau : ${escapeHtml(err.message || String(err))}</p>`;
+    if (summary) summary.innerHTML = `<p>Network error: ${escapeHtml(err.message || String(err))}</p>`;
     if (btn) {
       btn.disabled = false;
       btn.textContent = 'Scan dedup';
@@ -1607,10 +1605,10 @@ async function applyDedup(mode) {
   });
   const data = await res.json();
   if (!data.ok) {
-    alert(data.error || 'Erreur application dedup');
+    alert(data.error || 'Dedup apply error');
     return;
   }
-  alert(`Traitement terminé: ${data.processed} fichier(s)`);
+  alert(`Done: ${data.processed} file(s) processed`);
   closeDedupModal();
 }
 
@@ -1641,7 +1639,7 @@ document.getElementById('dedup-delete-all-dup')?.addEventListener('click', apply
 
 document.getElementById('dedup-apply-quarantine')?.addEventListener('click', () => applyDedup('quarantine'));
 document.getElementById('dedup-apply-delete')?.addEventListener('click', () => {
-  if (!confirm('Confirmer la suppression définitive des éléments non séléctionnés ?')) return;
+  if (!confirm('Permanently delete all unchecked files? This cannot be undone.')) return;
   applyDedup('delete');
 });
 
