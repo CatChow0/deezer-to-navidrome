@@ -78,17 +78,24 @@ def fetch_latest_github_release():
 
 
 def fetch_latest_docker_tag():
-    """Fetch the latest Docker image tag."""
+    """Fetch the latest Docker image tag (semantic versions only, excludes 'latest')."""
     try:
         resp = requests.get(
-            "https://hub.docker.com/v2/repositories/catchow/deezer-to-navidrome/tags?page_size=1",
+            "https://hub.docker.com/v2/repositories/catchow/deezer-to-navidrome/tags?page_size=25",
             timeout=10,
         )
         resp.raise_for_status()
         data = resp.json()
         results = data.get("results", [])
-        if results:
-            return results[0].get("name"), f"https://hub.docker.com/r/catchow/deezer-to-navidrome/tags"
+        semver_tags = []
+        for r in results:
+            name = r.get("name", "")
+            parts = name.split(".")
+            if len(parts) >= 2 and all(p.isdigit() for p in parts):
+                semver_tags.append(name)
+        if semver_tags:
+            semver_tags.sort(key=lambda v: [int(x) for x in v.split(".")], reverse=True)
+            return semver_tags[0], "https://hub.docker.com/r/catchow/deezer-to-navidrome/tags"
         return None, None
     except Exception:
         return None, None
@@ -97,9 +104,8 @@ def fetch_latest_docker_tag():
 def compare_versions(v1, v2):
     """Compare two semantic versions. Returns True if v1 < v2."""
     try:
-        parts1 = [int(x) for x in v1.split(".")]
-        parts2 = [int(x) for x in v2.split(".")]
-        # Pad shorter version with zeros
+        parts1 = [int(x) for x in v1.split("-")[0].split(".")]
+        parts2 = [int(x) for x in v2.split("-")[0].split(".")]
         max_len = max(len(parts1), len(parts2))
         parts1.extend([0] * (max_len - len(parts1)))
         parts2.extend([0] * (max_len - len(parts2)))
@@ -1569,9 +1575,8 @@ def map_host_path_to_navidrome(path: Path, mappings):
 
 
 def relative_m3u_path(playlist_dir_host: Path, audio_file_host: Path, mappings) -> str:
-    playlist_dir_nav = map_host_path_to_navidrome(playlist_dir_host, mappings)
     audio_file_nav = map_host_path_to_navidrome(audio_file_host, mappings)
-    rel = os.path.relpath(str(audio_file_nav), start=str(playlist_dir_nav)).replace(
+    rel = os.path.relpath(str(audio_file_nav), start=str(playlist_dir_host)).replace(
         os.sep, "/"
     )
     return rel if rel.startswith(".") else "./" + rel
