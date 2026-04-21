@@ -33,6 +33,7 @@ from core.config import (
     save_config,
 )
 from core.version import get_app_version, get_latest_available_version
+from core import scheduler
 
 system_bp = Blueprint("system", __name__)
 
@@ -129,11 +130,37 @@ def config_view():
             "match_workers": match_workers,
         }
         save_config(cfg)
+        scheduler.restart()
         flash("Configuration saved")
         return redirect(url_for("system.config_view"))
 
     cfg = load_config()
     return render_template("config.html", config=cfg)
+
+
+@system_bp.get("/api/scheduler/status")
+def scheduler_status():
+    from core.deezer import load_playlists
+    playlists = load_playlists()
+    state = scheduler.get_status()
+    result = []
+    enabled_count = 0
+    for pl in playlists:
+        pid = pl["id"]
+        s = state.get(pid, {})
+        enabled = bool(pl.get("auto_scan_enabled"))
+        if enabled:
+            enabled_count += 1
+        result.append({
+            "id": pid,
+            "title": pl.get("title", ""),
+            "auto_scan_enabled": enabled,
+            "auto_scan_interval_minutes": pl.get("auto_scan_interval_minutes") or 60,
+            "auto_download_after_scan": bool(pl.get("auto_download_after_scan")),
+            "next_run_at": s.get("next_run_at"),
+            "last_run_at": s.get("last_run_at"),
+        })
+    return jsonify({"playlists": result, "enabled_count": enabled_count})
 
 
 @system_bp.post("/admin/clear/library-cache")

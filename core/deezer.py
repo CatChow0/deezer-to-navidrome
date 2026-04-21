@@ -69,13 +69,18 @@ def save_playlists(playlists):
         pid = str(item.get("id", "")).strip()
         if not pid.isdigit() or pid in seen:
             continue
-        cleaned.append(
-            {
-                "id": pid,
-                "title": str(item.get("title", "")).strip() or "Unknown title",
-                "picture": str(item.get("picture", "")).strip(),
-            }
-        )
+        entry = {
+            "id": pid,
+            "title": str(item.get("title", "")).strip() or "Unknown title",
+            "picture": str(item.get("picture", "")).strip(),
+        }
+        if "auto_scan_enabled" in item:
+            entry["auto_scan_enabled"] = bool(item["auto_scan_enabled"])
+        if "auto_scan_interval_minutes" in item:
+            entry["auto_scan_interval_minutes"] = max(1, int(item.get("auto_scan_interval_minutes") or 1))
+        if "auto_download_after_scan" in item:
+            entry["auto_download_after_scan"] = bool(item["auto_download_after_scan"])
+        cleaned.append(entry)
         seen.add(pid)
 
     cleaned.sort(key=lambda x: int(x["id"]))
@@ -113,7 +118,14 @@ def load_playlists():
                     changed = True
                 except Exception:
                     title = title or "Unknown title"
-            playlists.append({"id": pid, "title": title, "picture": picture})
+            playlists.append({
+                "id": pid,
+                "title": title,
+                "picture": picture,
+                "auto_scan_enabled": bool(item.get("auto_scan_enabled", False)),
+                "auto_scan_interval_minutes": max(1, int(item.get("auto_scan_interval_minutes") or 60)),
+                "auto_download_after_scan": bool(item.get("auto_download_after_scan", False)),
+            })
     elif isinstance(data.get("playlist_ids"), list):
         for raw in data["playlist_ids"]:
             pid = str(raw).strip()
@@ -297,8 +309,12 @@ def map_host_path_to_navidrome(path: Path, mappings):
 
 
 def relative_m3u_path(playlist_dir_host: Path, audio_file_host: Path, mappings) -> str:
+    try:
+        playlist_dir_nav = map_host_path_to_navidrome(playlist_dir_host, mappings)
+    except ValueError:
+        playlist_dir_nav = playlist_dir_host
     audio_file_nav = map_host_path_to_navidrome(audio_file_host, mappings)
-    rel = os.path.relpath(str(audio_file_nav), start=str(playlist_dir_host)).replace(
+    rel = os.path.relpath(str(audio_file_nav), start=str(playlist_dir_nav)).replace(
         os.sep, "/"
     )
     return rel if rel.startswith(".") else "./" + rel
@@ -818,3 +834,40 @@ def fetch_deezer_artist_details(artist_id: str):
         "nb_album": data.get("nb_album", 0),
         "albums": fetch_deezer_artist_albums(artist_id),
     }
+
+
+def submit_missing_downloads(playlist_id: str, base_url: str) -> int:
+    """Fire download requests for all unmatched tracks in a playlist.
+
+    Does not wait for completion. Returns the number of requests sent.
+    Used by the auto-scan scheduler.
+    """
+    preview = get_preview_state(str(playlist_id))
+    if not preview or not isinstance(preview.get("rows"), list):
+        return 0
+
+    missing_rows = [
+        row for row in preview["rows"]
+        if row.get("matched") is False
+        and row.get("track_id")
+        and not row.get("downloaded")
+    ]
+
+    submitted = 0
+    for row in missing_rows:
+        track_id = str(row["track_id"]).strip()
+        try:
+            requests.post(
+                f"{base_url}/download",
+                json={
+                    "type": "track",
+                    "music_id": int(track_id),
+                    "add_to_playlist": False,
+                    "create_zip": False,
+                },
+                timeout=10,
+            )
+            submitted += 1
+        except Exception:
+            pass
+    return submitted

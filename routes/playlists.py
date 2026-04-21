@@ -24,6 +24,7 @@ from core.deezer import (
     save_playlists,
 )
 from core.utils import extract_playlist_id
+from core import scheduler
 
 import requests
 import time
@@ -122,6 +123,29 @@ def playlist_preview_route(playlist_id):
         return jsonify({"ok": True, "playlist": data})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@playlists_bp.post("/playlist/<playlist_id>/automation")
+def update_playlist_automation(playlist_id):
+    data = request.get_json(silent=True) or {}
+    playlists = load_playlists()
+    pl = next((p for p in playlists if p["id"] == playlist_id), None)
+    if not pl:
+        return jsonify({"error": "Playlist not found"}), 404
+
+    pl["auto_scan_enabled"] = bool(data.get("auto_scan_enabled"))
+    pl["auto_scan_interval_minutes"] = max(1, int(data.get("auto_scan_interval_minutes") or 60))
+    pl["auto_download_after_scan"] = bool(data.get("auto_download_after_scan"))
+
+    save_playlists(playlists)
+    scheduler.notify_playlist_updated(playlist_id, pl)
+
+    sched_state = scheduler.get_status().get(playlist_id, {})
+    return jsonify({
+        "ok": True,
+        "next_run_at": sched_state.get("next_run_at"),
+        "last_run_at": sched_state.get("last_run_at"),
+    })
 
 
 @playlists_bp.post("/playlist/<playlist_id>/download-missing/start")

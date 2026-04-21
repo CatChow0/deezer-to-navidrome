@@ -51,7 +51,10 @@
 
 <section class="grid playlists-grid">
   {% for playlist in playlists %}
-  <article class="playlist-card" id="playlist-card-{{ playlist.id }}">
+  <article class="playlist-card" id="playlist-card-{{ playlist.id }}"
+    data-auto-scan="{{ 'true' if playlist.auto_scan_enabled else 'false' }}"
+    data-auto-interval="{{ playlist.auto_scan_interval_minutes | default(60) }}"
+    data-auto-download="{{ 'true' if playlist.auto_download_after_scan else 'false' }}">
     <button class="cover-button" type="button" onclick="openPlaylist('{{ playlist.id }}')">
       {% if playlist.cover_cached %}
         <img src="{{ url_for('system.serve_cover', filename=playlist.cover_cached) }}" alt="Cover {{ playlist.title }}">
@@ -93,6 +96,10 @@
 
           <button type="button" class="secondary" onclick="startDownloadMissing('{{ playlist.id }}')">
             Download Missing
+          </button>
+
+          <button type="button" class="secondary" onclick="openAutomationModal('{{ playlist.id }}')">
+            Automation
           </button>
 
           <button type="button" class="secondary" onclick="closePlaylist('{{ playlist.id }}')">Close</button>
@@ -137,6 +144,61 @@
 
     <div id="task-stage" class="task-stage">Initializing…</div>
     <pre id="task-log" class="task-log"></pre>
+  </div>
+</div>
+
+<div id="automation-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="automation-modal-title">
+  <div class="modal-backdrop" onclick="closeAutomationModal()"></div>
+  <div class="modal-panel automation-modal-panel">
+
+    <div class="modal-header">
+      <div>
+        <h2 id="automation-modal-title">Automation</h2>
+        <p id="automation-modal-subtitle" class="automation-modal-subtitle"></p>
+      </div>
+      <button type="button" class="secondary" onclick="closeAutomationModal()" aria-label="Close">×</button>
+    </div>
+
+    <div id="automation-modal-status" class="automation-modal-status hidden"></div>
+
+    <!-- Auto Quick Scan -->
+    <div class="automation-row">
+      <div class="automation-row-text">
+        <span class="automation-row-title">Auto Quick Scan</span>
+        <span class="automation-row-desc">Periodically rescan and rematch this playlist</span>
+      </div>
+      <label class="switch" aria-label="Auto Quick Scan">
+        <input type="checkbox" id="modal-auto-scan-enabled" onchange="toggleIntervalRow()">
+        <span class="switch-slider"></span>
+      </label>
+    </div>
+
+    <div id="modal-interval-row" class="automation-interval-row hidden">
+      <span class="automation-interval-label">Every</span>
+      <input type="number" id="modal-scan-value" min="1" max="999" value="1" class="interval-number">
+      <select id="modal-scan-unit" class="interval-unit">
+        <option value="1">minutes</option>
+        <option value="60">hours</option>
+        <option value="1440">days</option>
+      </select>
+    </div>
+
+    <!-- Auto Download Missing -->
+    <div class="automation-row">
+      <div class="automation-row-text">
+        <span class="automation-row-title">Auto Download Missing</span>
+        <span class="automation-row-desc">After each scan, submit unmatched tracks to Deezer Downloader</span>
+      </div>
+      <label class="switch" aria-label="Auto Download Missing">
+        <input type="checkbox" id="modal-auto-download">
+        <span class="switch-slider"></span>
+      </label>
+    </div>
+
+    <div class="automation-modal-actions">
+      <button type="button" onclick="saveAutomationModal()">Save</button>
+      <button type="button" class="secondary" onclick="closeAutomationModal()">Cancel</button>
+    </div>
   </div>
 </div>
 
@@ -1642,6 +1704,126 @@ document.getElementById('dedup-apply-delete')?.addEventListener('click', () => {
   if (!confirm('Permanently delete all unchecked files? This cannot be undone.')) return;
   applyDedup('delete');
 });
+
+// ── Automation modal ──────────────────────────────────────────────────────────
+
+let _automationPid = null;
+
+function minutesToValueUnit(minutes) {
+  if (minutes >= 1440 && minutes % 1440 === 0) return [minutes / 1440, '1440'];
+  if (minutes >= 60   && minutes % 60   === 0) return [minutes / 60,   '60'];
+  return [minutes, '1'];
+}
+
+function toggleIntervalRow() {
+  const enabled = document.getElementById('modal-auto-scan-enabled').checked;
+  document.getElementById('modal-interval-row').classList.toggle('hidden', !enabled);
+}
+
+function openAutomationModal(pid) {
+  _automationPid = pid;
+  const card = document.getElementById(`playlist-card-${pid}`);
+  const title = card?.querySelector('h2')?.textContent || pid;
+
+  document.getElementById('automation-modal-subtitle').textContent = title;
+
+  // Populate fields from data attributes
+  const enabled  = card?.dataset.autoScan === 'true';
+  const interval = parseInt(card?.dataset.autoInterval) || 60;
+  const download = card?.dataset.autoDownload === 'true';
+
+  document.getElementById('modal-auto-scan-enabled').checked = enabled;
+  document.getElementById('modal-auto-download').checked = download;
+
+  const [val, unit] = minutesToValueUnit(interval);
+  document.getElementById('modal-scan-value').value = val;
+  document.getElementById('modal-scan-unit').value = unit;
+
+  document.getElementById('modal-interval-row').classList.toggle('hidden', !enabled);
+
+  // Status line
+  const statusEl = document.getElementById('automation-modal-status');
+  statusEl.className = 'automation-modal-status hidden';
+  if (_schedulerData) {
+    const entry = (_schedulerData.playlists || []).find(p => p.id === pid);
+    if (entry?.auto_scan_enabled) {
+      const now = Math.floor(Date.now() / 1000);
+      let text = '';
+      if (entry.next_run_at) {
+        const secs = Math.max(0, entry.next_run_at - now);
+        text = `Next scan in ${Math.floor(secs/60)}m ${(secs%60).toString().padStart(2,'0')}s`;
+      }
+      if (entry.last_run_at) {
+        const agoM = Math.floor((now - entry.last_run_at) / 60);
+        text += (text ? ' · ' : '') + `Last scan: ${agoM}m ago`;
+      }
+      if (text) {
+        statusEl.textContent = text;
+        statusEl.className = 'automation-modal-status auto-scan-on';
+      }
+    }
+  }
+
+  document.getElementById('automation-modal').classList.remove('hidden');
+}
+
+function closeAutomationModal() {
+  document.getElementById('automation-modal').classList.add('hidden');
+  _automationPid = null;
+}
+
+async function saveAutomationModal() {
+  const pid = _automationPid;
+  if (!pid) return;
+
+  const enabled  = document.getElementById('modal-auto-scan-enabled').checked;
+  const val      = parseInt(document.getElementById('modal-scan-value').value) || 1;
+  const unit     = parseInt(document.getElementById('modal-scan-unit').value) || 60;
+  const download = document.getElementById('modal-auto-download').checked;
+  const minutes  = val * unit;
+
+  try {
+    const res = await fetch(`/playlist/${pid}/automation`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        auto_scan_enabled: enabled,
+        auto_scan_interval_minutes: minutes,
+        auto_download_after_scan: download,
+      }),
+    });
+    const d = await res.json();
+    if (!d.ok) { alert(d.error || 'Save failed'); return; }
+
+    // Update data attributes so reopening stays accurate without page reload
+    const card = document.getElementById(`playlist-card-${pid}`);
+    if (card) {
+      card.dataset.autoScan     = enabled ? 'true' : 'false';
+      card.dataset.autoInterval = String(minutes);
+      card.dataset.autoDownload = download ? 'true' : 'false';
+    }
+
+    await loadSchedulerStatus();
+    closeAutomationModal();
+  } catch (e) {
+    alert('Save failed: ' + e);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
+let _schedulerData = null;
+
+async function loadSchedulerStatus() {
+  try {
+    const res = await fetch('/api/scheduler/status');
+    const d = await res.json();
+    _schedulerData = d;
+  } catch (_) {}
+}
+
+loadSchedulerStatus();
+setInterval(loadSchedulerStatus, 30000);
 
 document.addEventListener('click', (event) => {
   const preview = event.target.closest('.playlist-preview');
