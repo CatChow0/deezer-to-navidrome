@@ -63,6 +63,16 @@
       {% endif %}
     </button>
 
+    {% if playlist.auto_scan_enabled %}
+    <div class="playlist-card-badges">
+      <span class="playlist-badge auto-scan-badge" title="Auto Scan enabled">Auto Scan</span>
+      {% if playlist.auto_download_after_scan %}
+      <span class="playlist-badge auto-download-badge" title="Auto Download Missing enabled">Auto DL</span>
+      {% endif %}
+      <span class="playlist-badge next-scan-badge" data-playlist-id="{{ playlist.id }}" data-interval="{{ playlist.auto_scan_interval_minutes | default(60) }}" title="Next scan in">--:--</span>
+    </div>
+    {% endif %}
+
     <div class="playlist-meta">
       <h2>{{ playlist.title }}</h2>
       <p>[{{ playlist.id }}]</p>
@@ -82,6 +92,9 @@
           <h3>{{ playlist.title }}</h3>
           <p>ID {{ playlist.id }}</p>
           <p id="playlist-stats-{{ playlist.id }}" class="playlist-stats">Loading…</p>
+          <div class="playlist-preview-badges" id="playlist-preview-badges-{{ playlist.id }}">
+            <!-- Badges injected dynamically via JS -->
+          </div>
         </div>
 
         <button type="button" class="playlist-close-btn" onclick="closePlaylist('{{ playlist.id }}')" aria-label="Close">×</button>
@@ -529,12 +542,12 @@ async function openSearchAlbumCard(albumId) {
   if (!card || !preview || !body) return;
 
   if (openedSearchCards.has(cardId)) {
-    preview.classList.remove("hidden");
+    preview.classList.remove("hidden", "hide-fade");
     card.classList.add("search-card-open");
     return;
   }
 
-  preview.classList.remove("hidden");
+  preview.classList.remove("hidden", "hide-fade");
   card.classList.add("search-card-open");
   body.innerHTML = `<div class="loading-cell">Loading album…</div>`;
 
@@ -562,12 +575,12 @@ async function openSearchArtistCard(artistId) {
   if (!card || !preview || !body) return;
 
   if (openedSearchCards.has(cardId)) {
-    preview.classList.remove("hidden");
+    preview.classList.remove("hidden", "hide-fade");
     card.classList.add("search-card-open");
     return;
   }
 
-  preview.classList.remove("hidden");
+  preview.classList.remove("hidden", "hide-fade");
   card.classList.add("search-card-open");
   body.innerHTML = `<div class="loading-cell">Loading artist…</div>`;
 
@@ -592,8 +605,15 @@ function closeSearchCard(cardId) {
   const preview = document.getElementById(`${cardId}-preview`);
   if (!card || !preview) return;
 
-  preview.classList.add("hidden");
-  card.classList.remove("search-card-open");
+  // Apply fade-out transition
+  preview.classList.add('hide-fade');
+  card.classList.remove('search-card-open');
+
+  // Wait for transition to finish before applying display: none
+  setTimeout(() => {
+    preview.classList.remove('hide-fade');
+    preview.classList.add('hidden');
+  }, 250);
 }
 
 function renderAlbumInlineDetail(album, cardId) {
@@ -947,11 +967,41 @@ async function startConversion(playlistId, mode = 'full') {
   };
 }
 
+function renderPreviewBadges(playlistId) {
+  const card = document.getElementById(`playlist-card-${playlistId}`);
+  const previewBadges = document.getElementById(`playlist-preview-badges-${playlistId}`);
+  if (!card || !previewBadges) return;
+
+  const autoScanEnabled = card.dataset.autoScan === 'true';
+  const autoDownloadEnabled = card.dataset.autoDownload === 'true';
+  const intervalMinutes = parseInt(card.dataset.autoInterval) || 60;
+
+  previewBadges.innerHTML = buildAutomationBadgesHtmlForPreview(playlistId, autoScanEnabled, autoDownloadEnabled, intervalMinutes);
+}
+
+function buildAutomationBadgesHtmlForPreview(playlistId, autoScanEnabled, autoDownloadEnabled, intervalMinutes) {
+  let html = '';
+  if (autoScanEnabled) {
+    html += '<span class="playlist-badge auto-scan-badge" title="Auto Scan enabled">Auto Scan</span>';
+    if (autoDownloadEnabled) {
+      html += '<span class="playlist-badge auto-download-badge" title="Auto Download Missing enabled">Auto DL</span>';
+    }
+    html += `<span class="playlist-badge next-scan-badge" data-playlist-id="${playlistId}" data-interval="${intervalMinutes}" title="Next scan in">--:--</span>`;
+  } else {
+    html += '<span class="playlist-badge auto-scan-off-badge" title="Auto Scan disabled">Auto Scan Off</span>';
+  }
+  return html;
+}
+
 async function openPlaylist(playlistId) {
-  document.getElementById(`playlist-preview-${playlistId}`).classList.remove('hidden');
+  const preview = document.getElementById(`playlist-preview-${playlistId}`);
+  preview.classList.remove('hidden', 'hide-fade');
   document.getElementById(`playlist-card-${playlistId}`).classList.add('playlist-card-open');
 
+  renderPreviewBadges(playlistId);
+
   if (loadedPreviews.has(playlistId)) {
+    updateNextScanBadges();
     return;
   }
 
@@ -974,6 +1024,7 @@ async function openPlaylist(playlistId) {
     tbody.innerHTML = playlist.rows.map(row => buildRow(row)).join("");
 
     await refreshDownloadStateFromQueue(playlistId);
+    updateNextScanBadges();
 
     loadedPreviews.add(playlistId);
   } catch (err) {
@@ -983,8 +1034,19 @@ async function openPlaylist(playlistId) {
 }
 
 function closePlaylist(playlistId) {
-  document.getElementById(`playlist-preview-${playlistId}`).classList.add('hidden');
-  document.getElementById(`playlist-card-${playlistId}`).classList.remove('playlist-card-open');
+  const preview = document.getElementById(`playlist-preview-${playlistId}`);
+  const card = document.getElementById(`playlist-card-${playlistId}`);
+  if (!preview || !card) return;
+
+  // Apply fade-out transition
+  preview.classList.add('hide-fade');
+  card.classList.remove('playlist-card-open');
+
+  // Wait for transition to finish before applying display: none
+  setTimeout(() => {
+    preview.classList.remove('hide-fade');
+    preview.classList.add('hidden');
+  }, 250);
 }
 
 function buildRow(row) {
@@ -1721,6 +1783,67 @@ function toggleIntervalRow() {
   document.getElementById('modal-interval-row').classList.toggle('hidden', !enabled);
 }
 
+function buildAutomationBadgesHtml(autoScanEnabled, autoDownloadEnabled, intervalMinutes) {
+  let html = '';
+  if (autoScanEnabled) {
+    html += '<span class="playlist-badge auto-scan-badge" title="Auto Scan enabled">Auto Scan</span>';
+    if (autoDownloadEnabled) {
+      html += '<span class="playlist-badge auto-download-badge" title="Auto Download Missing enabled">Auto DL</span>';
+    }
+    html += `<span class="playlist-badge next-scan-badge" data-playlist-id="${_automationPid || ''}" data-interval="${intervalMinutes}" title="Next scan in">--:--</span>`;
+  } else {
+    html += '<span class="playlist-badge auto-scan-off-badge" title="Auto Scan disabled">Auto Scan Off</span>';
+  }
+  return html;
+}
+
+function rebuildAutomationBadges(playlistId, autoScanEnabled, autoDownloadEnabled, intervalMinutes) {
+  // Update preview badges
+  const previewBadges = document.getElementById(`playlist-preview-badges-${playlistId}`);
+  if (previewBadges) {
+    previewBadges.innerHTML = buildAutomationBadgesHtmlForPreview(playlistId, autoScanEnabled, autoDownloadEnabled, intervalMinutes);
+  }
+
+  // Update card badges (rebuild the overlay)
+  const card = document.getElementById(`playlist-card-${playlistId}`);
+  if (card) {
+    const existingBadges = card.querySelector('.playlist-card-badges');
+    if (autoScanEnabled) {
+      if (!existingBadges) {
+        const badgesDiv = document.createElement('div');
+        badgesDiv.className = 'playlist-card-badges';
+        badgesDiv.innerHTML = buildAutomationBadgesHtmlForCard(playlistId, autoScanEnabled, autoDownloadEnabled, intervalMinutes);
+        const coverBtn = card.querySelector('.cover-button');
+        if (coverBtn) {
+          card.insertBefore(badgesDiv, coverBtn.nextSibling);
+        }
+      } else {
+        existingBadges.innerHTML = buildAutomationBadgesHtmlForCard(playlistId, autoScanEnabled, autoDownloadEnabled, intervalMinutes);
+      }
+    } else {
+      if (existingBadges) {
+        existingBadges.remove();
+      }
+    }
+  }
+
+  updateNextScanBadges();
+}
+
+function buildAutomationBadgesHtmlForCard(playlistId, autoScanEnabled, autoDownloadEnabled, intervalMinutes) {
+  let html = '';
+  if (autoScanEnabled) {
+    html += '<span class="playlist-badge auto-scan-badge" title="Auto Scan enabled">Auto Scan</span>';
+    if (autoDownloadEnabled) {
+      html += '<span class="playlist-badge auto-download-badge" title="Auto Download Missing enabled">Auto DL</span>';
+    }
+    html += `<span class="playlist-badge next-scan-badge" data-playlist-id="${playlistId}" data-interval="${intervalMinutes}" title="Next scan in">--:--</span>`;
+  } else {
+    html += '<span class="playlist-badge auto-scan-off-badge" title="Auto Scan disabled">Auto Scan Off</span>';
+  }
+  return html;
+}
+
 function openAutomationModal(pid) {
   _automationPid = pid;
   const card = document.getElementById(`playlist-card-${pid}`);
@@ -1804,6 +1927,9 @@ async function saveAutomationModal() {
       card.dataset.autoDownload = download ? 'true' : 'false';
     }
 
+    // Rebuild badges on both card and preview
+    rebuildAutomationBadges(pid, enabled, download, minutes);
+
     await loadSchedulerStatus();
     closeAutomationModal();
   } catch (e) {
@@ -1820,11 +1946,80 @@ async function loadSchedulerStatus() {
     const res = await fetch('/api/scheduler/status');
     const d = await res.json();
     _schedulerData = d;
+    updateNextScanBadges();
   } catch (_) {}
+}
+
+function formatNextScan(secs) {
+  if (secs <= 0) return 'Now';
+  const m = Math.floor(secs / 60);
+  const s = Math.floor(secs % 60);
+  return `${m}m ${s.toString().padStart(2, '0')}s`;
+}
+
+function updateNextScanBadges() {
+  document.querySelectorAll('.next-scan-badge').forEach(badge => {
+    const playlistId = badge.dataset.playlistId;
+    const interval = parseInt(badge.dataset.interval) || 60;
+
+    if (_schedulerData && _schedulerData.playlists) {
+      const entry = _schedulerData.playlists.find(p => p.id === playlistId);
+      if (entry && entry.next_run_at) {
+        const now = Math.floor(Date.now() / 1000);
+        const secs = Math.max(0, entry.next_run_at - now);
+        badge.textContent = formatNextScan(secs);
+        badge.title = `Next scan in ${Math.floor(secs / 60)}m ${Math.floor(secs % 60)}s`;
+        return;
+      }
+    }
+
+    // Fallback: display interval as static text if no scheduler data
+    const h = Math.floor(interval / 60);
+    const m = interval % 60;
+    if (h > 0) {
+      badge.textContent = `Every ${h}h${m > 0 ? m : ''}`;
+    } else {
+      badge.textContent = `Every ${m}m`;
+    }
+    badge.title = `Interval: ${interval} minutes`;
+  });
+}
+
+function initAutomationBadges() {
+  document.querySelectorAll('.playlist-card').forEach(card => {
+    const playlistId = card.id.replace('playlist-card-', '');
+    const autoScanEnabled = card.dataset.autoScan === 'true';
+    const autoDownloadEnabled = card.dataset.autoDownload === 'true';
+    const intervalMinutes = parseInt(card.dataset.autoInterval) || 60;
+
+    // Build card overlay badges if auto-scan is enabled
+    if (autoScanEnabled) {
+      const existingBadges = card.querySelector('.playlist-card-badges');
+      if (!existingBadges) {
+        const badgesDiv = document.createElement('div');
+        badgesDiv.className = 'playlist-card-badges';
+        badgesDiv.innerHTML = buildAutomationBadgesHtmlForCard(playlistId, autoScanEnabled, autoDownloadEnabled, intervalMinutes);
+        const coverBtn = card.querySelector('.cover-button');
+        if (coverBtn) {
+          card.insertBefore(badgesDiv, coverBtn.nextSibling);
+        }
+      }
+    }
+
+    // Build preview badges container content
+    const previewBadges = document.getElementById(`playlist-preview-badges-${playlistId}`);
+    if (previewBadges) {
+      previewBadges.innerHTML = buildAutomationBadgesHtmlForPreview(playlistId, autoScanEnabled, autoDownloadEnabled, intervalMinutes);
+    }
+  });
+
+  updateNextScanBadges();
 }
 
 loadSchedulerStatus();
 setInterval(loadSchedulerStatus, 30000);
+setInterval(updateNextScanBadges, 1000);
+initAutomationBadges();
 
 document.addEventListener('click', (event) => {
   const preview = event.target.closest('.playlist-preview');
@@ -1832,7 +2027,8 @@ document.addEventListener('click', (event) => {
   const searchCard = event.target.closest('.search-card');
   const searchPanel = event.target.closest('.search-panel');
   const dedupModal = event.target.closest('#dedup-modal');
-  const keepOpen = preview || openBtn || searchCard || searchPanel || dedupModal;
+  const automationModal = event.target.closest('#automation-modal');
+  const keepOpen = preview || openBtn || searchCard || searchPanel || dedupModal || automationModal;
 
   if (keepOpen) return;
 

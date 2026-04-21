@@ -402,15 +402,83 @@ button.search-type-btn.active {
 }
 
 .hidden {
-  visibility: hidden !important;
+  display: none !important;
+}
+
+/* Utility class for fade-out before hiding (use with JS to add .hidden after delay) */
+.hide-fade {
   opacity: 0 !important;
+  visibility: hidden !important;
   pointer-events: none !important;
-  transition: visibility 0s 0.3s, opacity 0.3s ease !important;
+  transition: opacity 0.25s ease, visibility 0.25s ease !important;
 }
 
 .playlist-card-open {
   grid-column: 1 / -1;
   animation: playlist-pop-in 0.35s ease forwards;
+}
+
+/* Playlist card badges (overlays) */
+.playlist-card-badges {
+  position: relative;
+  top: 8px;
+  left: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  z-index: 10;
+  pointer-events: none;
+}
+
+.playlist-card-open .playlist-card-badges {
+  opacity: 0;
+  transform: scale(0.9);
+  pointer-events: none;
+}
+
+.playlist-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+}
+
+.auto-scan-badge {
+  background: rgba(74, 222, 128, 0.15);
+  color: #86efac;
+  border: 1px solid rgba(74, 222, 128, 0.35);
+}
+
+.auto-download-badge {
+  background: rgba(59, 130, 246, 0.15);
+  color: #93c5fd;
+  border: 1px solid rgba(59, 130, 246, 0.35);
+}
+
+.next-scan-badge {
+  background: rgba(245, 158, 11, 0.15);
+  color: #fcd34d;
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  font-family: ui-monospace, SFMono-Regular, monospace;
+}
+
+.auto-scan-off-badge {
+  background: rgba(156, 163, 175, 0.15);
+  color: #9ca3af;
+  border: 1px solid rgba(156, 163, 175, 0.35);
+}
+
+/* Playlist preview badges (under stats) */
+.playlist-preview-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
 }
 
 .playlist-preview {
@@ -740,6 +808,33 @@ button.search-type-btn.active {
   gap: 8px;
   flex-wrap: wrap;
   justify-content: flex-end;
+  align-items: center;
+}
+
+/* Library ownership badges */
+.search-card-owned-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  background: rgba(74, 222, 128, 0.15);
+  color: #86efac;
+  border: 1px solid rgba(74, 222, 128, 0.35);
+  white-space: nowrap;
+}
+
+.search-card-owned-badge.partial {
+  background: rgba(245, 158, 11, 0.15);
+  color: #fcd34d;
+  border: 1px solid rgba(245, 158, 11, 0.35);
+}
+
+.search-card-owned-count {
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  margin-left: 4px;
 }
 
 .search-card-preview {
