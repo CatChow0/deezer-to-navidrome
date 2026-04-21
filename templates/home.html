@@ -84,25 +84,26 @@
           <p id="playlist-stats-{{ playlist.id }}" class="playlist-stats">Loading…</p>
         </div>
 
+        <button type="button" class="playlist-close-btn" onclick="closePlaylist('{{ playlist.id }}')" aria-label="Close">×</button>
+
         <div class="playlist-open-right">
           <button type="button" onclick="startConversion('{{ playlist.id }}', 'quick')" title="Re-match only unmatched/unchecked tracks, reuse cached matches">Quick Scan</button>
-          <button type="button" class="secondary" onclick="startConversion('{{ playlist.id }}', 'full')" title="Re-match every track from scratch">Full Scan</button>
-
-          <form method="post"
-                action="{{ url_for('playlists.delete_playlist', playlist_id=playlist.id) }}"
-                onsubmit="return confirm('Delete this playlist?');">
-            <button type="submit" class="danger">Delete</button>
-          </form>
-
           <button type="button" class="secondary" onclick="startDownloadMissing('{{ playlist.id }}')">
             Download Missing
           </button>
 
+          <button type="button" class="secondary" onclick="startConversion('{{ playlist.id }}', 'full')" title="Re-match every track from scratch">Full Scan</button>
           <button type="button" class="secondary" onclick="openAutomationModal('{{ playlist.id }}')">
             Automation
           </button>
 
-          <button type="button" class="secondary" onclick="closePlaylist('{{ playlist.id }}')">Close</button>
+          <div class="danger-btn-row">
+            <form method="post"
+                  action="{{ url_for('playlists.delete_playlist', playlist_id=playlist.id) }}"
+                  onsubmit="return confirm('Delete this playlist?');">
+              <button type="submit" class="danger">Delete</button>
+            </form>
+          </div>
         </div>
       </div>
 
