@@ -15,7 +15,7 @@
 
 - Fetches your Deezer playlists and matches each track against your local music files
 - Generates `.m3u8` playlists that Navidrome auto-imports
-- Downloads missing tracks via an optional [Deezer Downloader](https://github.com/maxim8898/deezerdownloader) integration
+- Downloads missing tracks via an optional [Deezer Downloader](https://github.com/kmille/deezer-downloader) integration
 - **Auto-scan playlists** on configurable intervals with optional auto-download
 - **Library Check** — see which tracks/albums/artists you already own while browsing Deezer
 - Detects and manages library duplicates (remix, live, remaster, etc.)
