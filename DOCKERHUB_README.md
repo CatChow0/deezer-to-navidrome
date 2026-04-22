@@ -2,7 +2,7 @@
 
 **Convert Deezer playlists to Navidrome-compatible `.m3u8` playlists by matching them against your local music library.**
 
-[![Version](https://img.shields.io/badge/version-1.3.1-blue)](https://hub.docker.com/r/catchow/deezer-to-navidrome)
+[![Version](https://img.shields.io/badge/version-1.4.0-blue)](https://hub.docker.com/r/catchow/deezer-to-navidrome)
 [![Python 3.11](https://img.shields.io/badge/python-3.11-blue)](https://www.python.org/)
 [![Flask](https://img.shields.io/badge/flask-web%20app-brightgreen)](https://flask.palletsprojects.com/)
 [![GitHub](https://img.shields.io/badge/GitHub-source%20%26%20full%20docs-black)](https://github.com/CatChow0/deezer-to-navidrome)
@@ -16,6 +16,8 @@
 - Fetches your Deezer playlists and matches each track against your local music files
 - Generates `.m3u8` playlists that Navidrome auto-imports
 - Downloads missing tracks via an optional [Deezer Downloader](https://github.com/maxim8898/deezerdownloader) integration
+- **Auto-scan playlists** on configurable intervals with optional auto-download
+- **Library Check** — see which tracks/albums/artists you already own while browsing Deezer
 - Detects and manages library duplicates (remix, live, remaster, etc.)
 - Fast matching engine: inverted title index + `rapidfuzz` (C++ GIL-releasing) + multi-threaded
 
@@ -102,8 +104,16 @@ M3U8 contains:  /deezer-dl/Artist/Song.mp3   ← what Navidrome sees
 2. **Full rebuild** → scan library and build cache (~seconds to minutes depending on size)
 3. **Add playlist** → paste Deezer URL or playlist ID
 4. **Full Scan** → match tracks; generates `.m3u8` + `report.json` + `missing.txt`
-5. *(Optional)* Download missing tracks, run **Incremental cache refresh**, then **Quick Scan**
-6. Navidrome auto-imports the `.m3u8` file
+5. *(Optional)* **Enable Automation** → auto-scan and auto-download on a schedule per playlist
+6. *(Optional)* Download missing tracks, run **Incremental cache refresh**, then **Quick Scan**
+7. Navidrome auto-imports the `.m3u8` file
+
+### Automation
+
+Each playlist can be configured to auto-scan and optionally auto-download:
+- Set interval in minutes/hours/days
+- Visual badges on playlist cards ("Auto Scan", "Auto DL")
+- Next scan countdown displayed
 
 ### Scan modes
 
@@ -111,6 +121,13 @@ M3U8 contains:  /deezer-dl/Artist/Song.mp3   ← what Navidrome sees
 |--------|-----------|
 | **Quick Scan** | Reuses cached matches; only re-matches unmatched/new tracks. Fast for mostly-matched playlists. |
 | **Full Scan** | Re-matches every track from scratch. Use after library changes or for first-time conversion. |
+
+### Library Check
+
+When searching Deezer, ownership indicators show:
+- **Tracks:** Green "Owned" badge if in library
+- **Albums:** Yellow (partial) or green (complete) badge with `owned/total tracks`
+- **Artists:** Yellow (partial) or green (complete) badge with `owned/total albums`
 
 ---
 
@@ -171,13 +188,21 @@ Each Deezer track is scored against library candidates using five factors:
 
 | File | Purpose |
 |------|---------|
-| `config.json` | App configuration (edited via UI) |
+| `config.json` | App configuration including automation settings |
 | `music_library_cache.json` | Indexed library metadata |
 | `playlist_preview_state.json` | Per-playlist match cache (enables Quick Scan) |
 | `dedup_report.json` | Latest dedup analysis |
 | `dedup_choices.json` | **Persistent** user dedup decisions |
 | `covers/` | Cached playlist artwork |
 | `dedup_quarantine/` | Quarantined duplicate files |
+
+## Key API Endpoints
+
+| Endpoint | Description |
+|----------|-------------|
+| `/playlist/<id>/automation` | Get/set automation settings for a playlist |
+| `/automation/status` | Scheduler status for all playlists |
+| `/search/library-check` | Check if items exist in local library |
 
 ---
 

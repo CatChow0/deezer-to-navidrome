@@ -717,12 +717,14 @@ def search_deezer(query: str, search_type: str, limit: int = 25):
     results = []
     for item in payload.get("data", []):
         if search_type == "track":
+            artist_name = ((item.get('artist') or {}).get('name')) or ''
             results.append(
                 {
                     "id": str(item.get("id") or ""),
                     "type": "track",
                     "title": item.get("title") or "Unknown title",
-                    "subtitle": f"{((item.get('artist') or {}).get('name')) or 'Artiste inconnu'} • {((item.get('album') or {}).get('title')) or 'Album inconnu'}",
+                    "artist": artist_name,
+                    "subtitle": f"{artist_name or 'Artiste inconnu'} • {((item.get('album') or {}).get('title')) or 'Album inconnu'}",
                     "cover": ((item.get("album") or {}).get("cover_medium"))
                     or ((item.get("album") or {}).get("cover_small"))
                     or "",
@@ -738,6 +740,7 @@ def search_deezer(query: str, search_type: str, limit: int = 25):
                     "title": item.get("title") or "Album inconnu",
                     "subtitle": ((item.get("artist") or {}).get("name")) or "Artiste inconnu",
                     "cover": item.get("cover_medium") or item.get("cover_small") or "",
+                    "track_count": item.get("nb_tracks", 0),
                     "download_type": "album",
                     "download_id": str(item.get("id") or ""),
                 }

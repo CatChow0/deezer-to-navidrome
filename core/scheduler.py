@@ -108,13 +108,6 @@ def _scheduler_loop():
         if not due:
             continue
 
-        logger.info(f"[auto-scan] {len(due)} playlist(s) due — running incremental cache refresh")
-        try:
-            refresh_library_cache_incremental_with_progress()
-        except Exception as e:
-            logger.error(f"[auto-scan] Cache refresh failed: {e}")
-            continue
-
         cfg = load_config()
         for pl in due:
             _run_playlist(pl, cfg)
@@ -124,6 +117,13 @@ def _scheduler_loop():
                 if pid in _state:
                     _state[pid]["last_run_at"] = int(time.time())
                     _state[pid]["next_run_at"] = int(time.time()) + interval_secs
+
+        # After all playlist scans/downloads are done, refresh cache to pick up new downloads
+        logger.info(f"[auto-scan] {len(due)} playlist(s) processed — running incremental cache refresh")
+        try:
+            refresh_library_cache_incremental_with_progress()
+        except Exception as e:
+            logger.error(f"[auto-scan] Cache refresh failed: {e}")
 
 
 def start():

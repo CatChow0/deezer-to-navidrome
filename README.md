@@ -2,7 +2,7 @@
 
 **A comprehensive web application that converts Deezer playlists to Navidrome-compatible `.m3u8` playlists by matching them against your local music library.**
 
-[![Docker Image Version](https://img.shields.io/badge/version-1.3.1-blue)](https://hub.docker.com/r/catchow/deezer-to-navidrome)
+[![Docker Image Version](https://img.shields.io/badge/version-1.4.0-blue)](https://hub.docker.com/r/catchow/deezer-to-navidrome)
 [![Python 3.11](https://img.shields.io/badge/python-3.11-blue)](https://www.python.org/)
 [![Flask](https://img.shields.io/badge/flask-web%20app-brightgreen)](https://flask.palletsprojects.com/)
 
@@ -60,11 +60,13 @@ If you're self-hosting music with Navidrome but also subscribe to Deezer, you wa
 - **M3U8 Export** - Generate Navidrome-compatible playlists
 - **Cover Caching** - Automatically download and cache playlist artwork
 - **Match Reports** - Detailed JSON reports showing how each track was matched
+- **Playlist Automation** - Auto-scan and auto-download on configurable intervals per playlist
 
 ### Library Management
 - **Full Cache Rebuild** - Re-scan entire music library from scratch
 - **Incremental Refresh** - Fast updates after adding new files
 - **Library Search** - Search Deezer for tracks, albums, and artists directly
+- **Library Check** - See which tracks/albums/artists you already own while browsing Deezer
 - **Multi-Source Support** - Scan multiple directories with custom path mappings
 
 ### Duplicate Management
@@ -201,6 +203,7 @@ For each Deezer track:
 | `dedup_report.json` | Latest dedup analysis | Medium (varies) | Until new scan |
 | `dedup_choices.json` | **Persistent** user decisions | Small (<1MB) | Survives app restart |
 | `covers/` | Playlist artwork | Medium (varies) | Until cleaned up |
+| `config.json` | App configuration including automation settings | Small (<1MB) | Survives app restart |
 
 ### Library Cache Structure
 
@@ -670,7 +673,21 @@ Changes are saved to `config.json` and take effect immediately (no restart neede
 3. Re-open playlist preview
 4. Click **Quick Scan** to pick up newly downloaded tracks
 
-#### Step 7: Convert to M3U8
+#### Step 7: Automation Setup (Optional)
+
+Configure automatic scanning and downloading for any playlist:
+
+1. Open playlist preview and click **Automation**
+2. Enable **Auto Quick Scan** and set interval (minutes, hours, or days)
+3. Optionally enable **Auto Download Missing** to automatically fetch missing tracks after each scan
+4. Save settings
+
+**Visual indicators:**
+- "Auto Scan" badge appears on playlist cards when enabled
+- "Auto DL" badge appears when auto-download is also enabled
+- Next scan countdown displayed on the card
+
+#### Step 8: Convert to M3U8
 
 Two scan modes are available in the playlist preview header:
 
@@ -687,6 +704,16 @@ Both modes:
 5. Navidrome auto-imports M3U8
 
 > The first Full Scan on a large playlist builds the cache used by all future Quick Scans.
+
+#### Library Check from Search
+
+When browsing Deezer search results, visual indicators show ownership status:
+
+- **Tracks:** Green "Owned" badge if already in your library
+- **Albums:** Yellow badge if partially owned, green if complete — shows `owned tracks / total tracks`
+- **Artists:** Yellow badge if you don't have all albums, green if complete — shows `owned albums / total albums`
+
+This helps you quickly identify new content worth adding to your collection.
 
 ### Advanced Usage
 
@@ -766,6 +793,15 @@ Both modes:
 | `/search` | GET | Search Deezer |
 | `/search/album/<id>` | GET | Album details |
 | `/search/artist/<id>` | GET | Artist details |
+| `/search/library-check` | GET | Check if tracks/albums/artists exist in local library |
+
+#### Automation
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/playlist/<id>/automation` | GET | Get automation settings for a playlist |
+| `/playlist/<id>/automation` | POST | Update automation settings |
+| `/automation/status` | GET | Get scheduler status for all playlists |
 
 #### Admin
 
@@ -1051,5 +1087,5 @@ For bugs or questions:
 
 ---
 
-**Last Updated:** 2026
-**Version:** 1.3.1
+**Last Updated:** 2026-04-22
+**Version:** 1.4.0

@@ -19,8 +19,18 @@ def _get_library_index():
         artists_index = {}
 
         for entry in library:
+            # Pour les titres: utiliser tag_title en priorité, sinon parsed_track_title
             norm_title = normalize_text(entry.get("tag_title") or entry.get("parsed_track_title") or "")
-            norm_artist = normalize_text(entry.get("tag_artist") or entry.get("parsed_artist") or "")
+
+            # Pour les artistes: utiliser tag_artist en priorité (plus fiable), sinon parsed_artist, sinon artist_dir_norm
+            norm_artist = normalize_text(
+                entry.get("tag_artist") or
+                entry.get("parsed_artist") or
+                entry.get("artist_dir_norm") or
+                ""
+            )
+
+            # Pour les albums: utiliser tag_album en priorité, sinon album_dir_norm
             norm_album = normalize_text(entry.get("tag_album") or entry.get("album_dir_norm") or "")
 
             # Index tracks
@@ -87,10 +97,12 @@ def check_library_route():
         - type: track|album|artist
         - ids: liste d'IDs séparés par des virgules
         - artist: nom de l'artiste (optionnel, pour meilleure correspondance)
+        - total_albums: nombre total d'albums pour un artiste (optionnel, depuis Deezer)
     """
     q_type = request.args.get("type", "track").lower()
     ids_str = request.args.get("ids", "")
     artist_name = request.args.get("artist", "")
+    total_albums_str = request.args.get("total_albums", "")
 
     if not ids_str:
         return jsonify({"ok": True, "results": {}})
@@ -98,13 +110,22 @@ def check_library_route():
     ids = [i.strip() for i in ids_str.split(",") if i.strip()]
     tracks_index, albums_index, artists_index = _get_library_index()
 
+    # Parser total_albums par artiste si fourni
+    total_albums_map = {}
+    if total_albums_str:
+        try:
+            for pair in total_albums_str.split("|"):
+                if ":" in pair:
+                    aid, count = pair.split(":", 1)
+                    total_albums_map[aid.strip()] = int(count.strip())
+        except Exception:
+            pass
+
     results = {}
 
     if q_type == "track":
         # Format: track_id -> { owned: bool, artist_match: bool }
         for track_id in ids:
-            # On cherche par titre + artiste
-            key_base = f":{normalize_text(track_id)}"  # Fallback par ID/titre
             owned = False
             artist_match = False
 
@@ -134,7 +155,7 @@ def check_library_route():
             results[track_id] = {"owned": owned, "artist_match": artist_match}
 
     elif q_type == "album":
-        # Format: album_id -> { owned_count: int, total_tracks: int, album_match: bool }
+        # Format: album_id -> { owned_count: int, album_match: bool }
         for album_id in ids:
             owned_count = 0
             album_match = False
@@ -165,12 +186,16 @@ def check_library_route():
             }
 
     elif q_type == "artist":
-        # Format: artist_id -> { albums_owned: int, total_albums: int }
+        # Format: artist_id -> { albums_owned: int, total_albums: int, tracks_owned: int }
+        # artist_name est utilisé pour la lookup dans l'index (plus fiable que l'ID)
         for artist_id in ids:
-            norm_artist = normalize_text(artist_id)
+            norm_artist = normalize_text(artist_name) if artist_name else normalize_text(artist_id)
             artist_data = artists_index.get(norm_artist, {"albums": set(), "tracks": []})
+            albums_owned = len(artist_data.get("albums", set()))
+            total = total_albums_map.get(artist_id, 0)
             results[artist_id] = {
-                "albums_owned": len(artist_data.get("albums", set())),
+                "albums_owned": albums_owned,
+                "total_albums": total,
                 "tracks_owned": len(artist_data.get("tracks", []))
             }
 

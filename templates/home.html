@@ -198,7 +198,7 @@
     </div>
 
     <!-- Auto Download Missing -->
-    <div class="automation-row">
+    <div class="automation-row" id="automation-download-row">
       <div class="automation-row-text">
         <span class="automation-row-title">Auto Download Missing</span>
         <span class="automation-row-desc">After each scan, submit unmatched tracks to Deezer Downloader</span>
@@ -282,6 +282,213 @@ function escapeHtml(value) {
     .replaceAll('>', '&gt;')
     .replaceAll('"', '&quot;')
     .replaceAll("'", '&#039;');
+}
+
+function buildOwnedBadge() {
+  return `<span class="search-badge owned-badge" title="Already in your library">Owned</span>`;
+}
+
+function buildAlbumOwnedBadge(owned, total) {
+  if (owned === 0) return '';
+  const className = owned === total ? 'owned-badge' : 'partial-owned-badge';
+  const title = owned === total
+    ? `All ${total} tracks owned`
+    : `${owned}/${total} tracks owned`;
+  return `<span class="search-badge ${className}" title="${escapeHtml(title)}">${owned}/${total}</span>`;
+}
+
+function buildArtistOwnedBadge(albumsOwned, totalAlbums) {
+  if (albumsOwned === 0) return '';
+  const className = albumsOwned === totalAlbums ? 'owned-badge' : 'partial-owned-badge';
+  const title = albumsOwned === totalAlbums
+    ? `All ${totalAlbums} albums owned`
+    : `${albumsOwned}/${totalAlbums} albums owned`;
+  return `<span class="search-badge ${className}" title="${escapeHtml(title)}">${albumsOwned}/${totalAlbums} albums</span>`;
+}
+
+async function updateLibraryBadges() {
+  if (!currentSearchResults || currentSearchResults.length === 0) return;
+
+  const artistName = currentSearchResults[0]?.artist || '';
+
+  // Pour les tracks, on utilise le titre comme identifiant de recherche
+  // Pour les albums, on utilise le titre de l'album (pas l'ID Deezer)
+  // Pour les artistes, on utilise l'ID Deezer
+  let idsParam = '';
+  if (currentSearchType === 'track') {
+    idsParam = currentSearchResults.map(r => r.title || '').join(',');
+  } else if (currentSearchType === 'album') {
+    idsParam = currentSearchResults.map(r => r.title || '').join(',');
+  } else {
+    idsParam = currentSearchResults.map(r => r.id).join(',');
+  }
+
+  if (!idsParam) return;
+
+  // Pour les artistes, on passe aussi le nombre total d'albums
+  let totalAlbumsParam = '';
+  if (currentSearchType === 'artist') {
+    totalAlbumsParam = currentSearchResults.map(r => `${r.id}:${r.nb_album || 0}`).join('|');
+  }
+
+  try {
+    const url = `/search/library-check?type=${encodeURIComponent(currentSearchType)}&ids=${encodeURIComponent(idsParam)}&artist=${encodeURIComponent(artistName)}${totalAlbumsParam ? `&total_albums=${encodeURIComponent(totalAlbumsParam)}` : ''}`;
+    console.log('Library check URL:', url);
+
+    const resp = await fetch(url);
+    const data = await resp.json();
+
+    console.log('Library check response:', data);
+
+    if (!data.ok || !data.results) {
+      console.log('No library results found');
+      return;
+    }
+
+    // Pour les tracks, les clés de results sont les titres
+    // Pour les albums, les clés sont les titres
+    // Pour les artistes, les clés sont les IDs
+    for (let i = 0; i < currentSearchResults.length; i++) {
+      const item = currentSearchResults[i];
+      const lookupKey = currentSearchType === 'artist' ? item.id : (item.title || '');
+      const info = data.results[lookupKey];
+
+      console.log(`Checking item ${i}: ${item.title || item.id}, lookupKey: ${lookupKey}, info:`, info);
+
+      if (!info) continue;
+
+      const cardId = `search-card-${currentSearchType}-${item.id}`;
+      const badgeContainer = document.getElementById(`${cardId}-badges`);
+      console.log(`Badge container for ${cardId}:`, badgeContainer);
+
+      if (!badgeContainer) continue;
+
+      if (currentSearchType === 'track') {
+        if (info.owned) {
+          console.log(`Track owned: ${item.title}`);
+          badgeContainer.innerHTML = buildOwnedBadge();
+        }
+      } else if (currentSearchType === 'album') {
+        badgeContainer.innerHTML = buildAlbumOwnedBadge(info.owned_count || 0, item?.track_count || 0);
+      } else if (currentSearchType === 'artist') {
+        badgeContainer.innerHTML = buildArtistOwnedBadge(info.albums_owned || 0, info.total_albums || 0);
+      }
+    }
+  } catch (err) {
+    console.error('Error updating library badges:', err);
+  }
+}
+
+async function updateAlbumLibraryBadge(album, cardId) {
+  try {
+    const artistName = album.artist || '';
+    const tracks = album.tracks || [];
+
+    // Mettre à jour les badges individuels des tracks
+    await updateAlbumTracksBadges(tracks, artistName);
+  } catch (err) {
+    console.error('Error updating album library badge:', err);
+  }
+}
+
+async function updateAlbumTracksBadges(tracks, artistName) {
+  if (!tracks || tracks.length === 0) return;
+
+  // Pour les tracks, on utilise le titre comme clé de lookup (pas l'ID Deezer)
+  const trackTitles = tracks.map(t => t.title || '').join(',');
+  if (!trackTitles) return;
+
+  try {
+    const resp = await fetch(`/search/library-check?type=track&ids=${encodeURIComponent(trackTitles)}&artist=${encodeURIComponent(artistName)}`);
+    const data = await resp.json();
+
+    if (!data.ok || !data.results) return;
+
+    // Les clés de results sont les titres normalisés
+    for (const track of tracks) {
+      const lookupKey = track.title || '';
+      const info = data.results[lookupKey];
+      if (!info || !info.owned) continue;
+
+      const row = document.querySelector(`tr[data-track-id="${track.track_id}"]`);
+      if (!row) continue;
+
+      const actionCell = row.querySelector('.album-track-action-cell');
+      if (!actionCell) continue;
+
+      const existingBadge = actionCell.querySelector('.track-owned-badge');
+      if (!existingBadge) {
+        const badgeHtml = `<div class="track-owned-badge" style="font-size:0.7rem;color:#86efac;position:relative;margin-left:20%;">Owned</div>`;
+        actionCell.innerHTML = actionCell.innerHTML + badgeHtml;
+      }
+    }
+  } catch (err) {
+    console.error('Error updating album tracks badges:', err);
+  }
+}
+
+async function updateArtistLibraryBadge(artist, cardId) {
+  try {
+    const artistName = artist.name || '';
+    const totalAlbumsParam = `${artist.id}:${artist.nb_album || 0}`;
+    // Pour les artistes, on utilise le nom comme clé de lookup (pas l'ID)
+    const resp = await fetch(`/search/library-check?type=artist&ids=${encodeURIComponent(artist.id)}&artist=${encodeURIComponent(artistName)}&total_albums=${encodeURIComponent(totalAlbumsParam)}`);
+    const data = await resp.json();
+
+    if (!data.ok || !data.results) return;
+
+    // La réponse utilise l'ID comme clé
+    const info = data.results[artist.id];
+    if (!info) return;
+
+    const badgeContainer = document.getElementById(`${cardId}-artist-badges`);
+    if (!badgeContainer) return;
+
+    badgeContainer.innerHTML = buildArtistOwnedBadge(info.albums_owned || 0, info.total_albums || 0);
+
+    // Mettre à jour les badges individuels des albums
+    await updateArtistAlbumsBadges(artist.albums || [], artistName);
+  } catch (err) {
+    console.error('Error updating artist library badge:', err);
+  }
+}
+
+async function updateArtistAlbumsBadges(albums, artistName) {
+  if (!albums || albums.length === 0) return;
+
+  // Pour les albums, on utilise le titre comme clé de lookup
+  const albumTitles = albums.map(a => a.title || '').join(',');
+  if (!albumTitles) return;
+
+  try {
+    const resp = await fetch(`/search/library-check?type=album&ids=${encodeURIComponent(albumTitles)}&artist=${encodeURIComponent(artistName)}`);
+    const data = await resp.json();
+
+    if (!data.ok || !data.results) return;
+
+    for (const album of albums) {
+      const lookupKey = album.title || '';
+      const info = data.results[lookupKey];
+      if (!info) continue;
+
+      const badgeContainer = document.getElementById(`artist-album-badge-${album.id}`);
+      if (!badgeContainer) continue;
+
+      const ownedCount = info.owned_count || 0;
+      // Si track_count n'est pas disponible, on affiche juste le nombre de tracks possédés
+      const totalCount = album.track_count || 0;
+      if (ownedCount > 0) {
+        if (totalCount > 0) {
+          badgeContainer.innerHTML = buildAlbumOwnedBadge(ownedCount, totalCount);
+        } else {
+          // Affiche juste le nombre de tracks sans total
+          badgeContainer.innerHTML = `<span class="search-badge owned-badge" title="${ownedCount} tracks owned">${ownedCount} tracks</span>`;
+        }
+      }
+    }
+  } catch (err) {
+    console.error('Error updating artist albums badges:', err);
+  }
 }
 
 async function startCacheRefreshIncremental() {
@@ -395,6 +602,9 @@ document.getElementById("deezer-search-form").addEventListener("submit", async (
     status.textContent = `${currentSearchResults.length} result(s)`;
 
     results.innerHTML = currentSearchResults.map(item => buildSearchCard(item)).join("");
+
+    // Update library badges after rendering
+    await updateLibraryBadges();
   } catch (err) {
     status.textContent = "Network error";
   }
@@ -453,6 +663,9 @@ function buildSearchCard(item) {
   const expandable = type === "album" || type === "artist";
   const cardId = `search-card-${type}-${item.id}`;
 
+  // Pour les albums, le bouton Download est seulement dans l'aperçu (pas en double)
+  const showDownloadInCard = type !== "album";
+
   return `
     <article class="search-card search-card-type-${escapeHtml(type)}" id="${escapeHtml(cardId)}" data-card-id="${escapeHtml(cardId)}">
       <div class="search-card-main">
@@ -463,9 +676,11 @@ function buildSearchCard(item) {
         <div class="search-card-body">
           <h3>${escapeHtml(item.title)}</h3>
           <p>${escapeHtml(item.subtitle || "")}</p>
+          <div class="search-card-badges" id="${escapeHtml(cardId)}-badges"></div>
         </div>
 
         <div class="search-card-actions">
+          ${showDownloadInCard ? `
           <button
             type="button"
             class="download-result-btn"
@@ -474,6 +689,7 @@ function buildSearchCard(item) {
           >
             Download
           </button>
+          ` : ''}
 
           ${expandable ? `
             <button
@@ -562,6 +778,9 @@ async function openSearchAlbumCard(albumId) {
 
     body.innerHTML = renderAlbumInlineDetail(data.album, cardId);
     openedSearchCards.add(cardId);
+
+    // Update library badges for album
+    await updateAlbumLibraryBadge(data.album, cardId);
   } catch (err) {
     body.innerHTML = `<div class="loading-cell">Network error</div>`;
   }
@@ -595,6 +814,9 @@ async function openSearchArtistCard(artistId) {
 
     body.innerHTML = renderArtistInlineDetail(data.artist, cardId);
     openedSearchCards.add(cardId);
+
+    // Update library badges for artist
+    await updateArtistLibraryBadge(data.artist, cardId);
   } catch (err) {
     body.innerHTML = `<div class="loading-cell">Network error</div>`;
   }
@@ -652,24 +874,25 @@ function renderAlbumInlineDetail(album, cardId) {
         <table class="playlist-table">
           <thead>
             <tr>
-              <th>#</th>
+              <th style="width:6%;">#</th>
               <th>Title</th>
               <th>Artist</th>
-              <th>Action</th>
+              <th style="width:20%;">Action</th>
             </tr>
           </thead>
           <tbody>
-            ${tracks.map(track => `
-              <tr>
+            ${tracks.map((track, idx) => `
+              <tr data-track-id="${escapeHtml(track.track_id)}" data-track-title="${escapeHtml(track.title)}">
                 <td>${escapeHtml(track.position)}</td>
                 <td>${escapeHtml(track.title)}</td>
                 <td>${escapeHtml(track.artist || "")}</td>
-                <td>
+                <td class="album-track-action-cell" style="vertical-align:middle;position:relative;">
                   <button
                     type="button"
                     class="download-result-btn"
                     data-download-type="track"
                     data-download-id="${escapeHtml(track.track_id)}"
+                    style="vertical-align:middle;"
                   >
                     Download
                   </button>
@@ -685,6 +908,7 @@ function renderAlbumInlineDetail(album, cardId) {
 
 function renderArtistInlineDetail(artist, cardId) {
   const albums = Array.isArray(artist.albums) ? artist.albums : [];
+  const ownedBadgeContainer = `<div class="search-card-badges" id="${escapeHtml(cardId)}-artist-badges"></div>`;
 
   return `
     <div class="search-inline-detail">
@@ -692,6 +916,7 @@ function renderArtistInlineDetail(artist, cardId) {
         <div class="search-inline-meta">
           <h4>${escapeHtml(artist.name || "")}</h4>
           <p>${escapeHtml(String(artist.nb_album || 0))} album(s)</p>
+          ${ownedBadgeContainer}
         </div>
 
         <div class="search-inline-actions">
@@ -707,21 +932,23 @@ function renderArtistInlineDetail(artist, cardId) {
 
       <div class="artist-inline-albums">
         ${albums.map(album => `
-          <article class="artist-album-row">
-            <button
-              type="button"
-              class="artist-album-link-card"
-              data-album-id="${escapeHtml(album.id)}"
-            >
-              <div class="artist-album-row-cover">
-                ${album.cover ? `<img src="${escapeHtml(album.cover)}" alt="${escapeHtml(album.title)}">` : `<div class="search-card-placeholder">No cover</div>`}
-              </div>
-              <div class="artist-album-row-meta">
-                <strong>${escapeHtml(album.title)}</strong>
-                <span>${escapeHtml(album.release_date || "")}</span>
-              </div>
-            </button>
-
+          <article class="artist-album-row" data-album-id="${escapeHtml(album.id)}" data-album-title="${escapeHtml(album.title)}">
+            <div class="artist-album-link-wrapper">
+              <button
+                type="button"
+                class="artist-album-link-card"
+                data-album-id="${escapeHtml(album.id)}"
+              >
+                <div class="artist-album-row-cover">
+                  ${album.cover ? `<img src="${escapeHtml(album.cover)}" alt="${escapeHtml(album.title)}">` : `<div class="search-card-placeholder">No cover</div>`}
+                </div>
+                <div class="artist-album-row-meta">
+                  <strong>${escapeHtml(album.title)}</strong>
+                  <span>${escapeHtml(album.release_date || "")}</span>
+                </div>
+              </button>
+              <div class="artist-album-row-badges" id="artist-album-badge-${escapeHtml(album.id)}"></div>
+            </div>
             <div class="artist-album-inline-preview hidden" id="artist-album-inline-${escapeHtml(album.id)}"></div>
           </article>
         `).join("")}
@@ -760,6 +987,7 @@ async function openArtistAlbumInline(albumId, albumsContainer) {
 
     const album = data.album;
     const tracks = Array.isArray(album.tracks) ? album.tracks : [];
+    const artistName = album.artist || '';
 
     preview.innerHTML = `
       <div class="artist-album-inline-box">
@@ -768,6 +996,7 @@ async function openArtistAlbumInline(albumId, albumsContainer) {
             <h4>${escapeHtml(album.title || "")}</h4>
             <p>${escapeHtml(album.artist || "")}</p>
             <p>${tracks.length} track(s)</p>
+            <div class="search-card-badges" id="${escapeHtml(previewId)}-track-badges"></div>
           </div>
 
           <div class="search-inline-actions">
@@ -786,24 +1015,25 @@ async function openArtistAlbumInline(albumId, albumsContainer) {
           <table class="playlist-table">
             <thead>
               <tr>
-                <th>#</th>
+                <th style="width:6%;">#</th>
                 <th>Title</th>
                 <th>Artist</th>
-                <th>Action</th>
+                <th style="width:20%;">Action</th>
               </tr>
             </thead>
             <tbody>
               ${tracks.map(track => `
-                <tr>
-                  <td>${escapeHtml(track.position)}</td>
-                  <td>${escapeHtml(track.title)}</td>
-                  <td>${escapeHtml(track.artist || "")}</td>
-                  <td>
+                <tr data-track-id="${escapeHtml(track.track_id)}" data-track-title="${escapeHtml(track.title)}">
+                  <td style="vertical-align:middle;">${escapeHtml(track.position)}</td>
+                  <td style="vertical-align:middle;">${escapeHtml(track.title)}</td>
+                  <td style="vertical-align:middle;">${escapeHtml(track.artist || "")}</td>
+                  <td class="album-track-action-cell" style="vertical-align:middle;position:relative;">
                     <button
                       type="button"
                       class="download-result-btn"
                       data-download-type="track"
                       data-download-id="${escapeHtml(track.track_id)}"
+                      style="vertical-align:middle;"
                     >
                       Download
                     </button>
@@ -815,6 +1045,9 @@ async function openArtistAlbumInline(albumId, albumsContainer) {
         </div>
       </div>
     `;
+
+    // Update track owned badges
+    await updateAlbumTracksBadges(tracks, artistName);
   } catch (err) {
     preview.innerHTML = `<div class="loading-cell">Network error</div>`;
   }
@@ -1781,6 +2014,15 @@ function minutesToValueUnit(minutes) {
 function toggleIntervalRow() {
   const enabled = document.getElementById('modal-auto-scan-enabled').checked;
   document.getElementById('modal-interval-row').classList.toggle('hidden', !enabled);
+
+  // Auto Download Missing can only be enabled if Auto Quick Scan is enabled
+  const downloadCheckbox = document.getElementById('modal-auto-download');
+  const downloadRow = document.getElementById('automation-download-row');
+  downloadCheckbox.disabled = !enabled;
+  downloadRow.classList.toggle('disabled', !enabled);
+  if (!enabled) {
+    downloadCheckbox.checked = false;
+  }
 }
 
 function buildAutomationBadgesHtml(autoScanEnabled, autoDownloadEnabled, intervalMinutes) {
@@ -1857,7 +2099,11 @@ function openAutomationModal(pid) {
   const download = card?.dataset.autoDownload === 'true';
 
   document.getElementById('modal-auto-scan-enabled').checked = enabled;
-  document.getElementById('modal-auto-download').checked = download;
+  const downloadCheckbox = document.getElementById('modal-auto-download');
+  const downloadRow = document.getElementById('automation-download-row');
+  downloadCheckbox.checked = download;
+  downloadCheckbox.disabled = !enabled; // Disabled if auto-scan is off
+  downloadRow.classList.toggle('disabled', !enabled); // Gray out the row
 
   const [val, unit] = minutesToValueUnit(interval);
   document.getElementById('modal-scan-value').value = val;

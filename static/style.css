@@ -812,7 +812,14 @@ button.search-type-btn.active {
 }
 
 /* Library ownership badges */
-.search-card-owned-badge {
+.search-card-badges {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+
+.search-badge {
   display: inline-flex;
   align-items: center;
   padding: 4px 8px;
@@ -820,21 +827,32 @@ button.search-type-btn.active {
   font-size: 0.65rem;
   font-weight: 700;
   letter-spacing: 0.03em;
+  white-space: nowrap;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+}
+
+.owned-badge {
   background: rgba(74, 222, 128, 0.15);
   color: #86efac;
   border: 1px solid rgba(74, 222, 128, 0.35);
-  white-space: nowrap;
 }
 
-.search-card-owned-badge.partial {
+.partial-owned-badge {
   background: rgba(245, 158, 11, 0.15);
   color: #fcd34d;
   border: 1px solid rgba(245, 158, 11, 0.35);
 }
 
-.search-card-owned-count {
-  font-family: ui-monospace, SFMono-Regular, monospace;
-  margin-left: 4px;
+.track-owned-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 6px;
+  border-radius: 999px;
+  font-size: 0.65rem;
+  font-weight: 700;
+  background: rgba(74, 222, 128, 0.15);
+  color: #86efac;
+  border: 1px solid rgba(74, 222, 128, 0.35);
 }
 
 .search-card-preview {
@@ -882,6 +900,11 @@ button.search-type-btn.active {
   gap: 10px;
 }
 
+.artist-album-link-wrapper {
+  position: relative;
+  display: block;
+}
+
 .artist-album-link-card {
   display: grid;
   grid-template-columns: 56px 1fr;
@@ -893,6 +916,14 @@ button.search-type-btn.active {
   background: #1a1f26;
   border: 1px solid var(--border);
   border-radius: 12px;
+}
+
+.artist-album-row-badges {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 10;
+  pointer-events: none;
 }
 
 .artist-album-row-cover img {
@@ -1609,6 +1640,17 @@ button.search-type-btn.active {
   font-size: 0.75rem;
   color: var(--muted);
   line-height: 1.4;
+}
+
+/* Gray out download row when auto-scan is disabled */
+.automation-row.disabled {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.automation-row.disabled .automation-row-title,
+.automation-row.disabled .automation-row-desc {
+  color: var(--muted);
 }
 
 .automation-interval-row {
