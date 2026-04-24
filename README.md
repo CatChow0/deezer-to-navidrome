@@ -417,14 +417,14 @@ services:
       DATA_DIR: "/data"
 
       # Music library paths (comma-separated)
-      SCAN_DIRS: "/music/deezer-dl,/music/library"
+      SCAN_DIRS: "/music/library,/music/other-library"
 
       # Where to write M3U8 playlists
       PLAYLISTS_BASE_DIR: "/music/playlists"
 
       # Map container paths to Navidrome paths
       # Format: /container/path:/navidrome/path
-      HOST_TO_NAVIDROME_ROOT: "/music/deezer-dl:/deezer-dl,/music/library:/music"
+      HOST_TO_NAVIDROME_ROOT: "/music/library:/music,/music/other-library:/other-navidrome-library"
 
       # Optional: Deezer Downloader service URL
       DEEZER_DL_BASE_URL: "https://deezer-downloader.example.com"
@@ -440,10 +440,10 @@ services:
 
     volumes:
       # Persistent data (config, cache, covers)
-      - ./data:/data
+      - ./host-data:/data
 
       # Music library directories
-      - /path/on/host/deezer-dl:/music/deezer-dl
+      - /path/on/host/other-library:/music/other-library
       - /path/on/host/library:/music/library
 
       # Playlist output directory
