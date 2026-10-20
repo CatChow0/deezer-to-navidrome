@@ -152,13 +152,14 @@ def list_tasks():
     return [task_summary(t) for t in sorted(tasks, key=lambda t: t["created_at"], reverse=True)]
 
 
-def follow_task(task_id, keepalive=15):
-    """Yields every event of a task from the first one, then new ones as they
-    come; yields None when nothing happened for `keepalive` seconds."""
+def follow_task(task_id, start=0, keepalive=15):
+    """Yields (index, event) for every event of a task from `start` on, then new
+    ones as they come; yields (None, None) when nothing happened for
+    `keepalive` seconds. The index lets a reconnecting client resume."""
     task = TASKS.get(task_id)
     if not task:
         return
-    sent = 0
+    sent = max(0, start)
     while True:
         with task["cond"]:
             if sent >= len(task["events"]) and not task["done"]:
@@ -168,10 +169,10 @@ def follow_task(task_id, keepalive=15):
         if not pending:
             if finished:
                 return
-            yield None
+            yield None, None
             continue
-        for event in pending:
-            yield event
+        for offset, event in enumerate(pending):
+            yield sent + offset, event
         sent += len(pending)
         if finished and sent >= len(task["events"]):
             return

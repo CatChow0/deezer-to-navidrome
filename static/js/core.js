@@ -32,13 +32,46 @@ export async function fetchJSON(url, options = {}) {
   }
 }
 
+const STREAM_MAX_ATTEMPTS = 20;
+
 // Follows a server task over SSE. Handlers: onStatus(payload), onRow(row),
 // onEvent(payload) for anything else, onDone(payload), onError().
+// The server ends each stream after ~45 s and numbers its events: the browser
+// reconnects on its own and resumes after the last event (Last-Event-ID). If
+// it gives up (proxy error, server restart), a new stream resumes with ?from=.
+// onError only fires after many failed attempts in a row.
 export function streamTask(taskId, handlers = {}) {
-  const source = new EventSource(`/tasks/${taskId}/stream`);
+  let source = null;
   let finished = false;
+  let lastId = -1;
+  let attempts = 0;
 
-  source.onmessage = event => {
+  const open = () => {
+    const from = lastId + 1;
+    source = new EventSource(`/tasks/${taskId}/stream${from ? `?from=${from}` : ''}`);
+    source.onopen = () => {
+      attempts = 0;
+    };
+    source.onmessage = onMessage;
+    source.onerror = () => {
+      if (finished || source.readyState !== EventSource.CLOSED) return;
+      if (++attempts > STREAM_MAX_ATTEMPTS) {
+        finished = true;
+        handlers.onError?.();
+        return;
+      }
+      setTimeout(() => {
+        if (!finished) open();
+      }, Math.min(1000 * attempts, 5000));
+    };
+  };
+
+  const onMessage = event => {
+    if (event.lastEventId && /^\d+$/.test(event.lastEventId)) {
+      const id = Number(event.lastEventId);
+      if (id <= lastId) return;
+      lastId = id;
+    }
     let payload;
     try {
       payload = JSON.parse(event.data);
@@ -64,12 +97,13 @@ export function streamTask(taskId, handlers = {}) {
     }
   };
 
-  source.onerror = () => {
-    source.close();
-    if (!finished) handlers.onError?.();
+  open();
+  return {
+    close() {
+      finished = true;
+      source?.close();
+    },
   };
-
-  return source;
 }
 
 const TOAST_TONES = { info: '', ok: 'dot--ok', error: 'dot--miss' };

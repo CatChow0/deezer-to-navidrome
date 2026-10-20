@@ -1,5 +1,6 @@
 import json
 import threading
+import time
 
 from flask import (
     Blueprint,
@@ -71,14 +72,32 @@ def latest_version_route():
     })
 
 
+# Each stream is closed after this long; the browser reconnects and resumes
+# after the last event it got. Reverse proxies often cut long-lived responses.
+STREAM_SEGMENT_SECONDS = 45
+
+
 @system_bp.get("/tasks/<task_id>/stream")
 def task_stream(task_id):
+    # EventSource sends Last-Event-ID when it reconnects by itself; "from" is
+    # used when the page has to open a new stream.
+    last_id = request.headers.get("Last-Event-ID", "")
+    from_arg = request.args.get("from", "")
+    start = int(last_id) + 1 if last_id.isdigit() else int(from_arg) if from_arg.isdigit() else 0
+
     def generate():
+        yield "retry: 1500\n\n"
         if task_id not in TASKS:
             yield 'data: {"type":"status","message":"Task not found","done":true,"error":true}\n\n'
             return
-        for event in follow_task(task_id):
-            yield ": keepalive\n\n" if event is None else f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+        deadline = time.monotonic() + STREAM_SEGMENT_SECONDS
+        for index, event in follow_task(task_id, start=start, keepalive=10):
+            if event is None:
+                yield ": keepalive\n\n"
+            else:
+                yield f"id: {index}\ndata: {json.dumps(event, ensure_ascii=False)}\n\n"
+            if time.monotonic() > deadline:
+                return
 
     return Response(generate(), mimetype="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
