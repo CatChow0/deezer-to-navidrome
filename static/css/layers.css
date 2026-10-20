@@ -30,12 +30,6 @@ body {
   z-index: -4;
   display: block;
   background: var(--ink);
-  opacity: 0;
-  transition: opacity 1.6s ease;
-}
-
-#bg-noise.is-ready {
-  opacity: 1;
 }
 
 /* Middle plane: stacked blur layers, each only visible through a soft random mask */
@@ -99,9 +93,6 @@ body {
     animation: none;
   }
 
-  #bg-noise {
-    transition: none;
-  }
 }
 
 /* Front plane */

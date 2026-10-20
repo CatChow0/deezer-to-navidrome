@@ -16,4 +16,5 @@ ENV DATA_DIR=/data
 
 EXPOSE 8080
 
-CMD ["gunicorn", "--timeout", "0", "-b", "0.0.0.0:8080", "app:app"]
+# Threads let task streams (SSE) stay open without blocking the other requests.
+CMD ["gunicorn", "--worker-class", "gthread", "--threads", "16", "--timeout", "0", "-b", "0.0.0.0:8080", "app:app"]

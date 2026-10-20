@@ -7,7 +7,6 @@ from flask import (
     flash,
     jsonify,
     redirect,
-    render_template,
     request,
     send_from_directory,
     url_for,
@@ -34,6 +33,7 @@ from core.config import (
 )
 from core.version import get_app_version, get_latest_available_version
 from core import scheduler
+from routes.playlists import render_app
 
 system_bp = Blueprint("system", __name__)
 
@@ -45,7 +45,8 @@ def favicon():
 
 @system_bp.get("/covers/<path:filename>")
 def serve_cover(filename):
-    return send_from_directory(COVERS_DIR, filename)
+    # Covers are named after the playlist ID and rarely change: let the browser keep them for a day.
+    return send_from_directory(COVERS_DIR, filename, max_age=86400)
 
 
 @system_bp.get("/health")
@@ -134,8 +135,7 @@ def config_view():
         flash("Configuration saved")
         return redirect(url_for("system.config_view"))
 
-    cfg = load_config()
-    return render_template("config.html", config=cfg)
+    return render_app("settings")
 
 
 @system_bp.get("/api/scheduler/status")

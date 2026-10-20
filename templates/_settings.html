@@ -1,20 +1,10 @@
-{% extends 'base.html' %}
-
-{% block title %}Settings · Deezer → Navidrome{% endblock %}
-
-{% block styles %}
-<link rel="stylesheet" href="{{ url_for('static', filename='css/home.css') }}">
-<link rel="stylesheet" href="{{ url_for('static', filename='css/config.css') }}">
-{% endblock %}
-
-{% block content %}
 <div class="bento">
   <div class="page-head span-12">
     <h1 class="page-title">Settings</h1>
     <p class="page-lead">Where your music lives, how Navidrome sees it, and how hard the scanner may work.</p>
   </div>
 
-  <form method="post" class="stack span-8" id="config-form">
+  <form method="post" action="{{ url_for('system.config_view') }}" class="stack span-8" id="settings-form">
     <section class="cell" aria-labelledby="sources-title">
       <div class="cell-head">
         <div>
@@ -136,7 +126,7 @@
     </section>
 
     <div class="cell save-bar">
-      <p>Changes apply as soon as they are saved.</p>
+      <p data-save-status>Changes apply as soon as they are saved.</p>
       <button type="submit" class="btn">Save settings</button>
     </div>
   </form>
@@ -158,13 +148,13 @@
       </div>
     </section>
 
-    <section class="cell" aria-labelledby="activity-title">
+    <section class="cell" aria-labelledby="settings-activity-title">
       <div class="cell-head">
-        <h2 class="cell-title" id="activity-title">Activity</h2>
+        <h2 class="cell-title" id="settings-activity-title">Activity</h2>
       </div>
       <div class="cell-body">
-        <p class="activity-empty" id="activity-empty">Library refreshes you start will show their progress here.</p>
-        <div class="activity-list" id="activity-list" aria-live="polite"></div>
+        <p class="activity-empty">Scans, downloads and library refreshes you start will show their progress here.</p>
+        <div class="activity-list" aria-live="polite"></div>
       </div>
     </section>
 
@@ -199,8 +189,3 @@
     </section>
   </aside>
 </div>
-{% endblock %}
-
-{% block scripts %}
-<script type="module" src="{{ url_for('static', filename='js/config-page.js') }}"></script>
-{% endblock %}

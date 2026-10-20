@@ -1,15 +1,16 @@
 import { showFlashMessages } from './core.js';
-import { initBackground } from './background.js';
 import { initVersion } from './version.js';
 import { overlay } from './overlay.js';
+import { initViews } from './views.js';
 import { initDownloads } from './downloads.js';
 import { initSearch } from './search.js';
 import { initPlaylists } from './playlists.js';
 import { initAutomation } from './automation.js';
 import { initLibrary } from './library.js';
 import { initDedup } from './dedup.js';
+import { initSettings } from './settings.js';
 
-initBackground();
+initViews();
 initVersion();
 showFlashMessages();
 
@@ -20,3 +21,4 @@ initPlaylists(drawer);
 initAutomation();
 initLibrary();
 initDedup(overlay('dedup-modal'));
+initSettings();

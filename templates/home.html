@@ -1,10 +1,8 @@
 {% extends 'base.html' %}
 
-{% block styles %}
-<link rel="stylesheet" href="{{ url_for('static', filename='css/home.css') }}">
-{% endblock %}
-
 {% block content %}
+<div class="views" data-view="{{ view }}">
+<section class="view{% if view == 'dashboard' %} is-active{% endif %}" data-view-name="dashboard" aria-label="Dashboard" {% if view != 'dashboard' %}inert{% endif %}>
 <div class="bento">
   <div class="stack span-8">
     <section class="cell" aria-labelledby="search-title">
@@ -101,11 +99,17 @@
         <h2 class="cell-title" id="activity-title">Activity</h2>
       </div>
       <div class="cell-body">
-        <p class="activity-empty" id="activity-empty">Scans, downloads and library refreshes you start will show their progress here.</p>
-        <div class="activity-list" id="activity-list" aria-live="polite"></div>
+        <p class="activity-empty">Scans, downloads and library refreshes you start will show their progress here.</p>
+        <div class="activity-list" aria-live="polite"></div>
       </div>
     </section>
   </aside>
+</div>
+</section>
+
+<section class="view{% if view == 'settings' %} is-active{% endif %}" data-view-name="settings" aria-label="Settings" {% if view != 'settings' %}inert{% endif %}>
+  {% include '_settings.html' %}
+</section>
 </div>
 {% endblock %}
 
@@ -145,5 +149,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script type="module" src="{{ url_for('static', filename='js/home.js') }}"></script>
+<script type="module" src="{{ url_for('static', filename='js/app.js') }}"></script>
 {% endblock %}

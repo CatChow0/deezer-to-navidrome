@@ -36,10 +36,14 @@ def _log_dl(msg):
     print(f"[download-missing] {msg}", flush=True)
 
 
+def render_app(view):
+    """Dashboard and settings live on the same page; `view` picks the one shown first."""
+    return render_template("home.html", playlists=load_playlists(), config=load_config(), view=view)
+
+
 @playlists_bp.get("/")
 def home():
-    playlists = load_playlists()
-    return render_template("home.html", playlists=playlists)
+    return render_app("dashboard")
 
 
 @playlists_bp.post("/playlist/add")

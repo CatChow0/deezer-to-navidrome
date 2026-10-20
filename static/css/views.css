@@ -1,0 +1,104 @@
+/* Dashboard and Settings share one page; the topbar switch slides between them. */
+
+.views {
+  position: relative;
+  display: grid;
+  overflow: clip;
+  overflow-clip-margin: var(--gap);
+}
+
+.view {
+  min-width: 0;
+  transition:
+    transform var(--t-slow) var(--ease-out),
+    opacity var(--t-slow) var(--ease-out);
+}
+
+/* The view on screen sets the height; the other one is laid over it and
+   clipped, so a long Settings page never stretches the Dashboard. */
+.view:not(.is-active) {
+  position: absolute;
+  inset: 0 0 auto 0;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition:
+    transform var(--t-slow) var(--ease-out),
+    opacity var(--t-slow) var(--ease-out),
+    visibility 0s linear var(--t-slow);
+}
+
+.view[data-view-name="dashboard"]:not(.is-active) {
+  transform: translateX(calc(-100% - 4 * var(--gap)));
+}
+
+.view[data-view-name="settings"]:not(.is-active) {
+  transform: translateX(calc(100% + 4 * var(--gap)));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .view,
+  .view:not(.is-active) {
+    transition: none;
+  }
+}
+
+/* Switch: two equal halves and a pill that slides under the active one */
+.view-switch {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  padding: 4px;
+  border-radius: var(--r-chip);
+  background: rgba(0, 0, 0, 0.28);
+  isolation: isolate;
+}
+
+.view-switch a {
+  position: relative;
+  z-index: 1;
+  padding: 8px 18px;
+  border-radius: var(--r-chip);
+  color: var(--muted);
+  text-align: center;
+  text-decoration: none;
+  font-weight: 500;
+  transition: color var(--t-mid);
+}
+
+.view-switch a:hover {
+  color: var(--text);
+}
+
+.view-switch a[aria-current="page"] {
+  color: var(--ink);
+}
+
+.view-switch-pill {
+  position: absolute;
+  z-index: 0;
+  top: 4px;
+  bottom: 4px;
+  left: 4px;
+  width: calc(50% - 4px);
+  border-radius: var(--r-chip);
+  background: var(--text);
+  box-shadow: 0 4px 18px -6px rgba(238, 234, 248, 0.5);
+  transition: transform var(--t-slow) var(--ease-out);
+}
+
+.view-switch[data-active="settings"] .view-switch-pill {
+  transform: translateX(100%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .view-switch-pill {
+    transition: none;
+  }
+}
+
+@media (max-width: 560px) {
+  .view-switch {
+    flex: 1;
+  }
+}

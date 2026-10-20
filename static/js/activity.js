@@ -5,27 +5,27 @@ import { escapeHtml, fetchJSON, streamTask, toast } from './core.js';
 
 const AUTO_REMOVE_MS = 6000;
 
-function list() {
-  return document.getElementById('activity-list');
+// Each view has its own Activity cell; every task is mirrored in all of them.
+function hosts() {
+  return [...document.querySelectorAll('.activity-list')];
 }
 
-function refreshEmptyState() {
-  const empty = document.getElementById('activity-empty');
-  const host = list();
-  if (empty && host) empty.hidden = host.children.length > 0;
+function refreshEmptyStates() {
+  for (const host of hosts()) {
+    const empty = host.parentElement.querySelector('.activity-empty');
+    if (empty) empty.hidden = host.children.length > 0;
+  }
 }
 
-function removeTask(el) {
-  el.classList.add('is-leaving');
+function removeTask(elements) {
+  for (const el of elements) el.classList.add('is-leaving');
   setTimeout(() => {
-    el.remove();
-    refreshEmptyState();
+    for (const el of elements) el.remove();
+    refreshEmptyStates();
   }, 320);
 }
 
-// Returns a handle to drive one task row.
-export function startTask(title) {
-  const host = list();
+function taskElement(title) {
   const el = document.createElement('article');
   el.className = 'task';
   el.dataset.state = 'running';
@@ -41,36 +41,48 @@ export function startTask(title) {
       <pre class="task-log"></pre>
     </details>
   `;
+  return el;
+}
 
-  const stageEl = el.querySelector('.task-stage');
-  const barEl = el.querySelector('.progress-bar');
-  const logEl = el.querySelector('.task-log');
-  el.querySelector('.task-dismiss').addEventListener('click', () => removeTask(el));
-
-  if (host) {
+// Returns a handle to drive one task row (in every Activity cell).
+export function startTask(title) {
+  const elements = hosts().map(host => {
+    const el = taskElement(title);
     host.prepend(el);
-    refreshEmptyState();
+    return el;
+  });
+  refreshEmptyStates();
+
+  const all = selector => elements.map(el => el.querySelector(selector));
+  const stages = all('.task-stage');
+  const bars = all('.progress-bar');
+  const logs = all('.task-log');
+  for (const el of elements) {
+    el.querySelector('.task-dismiss').addEventListener('click', () => removeTask(elements));
   }
 
   return {
-    el,
     stage(text) {
-      if (text) stageEl.textContent = text;
+      if (text) stages.forEach(node => (node.textContent = text));
     },
     progress(value) {
-      if (typeof value === 'number') barEl.style.width = `${Math.max(0, Math.min(100, value))}%`;
+      if (typeof value !== 'number') return;
+      const width = `${Math.max(0, Math.min(100, value))}%`;
+      bars.forEach(node => (node.style.width = width));
     },
     log(line, { replace = false } = {}) {
       if (!line) return;
-      logEl.textContent = replace ? line : `${logEl.textContent}${line}\n`;
-      logEl.scrollTop = logEl.scrollHeight;
+      for (const node of logs) {
+        node.textContent = replace ? line : `${node.textContent}${line}\n`;
+        node.scrollTop = node.scrollHeight;
+      }
     },
     finish({ error = false, message } = {}) {
-      el.dataset.state = error ? 'error' : 'done';
-      stageEl.textContent = message || (error ? 'Failed' : 'Done');
+      elements.forEach(el => (el.dataset.state = error ? 'error' : 'done'));
+      stages.forEach(node => (node.textContent = message || (error ? 'Failed' : 'Done')));
       if (!error) {
-        barEl.style.width = '100%';
-        setTimeout(() => removeTask(el), AUTO_REMOVE_MS);
+        bars.forEach(node => (node.style.width = '100%'));
+        setTimeout(() => removeTask(elements), AUTO_REMOVE_MS);
       }
     },
   };

@@ -7,27 +7,29 @@
   <title>{% block title %}Deezer → Navidrome{% endblock %}</title>
   <link rel="preload" href="{{ url_for('static', filename='fonts/unbounded-latin-wght-normal.woff2') }}" as="font" type="font/woff2" crossorigin>
   <link rel="preload" href="{{ url_for('static', filename='fonts/instrument-sans-latin-wght-normal.woff2') }}" as="font" type="font/woff2" crossorigin>
-  {% for sheet in ['tokens', 'layers', 'cells', 'components', 'drawer'] %}
+  {% for sheet in ['tokens', 'layers', 'cells', 'components', 'views', 'home', 'config', 'drawer'] %}
   <link rel="stylesheet" href="{{ url_for('static', filename='css/' ~ sheet ~ '.css') }}">
   {% endfor %}
-  {% block styles %}{% endblock %}
 </head>
 <body>
   <canvas id="bg-noise" aria-hidden="true"></canvas>
   <div class="blur-field" aria-hidden="true"></div>
   <div class="grain" aria-hidden="true"></div>
+  {# Classic script on purpose: it draws the first frame before the page is painted. #}
+  <script src="{{ url_for('static', filename='js/background.js') }}"></script>
 
   <div class="app">
     <header class="cell topbar">
-      <a class="brand" href="{{ url_for('playlists.home') }}">
+      <a class="brand" href="{{ url_for('playlists.home') }}" data-view-link="dashboard">
         <span class="brand-name">Deezer <span>→</span> Navidrome</span>
         <span class="brand-version" id="version-tag"></span>
       </a>
       <div class="topbar-right">
         <a id="new-version-tag" class="update-badge hidden" href="#" target="_blank" rel="noopener">Update available</a>
-        <nav class="nav" aria-label="Main">
-          <a href="{{ url_for('playlists.home') }}" {% if request.endpoint == 'playlists.home' %}aria-current="page"{% endif %}>Dashboard</a>
-          <a href="{{ url_for('system.config_view') }}" {% if request.endpoint == 'system.config_view' %}aria-current="page"{% endif %}>Settings</a>
+        <nav class="view-switch" aria-label="Main" data-active="{{ view }}">
+          <span class="view-switch-pill" aria-hidden="true"></span>
+          <a href="{{ url_for('playlists.home') }}" data-view-link="dashboard" {% if view == 'dashboard' %}aria-current="page"{% endif %}>Dashboard</a>
+          <a href="{{ url_for('system.config_view') }}" data-view-link="settings" {% if view == 'settings' %}aria-current="page"{% endif %}>Settings</a>
         </nav>
       </div>
     </header>

@@ -170,32 +170,6 @@
   gap: 10px;
 }
 
-.nav {
-  display: flex;
-  gap: 4px;
-  padding: 4px;
-  border-radius: var(--r-chip);
-  background: rgba(0, 0, 0, 0.25);
-}
-
-.nav a {
-  padding: 8px 16px;
-  border-radius: var(--r-chip);
-  color: var(--muted);
-  text-decoration: none;
-  font-weight: 500;
-  transition: color var(--t-fast), background var(--t-fast);
-}
-
-.nav a:hover {
-  color: var(--text);
-}
-
-.nav a[aria-current="page"] {
-  background: var(--text);
-  color: var(--ink);
-}
-
 .update-badge {
   padding: 6px 12px;
   border-radius: var(--r-chip);
@@ -227,15 +201,6 @@
   .topbar-right {
     flex: 1 1 100%;
     flex-wrap: wrap;
-  }
-
-  .nav {
-    flex: 1;
-  }
-
-  .nav a {
-    flex: 1;
-    text-align: center;
   }
 
   .brand-version {

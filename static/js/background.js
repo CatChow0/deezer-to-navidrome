@@ -1,5 +1,8 @@
-// Back and middle planes: a domain-warped simplex aurora rendered at low
-// resolution, and uneven blur zones placed at random on each load.
+// Back and middle planes: a domain-warped simplex aurora and uneven blur
+// zones. Loaded as a classic script right after the canvas so the first frame
+// is drawn before the page paints. The random parameters are kept in
+// sessionStorage: the same background follows the tab until it is closed.
+(() => {
 
 const PALETTE = {
   ink: '#07061a',
@@ -9,9 +12,12 @@ const PALETTE = {
   mint: '#2dd4bf',
 };
 
-const RENDER_SCALE = 0.35;
+// Render budget: up to 75 % of the viewport, capped at ~1.3 megapixels.
+const MAX_SCALE = 0.75;
+const MAX_PIXELS = 1.3e6;
 const FRAME_INTERVAL = 1000 / 24;
-const TIME_SPEED = 0.014;
+const TIME_PER_SECOND = 0.09;
+const SESSION_KEY = 'd2n-background-v1';
 
 const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
 
@@ -34,8 +40,40 @@ function rotateHue([r, g, b], degrees) {
   ].map(v => Math.min(1, Math.max(0, v)));
 }
 
-function buildPalette() {
-  const shift = (Math.random() - 0.5) * 50;
+const rand = (min, max) => min + Math.random() * (max - min);
+
+function createSession() {
+  return {
+    hueShift: rand(-25, 25),
+    seed: [rand(0, 100), rand(0, 100)],
+    timeOffset: rand(0, 50),
+    startedAt: Date.now(),
+    zones: [1, 2, 3, 4].map(() => ({
+      x: rand(10, 90), y: rand(10, 90),
+      rx: rand(28, 60), ry: rand(24, 52),
+      dx: rand(-6, 6), dy: rand(-5, 5),
+      duration: rand(60, 120), delay: rand(0, 60),
+    })),
+  };
+}
+
+function loadSession() {
+  try {
+    const saved = JSON.parse(sessionStorage.getItem(SESSION_KEY) || 'null');
+    if (saved && Array.isArray(saved.zones)) return saved;
+  } catch (_) {}
+  const session = createSession();
+  try {
+    sessionStorage.setItem(SESSION_KEY, JSON.stringify(session));
+  } catch (_) {}
+  return session;
+}
+
+// Time follows the wall clock since the session started, so a reload or a
+// page change picks the animation up where it was.
+const shaderTime = session => session.timeOffset + ((Date.now() - session.startedAt) / 1000) * TIME_PER_SECOND;
+
+function buildPalette(shift) {
   const out = {};
   for (const [name, hex] of Object.entries(PALETTE)) {
     out[name] = name === 'ink' ? hexToRgb(hex) : rotateHue(hexToRgb(hex), shift);
@@ -140,7 +178,7 @@ function compile(gl, type, source) {
   return shader;
 }
 
-function startWebGL(canvas, palette) {
+function startWebGL(canvas, palette, session) {
   const gl = canvas.getContext('webgl', { antialias: false, alpha: false, powerPreference: 'low-power' });
   if (!gl) return false;
 
@@ -165,18 +203,20 @@ function startWebGL(canvas, palette) {
   const u = name => gl.getUniformLocation(program, name);
   const uRes = u('u_res');
   const uTime = u('u_time');
-  gl.uniform2f(u('u_seed'), Math.random() * 100, Math.random() * 100);
+  gl.uniform2f(u('u_seed'), session.seed[0], session.seed[1]);
   for (const name of Object.keys(palette)) {
     gl.uniform3fv(u(`u_${name}`), palette[name]);
   }
 
-  let time = Math.random() * 50;
   let last = 0;
   let rafId = null;
 
   function resize() {
-    const w = Math.max(1, Math.round(window.innerWidth * RENDER_SCALE));
-    const h = Math.max(1, Math.round(window.innerHeight * RENDER_SCALE));
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const scale = Math.min(MAX_SCALE, Math.sqrt(MAX_PIXELS / Math.max(1, vw * vh)));
+    const w = Math.max(1, Math.round(vw * scale));
+    const h = Math.max(1, Math.round(vh * scale));
     if (canvas.width !== w || canvas.height !== h) {
       canvas.width = w;
       canvas.height = h;
@@ -186,16 +226,14 @@ function startWebGL(canvas, palette) {
   }
 
   function draw() {
-    gl.uniform1f(uTime, time);
+    gl.uniform1f(uTime, shaderTime(session));
     gl.drawArrays(gl.TRIANGLES, 0, 3);
   }
 
   function frame(now) {
     rafId = requestAnimationFrame(frame);
     if (now - last < FRAME_INTERVAL) return;
-    const dt = last ? Math.min(now - last, 100) : FRAME_INTERVAL;
     last = now;
-    time += (dt / 1000) * TIME_SPEED * 10;
     draw();
   }
 
@@ -225,7 +263,7 @@ function startWebGL(canvas, palette) {
 }
 
 // Canvas2D fallback: one still frame of value noise in the same palette.
-function startCanvas2D(canvas, palette) {
+function startCanvas2D(canvas, palette, session) {
   const ctx = canvas.getContext('2d');
   if (!ctx) return;
 
@@ -235,7 +273,10 @@ function startCanvas2D(canvas, palette) {
   canvas.height = h;
 
   const grid = 9;
-  const values = Array.from({ length: (grid + 1) * (grid + 1) }, () => Math.random());
+  // Deterministic per session so the still frame matches across pages.
+  let state = Math.floor(session.seed[0] * 1000) || 1;
+  const next = () => ((state = (state * 16807) % 2147483647) / 2147483647);
+  const values = Array.from({ length: (grid + 1) * (grid + 1) }, next);
   const smooth = x => x * x * (3 - 2 * x);
   const sample = (x, y) => {
     const xi = Math.floor(x);
@@ -270,35 +311,35 @@ function startCanvas2D(canvas, palette) {
   ctx.putImageData(img, 0, 0);
 }
 
-function placeBlurZones() {
+function placeBlurZones(session) {
   const field = document.querySelector('.blur-field');
   if (!field) return;
 
-  const rand = (min, max) => min + Math.random() * (max - min);
-  for (let depth = 1; depth <= 4; depth++) {
+  // Negative delays resume each drift where it was on the previous page.
+  const elapsed = (Date.now() - session.startedAt) / 1000;
+  session.zones.forEach((z, index) => {
     const zone = document.createElement('div');
     zone.className = 'blur-zone';
-    zone.dataset.depth = String(depth);
-    zone.style.setProperty('--x', `${rand(10, 90).toFixed(1)}%`);
-    zone.style.setProperty('--y', `${rand(10, 90).toFixed(1)}%`);
-    zone.style.setProperty('--rx', `${rand(28, 60).toFixed(1)}%`);
-    zone.style.setProperty('--ry', `${rand(24, 52).toFixed(1)}%`);
-    zone.style.setProperty('--dx', `${rand(-6, 6).toFixed(1)}%`);
-    zone.style.setProperty('--dy', `${rand(-5, 5).toFixed(1)}%`);
-    zone.style.setProperty('--dur', `${rand(60, 120).toFixed(0)}s`);
-    zone.style.setProperty('--delay', `${-rand(0, 60).toFixed(0)}s`);
+    zone.dataset.depth = String(index + 1);
+    zone.style.setProperty('--x', `${z.x.toFixed(1)}%`);
+    zone.style.setProperty('--y', `${z.y.toFixed(1)}%`);
+    zone.style.setProperty('--rx', `${z.rx.toFixed(1)}%`);
+    zone.style.setProperty('--ry', `${z.ry.toFixed(1)}%`);
+    zone.style.setProperty('--dx', `${z.dx.toFixed(1)}%`);
+    zone.style.setProperty('--dy', `${z.dy.toFixed(1)}%`);
+    zone.style.setProperty('--dur', `${z.duration.toFixed(0)}s`);
+    zone.style.setProperty('--delay', `${-(z.delay + elapsed).toFixed(1)}s`);
     field.appendChild(zone);
-  }
+  });
 }
 
-export function initBackground() {
-  const canvas = document.getElementById('bg-noise');
-  if (!canvas) return;
-
-  const palette = buildPalette();
-  if (!startWebGL(canvas, palette)) {
-    startCanvas2D(canvas, palette);
+const canvas = document.getElementById('bg-noise');
+if (canvas) {
+  const session = loadSession();
+  const palette = buildPalette(session.hueShift);
+  if (!startWebGL(canvas, palette, session)) {
+    startCanvas2D(canvas, palette, session);
   }
-  placeBlurZones();
-  requestAnimationFrame(() => canvas.classList.add('is-ready'));
+  placeBlurZones(session);
 }
+})();
