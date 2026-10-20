@@ -1,4 +1,9 @@
-# Deezer session cookie (ARL) and other credentials
-data/secrets.json
+# Runtime data: config, library index, covers, secrets (ARL)… each install has its own
+data/
+
+# Python
 __pycache__/
 *.pyc
+
+# IDE
+.idea/
