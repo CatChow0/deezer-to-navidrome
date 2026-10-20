@@ -509,3 +509,71 @@
 .account-help code {
   color: var(--text-soft);
 }
+
+.release-toggles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+}
+
+.release-with {
+  color: var(--faint);
+}
+
+/* Followed artists (Releases) */
+.followed-list {
+  display: grid;
+  gap: 2px;
+}
+
+.followed-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 8px;
+  border-radius: 10px;
+}
+
+.followed-row:hover {
+  background: var(--glass-raised);
+}
+
+.followed-row > div {
+  display: grid;
+  min-width: 0;
+}
+
+.followed-row a {
+  color: var(--text);
+  font-weight: 600;
+  text-decoration: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.followed-row a:hover {
+  text-decoration: underline;
+}
+
+.followed-row .muted {
+  font-size: 0.78rem;
+}
+
+.followed-row.is-muted a {
+  color: var(--muted);
+}
+
+.followed-more {
+  justify-self: start;
+  margin-top: 6px;
+}
+
+.followed-heading {
+  margin: 14px 0 4px;
+  padding-left: 8px;
+  color: var(--muted);
+  font-size: var(--step--1);
+  font-weight: 600;
+}

@@ -2,7 +2,7 @@
 // you already own. The feed is built on the server and loaded the first time
 // the view is shown.
 
-import { escapeHtml, fetchJSON, on } from './core.js';
+import { escapeHtml, fetchJSON, on, toast } from './core.js';
 import { runServerTask } from './activity.js';
 import { downloadButton } from './downloads.js';
 import { playAlbumButton } from './player.js';
@@ -17,7 +17,11 @@ let feed = null;
 let owned = {};
 let typeFilter = 'all';
 let hideOwned = false;
+let hideFeatures = false;
+let showAllArtists = false;
 let loaded = false;
+
+const FOLLOWED_PREVIEW = 8;
 
 const $ = selector => document.querySelector(selector);
 
@@ -40,7 +44,19 @@ function ownedChip(release) {
   return '';
 }
 
+// Feeds built before artist credits were tracked only know the followed artist.
+function followedOf(release) {
+  return release.followed || [{ id: release.artist_id, name: release.artist }];
+}
+
+function isMuted(release) {
+  const muted = feed?.muted || {};
+  return followedOf(release).every(artist => muted[artist.id] !== undefined);
+}
+
 function isVisible(release) {
+  if (isMuted(release)) return false;
+  if (hideFeatures && release.featured) return false;
   if (typeFilter === 'album' && release.record_type !== 'album') return false;
   if (typeFilter === 'short' && release.record_type === 'album') return false;
   return !(hideOwned && ownership(release) === 'full');
@@ -59,7 +75,7 @@ function releaseRow(release, today) {
       <div class="result-cover">${release.cover ? `<img src="${escapeHtml(release.cover)}" alt="" loading="lazy">` : ''}</div>
       <div>
         <p class="result-title">${escapeHtml(release.title)}</p>
-        <p class="result-sub">${escapeHtml(release.artist)}</p>
+        <p class="result-sub">${escapeHtml(release.artist)}${release.featured ? `<span class="release-with"> with ${escapeHtml(followedOf(release).map(a => a.name).join(', '))}</span>` : ''}</p>
         <p class="release-meta">${escapeHtml(type)}${tracks}, ${escapeHtml(dateFormat.format(parseDate(release.release_date)))}</p>
         <div class="chips">${ownedChip(release)}</div>
       </div>
@@ -93,6 +109,59 @@ function render() {
     html += releaseRow(release, today);
   }
   list.innerHTML = html;
+}
+
+function followedRow(artist, muted) {
+  const count = artist.releases ? `${artist.releases} release${artist.releases > 1 ? 's' : ''}` : 'nothing recent';
+  return `
+    <div class="followed-row${muted ? ' is-muted' : ''}">
+      <div>
+        <a href="https://www.deezer.com/artist/${escapeHtml(artist.id)}" target="_blank" rel="noopener">${escapeHtml(artist.name)}</a>
+        <span class="muted">${muted ? 'Muted' : count}</span>
+      </div>
+      <button type="button" class="btn btn--ghost btn--sm" data-mute-artist="${escapeHtml(artist.id)}" data-name="${escapeHtml(artist.name)}" data-muted="${muted}">${muted ? 'Unmute' : 'Mute'}</button>
+    </div>
+  `;
+}
+
+function renderFollowed() {
+  const host = $('[data-followed-list]');
+  if (!host || !feed) return;
+  const muted = feed.muted || {};
+  const artists = feed.followed_artists || [];
+  if (!artists.length) {
+    host.innerHTML = '<p class="feed-meta">Refresh the feed to see the artists it follows.</p>';
+    return;
+  }
+
+  const active = artists.filter(a => muted[a.id] === undefined).sort((a, b) => b.releases - a.releases || a.name.localeCompare(b.name));
+  const silenced = Object.entries(muted).map(([id, name]) => ({ id, name: artists.find(a => a.id === id)?.name || name }));
+  const shown = showAllArtists ? active : active.slice(0, FOLLOWED_PREVIEW);
+
+  host.innerHTML = `
+    ${shown.map(a => followedRow(a, false)).join('')}
+    ${active.length > FOLLOWED_PREVIEW
+      ? `<button type="button" class="btn btn--ghost btn--sm followed-more" data-followed-toggle>${showAllArtists ? 'Show fewer' : `Show all ${active.length}`}</button>`
+      : ''}
+    ${silenced.length ? `<h3 class="followed-heading">Muted</h3>${silenced.map(a => followedRow(a, true)).join('')}` : ''}
+  `;
+}
+
+async function setMuted(button) {
+  const muted = button.dataset.muted !== 'true';
+  button.disabled = true;
+  const { data } = await fetchJSON('/api/releases/mute', {
+    json: { artist_id: button.dataset.muteArtist, name: button.dataset.name, muted },
+  });
+  if (!data?.ok) {
+    button.disabled = false;
+    toast(data?.error || 'Could not change this artist', { tone: 'error' });
+    return;
+  }
+  feed.muted = data.muted;
+  toast(muted ? `${button.dataset.name} is muted in the feed` : `${button.dataset.name} is back in the feed`);
+  renderFollowed();
+  render();
 }
 
 function renderMeta(data) {
@@ -143,6 +212,7 @@ async function loadFeed() {
     return;
   }
   render();
+  renderFollowed();
   checkOwnership();
 }
 
@@ -160,6 +230,17 @@ export function initReleases() {
   document.querySelector('[data-release-hide-owned]')?.addEventListener('change', event => {
     hideOwned = event.target.checked;
     render();
+  });
+
+  document.querySelector('[data-release-hide-features]')?.addEventListener('change', event => {
+    hideFeatures = event.target.checked;
+    render();
+  });
+
+  on(document, 'click', '[data-mute-artist]', (_, btn) => setMuted(btn));
+  on(document, 'click', '[data-followed-toggle]', () => {
+    showAllArtists = !showAllArtists;
+    renderFollowed();
   });
 
   on(document, 'click', '[data-open-release]', (_, btn) => openAlbum(btn.dataset.openRelease));

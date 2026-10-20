@@ -5,7 +5,7 @@ from flask import Blueprint, jsonify, request
 from core.config import create_task, load_secret, push_task_event, save_secret, secret_from_env
 from core.deezer import follow_mix, load_playlists, mix_id
 from core.deezer_account import DeezerAccountError, account_status, available_mixes, forget_session
-from core.releases import load_releases, refresh_hours, refresh_lock, refresh_releases
+from core.releases import load_prefs, load_releases, refresh_hours, refresh_lock, refresh_releases, set_muted
 
 account_bp = Blueprint("account", __name__)
 
@@ -75,8 +75,19 @@ def releases_route():
         "ok": True,
         "connected": bool(load_secret("deezer_arl")),
         "refresh_hours": refresh_hours(),
+        "muted": load_prefs()["muted"],
         **load_releases(),
     })
+
+
+@account_bp.post("/api/releases/mute")
+def mute_artist_route():
+    data = request.get_json(silent=True) or {}
+    artist_id = str(data.get("artist_id") or "")
+    if not artist_id.isdigit():
+        return jsonify({"ok": False, "error": "Unknown artist"}), 400
+    prefs = set_muted(artist_id, str(data.get("name") or ""), bool(data.get("muted")))
+    return jsonify({"ok": True, "muted": prefs["muted"]})
 
 
 def start_release_refresh(title="Release feed refresh"):

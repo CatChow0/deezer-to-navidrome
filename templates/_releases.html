@@ -13,13 +13,22 @@
           <button type="button" data-release-type="album" aria-pressed="false">Albums</button>
           <button type="button" data-release-type="short" aria-pressed="false">EPs and singles</button>
         </div>
-        <label class="toggle">
-          <span class="switch">
-            <input type="checkbox" data-release-hide-owned>
-            <span class="switch-slider"></span>
-          </span>
-          Hide what I own
-        </label>
+        <div class="release-toggles">
+          <label class="toggle" title="Releases where your artist is only a guest">
+            <span class="switch">
+              <input type="checkbox" data-release-hide-features>
+              <span class="switch-slider"></span>
+            </span>
+            Hide features
+          </label>
+          <label class="toggle">
+            <span class="switch">
+              <input type="checkbox" data-release-hide-owned>
+              <span class="switch-slider"></span>
+            </span>
+            Hide what I own
+          </label>
+        </div>
       </div>
     </div>
     <div class="cell-body">
@@ -39,6 +48,18 @@
       </div>
       <div class="cell-foot">
         <button type="button" class="btn btn--ghost btn--sm" data-action="refresh-releases">Refresh now</button>
+      </div>
+    </section>
+
+    <section class="cell" aria-labelledby="followed-title">
+      <div class="cell-head">
+        <div>
+          <h2 class="cell-title" id="followed-title">Artists you follow</h2>
+          <p class="cell-sub">Your Deezer favorites. Mute one to drop it from this feed; to unfollow it, open its Deezer page.</p>
+        </div>
+      </div>
+      <div class="cell-body followed-list" data-followed-list>
+        <p class="feed-meta">Loading…</p>
       </div>
     </section>
 
