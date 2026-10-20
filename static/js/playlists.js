@@ -4,6 +4,7 @@
 import { armed, escapeHtml, fetchJSON, on, toast } from './core.js';
 import { onTaskRow, runServerTask } from './activity.js';
 import { queueDownload } from './downloads.js';
+import { playButton } from './player.js';
 import { automationChips, automationSection, bindAutomationSection, settingsFromTile } from './automation.js';
 
 let drawer = null;
@@ -48,7 +49,7 @@ function rowHtml(row) {
       <td class="track-name">${escapeHtml(row.deezer_name)}</td>
       <td class="track-match">${row.matched === true ? escapeHtml(row.source_name || '') : ''}${manual}</td>
       <td><span class="track-status"><span class="dot ${status.dot}"></span>${status.label}</span></td>
-      <td class="actions">${actionsCell(row)}</td>
+      <td class="actions">${row.track_id ? playButton(row.track_id, `Play a preview of ${row.deezer_name}`) : ''} ${actionsCell(row)}</td>
     </tr>
   `;
 }
@@ -293,7 +294,7 @@ function drawerHtml(tile) {
         <button type="button" data-filter="found" aria-pressed="false">In library</button>
         <button type="button" data-filter="unchecked" aria-pressed="false">Not checked</button>
       </div>
-      <div class="table-wrap">
+      <div class="table-wrap" data-play-queue>
         <table class="table">
           <thead>
             <tr>

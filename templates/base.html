@@ -7,7 +7,7 @@
   <title>{% block title %}Deezer → Navidrome{% endblock %}</title>
   <link rel="preload" href="{{ url_for('static', filename='fonts/unbounded-latin-wght-normal.woff2') }}" as="font" type="font/woff2" crossorigin>
   <link rel="preload" href="{{ url_for('static', filename='fonts/instrument-sans-latin-wght-normal.woff2') }}" as="font" type="font/woff2" crossorigin>
-  {% for sheet in ['tokens', 'layers', 'cells', 'components', 'views', 'home', 'config', 'drawer'] %}
+  {% for sheet in ['tokens', 'layers', 'cells', 'components', 'views', 'home', 'config', 'drawer', 'player'] %}
   <link rel="stylesheet" href="{{ url_for('static', filename='css/' ~ sheet ~ '.css') }}">
   {% endfor %}
 </head>
@@ -41,6 +41,28 @@
   </div>
 
   {% block overlays %}{% endblock %}
+
+  <aside class="cell player" id="player" aria-label="Preview player" hidden>
+    <div class="player-main">
+      <img class="player-cover" data-player-cover alt="">
+      <div class="player-info">
+        <strong data-player-title></strong>
+        <span data-player-artist></span>
+      </div>
+      <div class="player-controls">
+        <button type="button" class="icon-btn" data-player-prev aria-label="Previous track"></button>
+        <button type="button" class="icon-btn player-toggle" data-player-toggle aria-label="Play"></button>
+        <button type="button" class="icon-btn" data-player-next aria-label="Next track"></button>
+      </div>
+      <div class="player-progress">
+        <div class="progress" data-player-seek><div class="progress-bar" data-player-bar></div></div>
+        <span class="player-time" data-player-time>0:00 / 0:30</span>
+      </div>
+      <button type="button" class="btn btn--ghost btn--sm player-full" data-player-full>Listen in full</button>
+      <button type="button" class="icon-btn player-close" data-player-close aria-label="Close the player">×</button>
+    </div>
+    <div class="player-widget" data-player-widget hidden></div>
+  </aside>
 
   <script type="application/json" id="flash-messages">{{ get_flashed_messages() | tojson }}</script>
   {% block scripts %}{% endblock %}

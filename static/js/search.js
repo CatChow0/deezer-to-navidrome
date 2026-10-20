@@ -3,6 +3,7 @@
 
 import { escapeHtml, fetchJSON, on } from './core.js';
 import { downloadButton } from './downloads.js';
+import { playAlbumButton, playButton } from './player.js';
 
 let drawer = null;
 let currentType = 'track';
@@ -114,6 +115,8 @@ function renderResult(item) {
         <div class="chips" id="${escapeHtml(id)}-chips"></div>
       </div>
       <div class="result-actions">
+        ${type === 'track' ? playButton(item.id, `Play a preview of ${item.title}`) : ''}
+        ${type === 'album' ? playAlbumButton(item.id) : ''}
         ${type !== 'album' ? downloadButton({ type: item.download_type || type, id: item.download_id || item.id }) : ''}
         ${expandable ? `<button type="button" class="btn btn--ghost btn--sm" data-action="open-result" data-type="${escapeHtml(type)}" data-id="${escapeHtml(item.id)}">Open</button>` : ''}
       </div>
@@ -150,7 +153,7 @@ async function runSearch(query) {
 
 function trackTable(tracks) {
   return `
-    <div class="table-wrap">
+    <div class="table-wrap" data-play-queue>
       <table class="table">
         <thead>
           <tr><th class="num">#</th><th>Title</th><th>Artist</th><th class="num">Time</th><th class="actions"><span class="sr-only">Actions</span></th></tr>
@@ -164,6 +167,7 @@ function trackTable(tracks) {
               <td class="num">${formatDuration(track.duration)}</td>
               <td class="actions">
                 <span class="chips owned-slot" data-owned-slot="${escapeHtml(track.track_id)}"></span>
+                ${playButton(track.track_id, `Play a preview of ${track.title}`)}
                 ${downloadButton({ type: 'track', id: track.track_id })}
               </td>
             </tr>

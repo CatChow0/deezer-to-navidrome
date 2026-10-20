@@ -13,6 +13,7 @@ import { initSettings } from './settings.js';
 import { initAccount } from './account.js';
 import { initMixes } from './mixes.js';
 import { initReleases } from './releases.js';
+import { initPlayer } from './player.js';
 
 initViews();
 initActivity();
@@ -30,3 +31,4 @@ initSettings();
 initAccount();
 initMixes(overlay('mix-picker'));
 initReleases();
+initPlayer();

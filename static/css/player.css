@@ -1,0 +1,193 @@
+/* Preview player: a dock floating over the bottom of the page and over drawers. */
+
+.player {
+  position: fixed;
+  left: 50%;
+  bottom: var(--gap);
+  z-index: 1500;
+  width: min(980px, calc(100vw - 2 * var(--gap)));
+  transform: translateX(-50%);
+  background: var(--glass-strong);
+  border-radius: var(--r-cell);
+  box-shadow: 0 30px 70px -20px rgba(0, 0, 0, 0.9);
+  animation: player-in var(--t-mid) var(--ease-out);
+}
+
+.player[hidden] {
+  display: none;
+}
+
+@keyframes player-in {
+  from { opacity: 0; transform: translate(-50%, 16px); }
+}
+
+.player-main {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr) auto minmax(140px, 1.2fr) auto auto;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 12px 10px 10px;
+}
+
+.player-cover {
+  width: 52px;
+  height: 52px;
+  border-radius: 12px;
+  object-fit: cover;
+}
+
+.player-info {
+  display: grid;
+  min-width: 0;
+}
+
+.player-info strong,
+.player-info span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.player-info span {
+  color: var(--muted);
+  font-size: var(--step--1);
+}
+
+.player-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.player-controls .icon-btn svg,
+.play-btn svg {
+  width: 18px;
+  height: 18px;
+}
+
+.player-controls .icon-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.player-toggle {
+  width: 44px;
+  height: 44px;
+  background: var(--text);
+  color: var(--ink);
+  border-color: transparent;
+}
+
+.player-toggle:hover {
+  background: #fff;
+  color: var(--ink);
+}
+
+.player-progress {
+  display: grid;
+  gap: 4px;
+}
+
+.player-progress .progress {
+  height: 6px;
+  cursor: pointer;
+}
+
+.player-progress .progress-bar {
+  transition: width 0.25s linear;
+}
+
+.player-time {
+  color: var(--faint);
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.player-widget {
+  padding: 0 12px 12px;
+}
+
+.player-widget iframe {
+  display: block;
+  width: 100%;
+  height: 150px;
+  border: 0;
+  border-radius: var(--r-tile);
+  background: rgba(0, 0, 0, 0.3);
+}
+
+.player-widget p {
+  margin: 8px 4px 0;
+  color: var(--muted);
+  font-size: var(--step--1);
+}
+
+.player-widget a {
+  color: var(--cyan);
+}
+
+/* Play buttons in lists */
+.play-btn {
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+}
+
+.play-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+.play-btn.is-playing {
+  background: var(--mint);
+  border-color: var(--mint);
+  color: var(--ink);
+}
+
+/* Keep page bottoms reachable while the dock is open */
+body.has-player .app {
+  padding-bottom: 130px;
+}
+
+body.has-player .toasts {
+  bottom: 110px;
+}
+
+body.has-player .save-bar {
+  bottom: 100px;
+}
+
+@media (max-width: 760px) {
+  .player-main {
+    grid-template-columns: 44px minmax(0, 1fr) auto;
+    gap: 10px;
+  }
+
+  .player-cover {
+    width: 44px;
+    height: 44px;
+  }
+
+  .player-progress {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+
+  .player-full {
+    grid-column: 1 / 3;
+    grid-row: 3;
+    justify-self: start;
+  }
+
+  .player-close {
+    grid-column: 3;
+    grid-row: 3;
+    justify-self: end;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .player {
+    animation: none;
+  }
+}

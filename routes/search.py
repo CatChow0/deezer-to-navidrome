@@ -1,3 +1,6 @@
+import time
+
+import requests
 from flask import Blueprint, jsonify, request
 
 from core.deezer import fetch_deezer_album_details, fetch_deezer_artist_details, search_deezer
@@ -92,3 +95,37 @@ def check_library_route():
             results[key] = {"albums_owned": len(albums), "tracks_owned": len(entries)}
 
     return jsonify({"ok": True, "results": results})
+
+
+# Preview URLs carry an expiring token, so they are fetched when a track is
+# played and kept only for a short while.
+_PREVIEW_TTL = 20 * 60
+_previews = {}
+
+
+@search_bp.get("/api/preview/<track_id>")
+def preview_route(track_id):
+    if not track_id.isdigit():
+        return jsonify({"ok": False, "error": "Invalid track"}), 400
+    cached = _previews.get(track_id)
+    if cached and time.time() - cached[0] < _PREVIEW_TTL:
+        return jsonify({"ok": True, **cached[1]})
+    try:
+        data = requests.get(f"https://api.deezer.com/track/{track_id}", timeout=15).json()
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"Deezer did not answer: {e}"}), 502
+    if "error" in data:
+        return jsonify({"ok": False, "error": "This track is not on Deezer anymore"}), 404
+    track = {
+        "id": str(data.get("id")),
+        "title": data.get("title") or "",
+        "artist": (data.get("artist") or {}).get("name") or "",
+        "album": (data.get("album") or {}).get("title") or "",
+        "cover": (data.get("album") or {}).get("cover_medium") or "",
+        "preview": data.get("preview") or "",
+        "link": data.get("link") or f"https://www.deezer.com/track/{track_id}",
+    }
+    if len(_previews) > 500:
+        _previews.clear()
+    _previews[track_id] = (time.time(), track)
+    return jsonify({"ok": True, **track})

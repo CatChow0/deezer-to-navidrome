@@ -5,6 +5,7 @@
 import { escapeHtml, fetchJSON, on } from './core.js';
 import { runServerTask } from './activity.js';
 import { downloadButton } from './downloads.js';
+import { playAlbumButton } from './player.js';
 import { libraryCheck, openAlbum } from './search.js';
 import { onViewShown } from './views.js';
 
@@ -63,7 +64,7 @@ function releaseRow(release, today) {
         <div class="chips">${ownedChip(release)}</div>
       </div>
       <div class="result-actions">
-        ${upcoming ? '<span class="chip">Not out yet</span>' : downloadButton({ type: 'album', id: release.id })}
+        ${upcoming ? '<span class="chip">Not out yet</span>' : `${playAlbumButton(release.id)}${downloadButton({ type: 'album', id: release.id })}`}
         <button type="button" class="btn btn--ghost btn--sm" data-open-release="${escapeHtml(release.id)}">Open</button>
       </div>
     </article>
