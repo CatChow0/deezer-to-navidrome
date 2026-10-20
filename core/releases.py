@@ -8,13 +8,12 @@ from datetime import date, timedelta
 
 import requests
 
-from core.config import DATA_DIR, ensure_dirs
+from core.config import DATA_DIR, ensure_dirs, load_config
 from core.deezer_account import API_URL, favorite_artists
 
 RELEASES_FILE = DATA_DIR / "releases.json"
 refresh_lock = threading.Lock()
 WINDOW_DAYS = 180
-REFRESH_EVERY_SECONDS = 12 * 3600
 # Deezer allows 50 requests per 5 seconds; stay well under it.
 REQUEST_GAP_SECONDS = 0.15
 
@@ -26,9 +25,20 @@ def load_releases():
         return {"updated_at": None, "artists": 0, "window_days": WINDOW_DAYS, "releases": []}
 
 
+def refresh_hours():
+    """Hours between automatic refreshes, from Settings; 0 means manual only."""
+    try:
+        return max(0, int(load_config().get("release_refresh_hours", 24)))
+    except (TypeError, ValueError):
+        return 24
+
+
 def is_stale():
+    hours = refresh_hours()
+    if hours == 0:
+        return False
     updated = load_releases().get("updated_at")
-    return not updated or time.time() - updated > REFRESH_EVERY_SECONDS
+    return not updated or time.time() - updated > hours * 3600
 
 
 def _artist_releases(artist, since):

@@ -5,7 +5,7 @@ from flask import Blueprint, jsonify, request
 from core.config import create_task, load_secret, push_task_event, save_secret, secret_from_env
 from core.deezer import follow_mix, load_playlists, mix_id
 from core.deezer_account import DeezerAccountError, account_status, available_mixes, forget_session
-from core.releases import load_releases, refresh_releases, refresh_lock
+from core.releases import load_releases, refresh_hours, refresh_lock, refresh_releases
 
 account_bp = Blueprint("account", __name__)
 
@@ -71,7 +71,12 @@ def follow_mix_route():
 
 @account_bp.get("/api/releases")
 def releases_route():
-    return jsonify({"ok": True, "connected": bool(load_secret("deezer_arl")), **load_releases()})
+    return jsonify({
+        "ok": True,
+        "connected": bool(load_secret("deezer_arl")),
+        "refresh_hours": refresh_hours(),
+        **load_releases(),
+    })
 
 
 def start_release_refresh(title="Release feed refresh"):

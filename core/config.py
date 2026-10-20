@@ -60,6 +60,8 @@ DEFAULT_CONFIG = {
     or "https://deezerdl.example.com",
     "library_workers_per_dir": int(os.environ.get("LIBRARY_WORKERS_PER_DIR", "2") or "2"),
     "match_workers": int(os.environ.get("MATCH_WORKERS", "4") or "4"),
+    # Hours between automatic refreshes of the release feed; 0 = manual only.
+    "release_refresh_hours": 24,
 }
 
 # Background tasks. Each keeps the full list of its events so any number of

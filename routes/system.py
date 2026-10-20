@@ -133,6 +133,7 @@ def config_view():
 
         library_workers_per_dir = max(1, int(request.form.get("library_workers_per_dir", "2") or "2"))
         match_workers = max(1, int(request.form.get("match_workers", "4") or "4"))
+        release_refresh_hours = max(0, int(request.form.get("release_refresh_hours", "24") or "24"))
 
         cfg = {
             "scan_dirs": scan_dirs,
@@ -144,6 +145,7 @@ def config_view():
             "deezer_dl_base_url": deezer_dl_base_url or "https://deezerdl.example.com",
             "library_workers_per_dir": library_workers_per_dir,
             "match_workers": match_workers,
+            "release_refresh_hours": release_refresh_hours,
         }
         save_config(cfg)
         scheduler.restart()

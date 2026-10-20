@@ -108,7 +108,13 @@ function renderMeta(data) {
   } else {
     const minutes = Math.round((Date.now() / 1000 - data.updated_at) / 60);
     const when = minutes < 1 ? 'just now' : minutes < 90 ? `${minutes} min ago` : `${Math.round(minutes / 60)} h ago`;
-    meta.textContent = `${data.artists} favorite artists, releases from the last ${data.window_days} days. Updated ${when}; refreshed every 12 hours.`;
+    const hours = Number(data.refresh_hours);
+    const schedule = !hours
+      ? 'refreshed only when you ask'
+      : hours % 24 === 0
+        ? `refreshed every ${hours === 24 ? 'day' : hours === 168 ? 'week' : `${hours / 24} days`}`
+        : `refreshed every ${hours} hours`;
+    meta.textContent = `${data.artists} favorite artists, releases from the last ${data.window_days} days. Updated ${when}; ${schedule}.`;
   }
 }
 

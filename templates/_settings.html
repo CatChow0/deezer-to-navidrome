@@ -98,6 +98,26 @@
       </section>
     </div>
 
+    <section class="cell" aria-labelledby="feed-settings-title">
+      <div class="cell-head">
+        <div>
+          <h2 class="cell-title" id="feed-settings-title">Release feed</h2>
+          <p class="cell-sub">How often the releases of your favorite Deezer artists are checked. A refresh takes a few minutes and runs in the background.</p>
+        </div>
+      </div>
+      <div class="cell-body">
+        <label class="form-field">
+          <span>Refresh automatically</span>
+          <select name="release_refresh_hours">
+            {% for hours, label in [(6, 'Every 6 hours'), (12, 'Every 12 hours'), (24, 'Once a day'), (48, 'Every 2 days'), (168, 'Once a week'), (0, 'Never, only when I ask')] %}
+            <option value="{{ hours }}" {% if (config.release_refresh_hours | default(24) | int) == hours %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+          <small>Needs a connected Deezer account. "Refresh now" on the Releases page always works.</small>
+        </label>
+      </div>
+    </section>
+
     <section class="cell" aria-labelledby="files-title">
       <div class="cell-head">
         <div>
