@@ -59,16 +59,25 @@ def _sync_state_from_playlists(playlists):
 
 
 def _run_playlist(pl, cfg):
+    from core.config import create_task, push_task_event, push_task_row_update
     from core.deezer import convert_playlist, submit_missing_downloads
+
     pid = pl["id"]
+    task_id = create_task(f"Auto scan: {pl.get('title') or pid}", kind="scan", playlist_id=pid)
+
+    def on_progress(message=None, progress=None, stage=None, row_update=None):
+        if row_update is not None:
+            push_task_row_update(task_id, row_update)
+        if message is not None or progress is not None or stage is not None:
+            push_task_event(task_id, message=message, progress=progress, stage=stage)
+
     try:
-        result = convert_playlist(pid, quick=True)
-        logger.info(
-            f"[auto-scan] Playlist {pid} ({pl.get('title', '')}): "
-            f"{result.get('matched', 0)} matched, {result.get('unmatched', 0)} missing"
-        )
+        result = convert_playlist(pid, progress_cb=on_progress, quick=True)
+        summary = f"{result.get('matched', 0)} matched, {result.get('unmatched', 0)} missing"
+        logger.info(f"[auto-scan] Playlist {pid} ({pl.get('title', '')}): {summary}")
     except Exception as e:
         logger.error(f"[auto-scan] Scan failed for playlist {pid}: {e}")
+        push_task_event(task_id, f"Scan failed: {e}", stage="error", done=True, error=True)
         return
 
     if pl.get("auto_download_after_scan"):
@@ -77,11 +86,33 @@ def _run_playlist(pl, cfg):
             try:
                 n = submit_missing_downloads(pid, base_url)
                 if n:
+                    summary += f", {n} sent to Deezer Downloader"
                     logger.info(f"[auto-scan] Submitted {n} download(s) for playlist {pid}")
             except Exception as e:
+                summary += ", download request failed"
                 logger.error(f"[auto-scan] Download submit failed for {pid}: {e}")
         else:
             logger.warning("[auto-scan] auto_download_after_scan enabled but deezer_dl_base_url is not set")
+
+    push_task_event(task_id, f"Done: {summary}", stage="done", progress=100, done=True)
+
+
+def _refresh_library_after_scans(count):
+    from core.config import create_task, push_task_event
+    from core.library import refresh_library_cache_incremental_with_progress
+
+    logger.info(f"[auto-scan] {count} playlist(s) processed — running incremental cache refresh")
+    task_id = create_task("Library refresh (after auto scan)", kind="library")
+    try:
+        refresh_library_cache_incremental_with_progress(
+            progress_cb=lambda message=None, progress=None, stage=None: push_task_event(
+                task_id, message=message, progress=progress, stage=stage
+            )
+        )
+        push_task_event(task_id, "Library refreshed", stage="done", progress=100, done=True)
+    except Exception as e:
+        logger.error(f"[auto-scan] Cache refresh failed: {e}")
+        push_task_event(task_id, f"Library refresh failed: {e}", stage="error", done=True, error=True)
 
 
 def _scheduler_loop():
@@ -90,7 +121,6 @@ def _scheduler_loop():
             break
 
         from core.deezer import load_playlists
-        from core.library import refresh_library_cache_incremental_with_progress
         from core.config import load_config
 
         playlists = load_playlists()
@@ -119,11 +149,7 @@ def _scheduler_loop():
                     _state[pid]["next_run_at"] = int(time.time()) + interval_secs
 
         # After all playlist scans/downloads are done, refresh cache to pick up new downloads
-        logger.info(f"[auto-scan] {len(due)} playlist(s) processed — running incremental cache refresh")
-        try:
-            refresh_library_cache_incremental_with_progress()
-        except Exception as e:
-            logger.error(f"[auto-scan] Cache refresh failed: {e}")
+        _refresh_library_after_scans(len(due))
 
 
 def start():

@@ -1,10 +1,11 @@
 import threading
 
-from flask import Blueprint, flash, jsonify, redirect, url_for
+from flask import Blueprint, flash, jsonify, redirect, request, url_for
 
-from core.config import create_task, get_paths_from_config, push_task_event
+from core.config import create_task, push_task_event
 from core.library import (
-    load_library_cache_meta,
+    library_snapshot,
+    search_library,
     rebuild_library_cache_full,
     rebuild_library_cache_full_with_progress,
     refresh_library_cache_incremental,
@@ -16,8 +17,12 @@ cache_bp = Blueprint("cache", __name__)
 
 @cache_bp.get("/api/library/stats")
 def library_stats_route():
-    _, _, library_cache_file, _ = get_paths_from_config()
-    return jsonify({"ok": True, **load_library_cache_meta(library_cache_file)})
+    return jsonify({"ok": True, **library_snapshot()["meta"]})
+
+
+@cache_bp.get("/api/library/search")
+def library_search_route():
+    return jsonify({"ok": True, "results": search_library(request.args.get("q", ""))})
 
 
 @cache_bp.post("/cache/rebuild")
@@ -32,7 +37,7 @@ def cache_rebuild_route():
 
 @cache_bp.post("/cache/full/start")
 def cache_full_start():
-    task_id = create_task()
+    task_id = create_task("Full library rebuild", kind="library")
 
     def runner():
         try:
@@ -58,7 +63,7 @@ def cache_full_start():
 
 @cache_bp.post("/cache/incremental/start")
 def cache_incremental_start():
-    task_id = create_task()
+    task_id = create_task("Library refresh", kind="library")
 
     def runner():
         try:

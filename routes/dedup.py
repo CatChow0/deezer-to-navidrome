@@ -3,7 +3,7 @@ import time
 
 from flask import Blueprint, jsonify, request
 
-from core.config import create_task, push_task_event, TASKS
+from core.config import create_task, push_task_event, push_task_payload
 from core.dedup import apply_dedup_decisions, load_dedup_report, run_dedup_analysis
 
 dedup_bp = Blueprint("dedup", __name__)
@@ -11,20 +11,12 @@ dedup_bp = Blueprint("dedup", __name__)
 
 @dedup_bp.post("/dedup/start")
 def dedup_start():
-    task_id = create_task()
+    task_id = create_task("Duplicate scan", kind="dedup")
 
     def on_progress(message=None, progress=None, stage=None, payload=None):
         push_task_event(task_id, message=message, progress=progress, stage=stage)
         if payload is not None:
-            task = TASKS.get(task_id)
-            if task:
-                task["queue"].put(
-                    {
-                        "type": "dedup_result",
-                        "payload": payload,
-                        "timestamp": int(time.time()),
-                    }
-                )
+            push_task_payload(task_id, {"type": "dedup_result", "payload": payload, "timestamp": int(time.time())})
 
     def runner():
         try:

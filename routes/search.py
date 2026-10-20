@@ -1,62 +1,12 @@
 from flask import Blueprint, jsonify, request
 
 from core.deezer import fetch_deezer_album_details, fetch_deezer_artist_details, search_deezer
-from core.library import load_library_cache
-from core.config import get_paths_from_config
-from core.normalization import normalize_text
+from core.library import library_snapshot
+from core.matching import clean_title, find_best_match
+from core.normalization import extract_version_flags, normalize_album_strict, normalize_text
+from core.utils import similarity
 
 search_bp = Blueprint("search", __name__)
-
-def _get_library_index():
-    """Charge le cache de la bibliothèque et retourne un index normalisé."""
-    try:
-        _, _, library_cache_file, _ = get_paths_from_config()
-        library = load_library_cache(library_cache_file)
-
-        # Index par titre normalisé (lowercase)
-        tracks_index = {}
-        albums_index = {}
-        artists_index = {}
-
-        for entry in library:
-            # Pour les titres: utiliser tag_title en priorité, sinon parsed_track_title
-            norm_title = normalize_text(entry.get("tag_title") or entry.get("parsed_track_title") or "")
-
-            # Pour les artistes: utiliser tag_artist en priorité (plus fiable), sinon parsed_artist, sinon artist_dir_norm
-            norm_artist = normalize_text(
-                entry.get("tag_artist") or
-                entry.get("parsed_artist") or
-                entry.get("artist_dir_norm") or
-                ""
-            )
-
-            # Pour les albums: utiliser tag_album en priorité, sinon album_dir_norm
-            norm_album = normalize_text(entry.get("tag_album") or entry.get("album_dir_norm") or "")
-
-            # Index tracks
-            if norm_title:
-                key = f"{norm_artist}:{norm_title}"
-                tracks_index[key] = entry
-
-            # Index albums par nom d'album + artiste
-            if norm_album:
-                key = f"{norm_artist}:{norm_album}"
-                if key not in albums_index:
-                    albums_index[key] = []
-                albums_index[key].append(entry)
-
-            # Index artistes
-            if norm_artist:
-                if norm_artist not in artists_index:
-                    artists_index[norm_artist] = {"albums": set(), "tracks": []}
-                if norm_album:
-                    artists_index[norm_artist]["albums"].add(norm_album)
-                artists_index[norm_artist]["tracks"].append(entry)
-
-        return tracks_index, albums_index, artists_index
-    except Exception:
-        return {}, {}, {}
-
 
 @search_bp.get("/search")
 def search_route():
@@ -89,114 +39,56 @@ def search_artist_detail_route(artist_id):
         return jsonify({"ok": False, "error": str(e)}), 500
 
 
-@search_bp.get("/search/library-check")
+@search_bp.post("/search/library-check")
 def check_library_route():
-    """Vérifie quels éléments de la recherche existent déjà dans la bibliothèque.
+    """Which search results are already in the library.
 
-    Query params:
-        - type: track|album|artist
-        - ids: liste d'IDs séparés par des virgules
-        - artist: nom de l'artiste (optionnel, pour meilleure correspondance)
-        - total_albums: nombre total d'albums pour un artiste (optionnel, depuis Deezer)
+    Body: {"items": [{"key", "type": track|album|artist, "title", "artist", "album", "duration"}]}
+    Tracks use the same matcher as playlist scans; albums count the distinct
+    titles owned from that artist's album; artists count owned albums.
     """
-    q_type = request.args.get("type", "track").lower()
-    ids_str = request.args.get("ids", "")
-    artist_name = request.args.get("artist", "")
-    total_albums_str = request.args.get("total_albums", "")
+    items = (request.get_json(silent=True) or {}).get("items") or []
+    snap = library_snapshot()
+    library, index = snap["library"], snap["index"]
+    candidates_cache = {}
 
-    if not ids_str:
-        return jsonify({"ok": True, "results": {}})
+    def artist_entries(name):
+        if name not in candidates_cache:
+            candidates_cache[name] = index.artist_candidates(name) if name else {}
+        return candidates_cache[name]
 
-    ids = [i.strip() for i in ids_str.split(",") if i.strip()]
-    tracks_index, albums_index, artists_index = _get_library_index()
-
-    # Parser total_albums par artiste si fourni
-    total_albums_map = {}
-    if total_albums_str:
-        try:
-            for pair in total_albums_str.split("|"):
-                if ":" in pair:
-                    aid, count = pair.split(":", 1)
-                    total_albums_map[aid.strip()] = int(count.strip())
-        except Exception:
-            pass
+    def album_of(entry):
+        return normalize_album_strict(entry.get("tag_album") or "") or entry.get("album_dir_norm") or ""
 
     results = {}
-
-    if q_type == "track":
-        # Format: track_id -> { owned: bool, artist_match: bool }
-        for track_id in ids:
-            owned = False
-            artist_match = False
-
-            if artist_name:
-                norm_artist = normalize_text(artist_name)
-                norm_title = normalize_text(track_id)
-                search_key = f"{norm_artist}:{norm_title}"
-                if search_key in tracks_index:
-                    owned = True
-                    artist_match = True
-                else:
-                    # Cherche juste par titre
-                    for key in tracks_index:
-                        if key.endswith(f":{norm_title}"):
-                            owned = True
-                            if key.startswith(f"{norm_artist}:"):
-                                artist_match = True
-                            break
-            else:
-                # Cherche juste par titre
-                norm_title = normalize_text(track_id)
-                for key in tracks_index:
-                    if key.endswith(f":{norm_title}"):
-                        owned = True
-                        break
-
-            results[track_id] = {"owned": owned, "artist_match": artist_match}
-
-    elif q_type == "album":
-        # Format: album_id -> { owned_count: int, album_match: bool }
-        for album_id in ids:
-            owned_count = 0
-            album_match = False
-
-            if artist_name:
-                norm_artist = normalize_text(artist_name)
-                norm_album = normalize_text(album_id)
-                search_key = f"{norm_artist}:{norm_album}"
-                if search_key in albums_index:
-                    owned_count = len(albums_index[search_key])
-                    album_match = True
-                else:
-                    # Cherche juste par nom d'album
-                    for key in albums_index:
-                        if key.endswith(f":{norm_album}"):
-                            owned_count = len(albums_index[key])
-                            break
-            else:
-                norm_album = normalize_text(album_id)
-                for key in albums_index:
-                    if key.endswith(f":{norm_album}"):
-                        owned_count = len(albums_index[key])
-                        break
-
-            results[album_id] = {
-                "owned_count": owned_count,
-                "album_match": album_match
+    for item in items[:100]:
+        key = str(item.get("key") or "")
+        kind = item.get("type")
+        if kind == "track":
+            title, artist, album = item.get("title") or "", item.get("artist") or "", item.get("album") or ""
+            track = {
+                "title": title,
+                "artist": artist,
+                "album": album,
+                "duration": item.get("duration"),
+                "norm_title": normalize_text(title),
+                "norm_artist": normalize_text(artist),
+                "norm_album": normalize_text(album),
+                "version_flags": extract_version_flags(title, artist),
             }
-
-    elif q_type == "artist":
-        # Format: artist_id -> { albums_owned: int, total_albums: int, tracks_owned: int }
-        # artist_name est utilisé pour la lookup dans l'index (plus fiable que l'ID)
-        for artist_id in ids:
-            norm_artist = normalize_text(artist_name) if artist_name else normalize_text(artist_id)
-            artist_data = artists_index.get(norm_artist, {"albums": set(), "tracks": []})
-            albums_owned = len(artist_data.get("albums", set()))
-            total = total_albums_map.get(artist_id, 0)
-            results[artist_id] = {
-                "albums_owned": albums_owned,
-                "total_albums": total,
-                "tracks_owned": len(artist_data.get("tracks", []))
-            }
+            match = find_best_match(track, library, index) if title else None
+            results[key] = {"owned": bool(match)}
+        elif kind == "album":
+            wanted = normalize_album_strict(item.get("title") or "")
+            titles = set()
+            for i in artist_entries(item.get("artist") or ""):
+                entry = library[i]
+                if wanted and similarity(wanted, album_of(entry)) >= 0.9:
+                    titles.add(clean_title(entry.get("norm_tag_title") or entry.get("stem_norm") or ""))
+            results[key] = {"owned_count": len(titles)}
+        elif kind == "artist":
+            entries = [library[i] for i, score in artist_entries(item.get("title") or "").items() if score >= 0.95]
+            albums = {album_of(e) for e in entries} - {""}
+            results[key] = {"albums_owned": len(albums), "tracks_owned": len(entries)}
 
     return jsonify({"ok": True, "results": results})

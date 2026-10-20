@@ -16,11 +16,13 @@ from core.config import (
     get_paths_from_config,
     get_preview_state,
     load_config,
+    modify_preview_state,
     update_preview_state,
 )
 from core.library import load_library_cache, rebuild_library_cache_full_with_progress
 from core.normalization import extract_version_flags, normalize_text
-from core.utils import sanitize_filename, similarity
+from core.matching import build_title_index, find_best_match
+from core.utils import sanitize_filename
 
 
 def fetch_deezer_playlist_info(playlist_id: str):
@@ -151,6 +153,18 @@ def load_playlists():
     return playlists
 
 
+def playlist_title(playlist_id: str) -> str:
+    """Title from the saved playlists file, without calling Deezer."""
+    try:
+        data = json.loads(PLAYLIST_IDS_FILE.read_text(encoding="utf-8"))
+        for item in data.get("playlists") or []:
+            if str(item.get("id")) == str(playlist_id):
+                return item.get("title") or str(playlist_id)
+    except Exception:
+        pass
+    return str(playlist_id)
+
+
 def fetch_deezer_playlist_tracks(playlist_id: str):
     info = fetch_deezer_playlist_info(playlist_id)
     url = f"https://api.deezer.com/playlist/{playlist_id}"
@@ -184,119 +198,6 @@ def fetch_deezer_playlist_tracks(playlist_id: str):
     return info["title"], parsed
 
 
-def score_candidate(track, entry):
-    title_candidates = [
-        entry.get("norm_tag_title"),
-        entry.get("norm_parsed_title"),
-        entry.get("norm_parsed_track_title"),
-        entry.get("stem_norm"),
-    ]
-    artist_candidates = [
-        entry.get("norm_tag_artist"),
-        entry.get("norm_parsed_artist"),
-        entry.get("artist_dir_norm"),
-    ]
-    album_candidates = [
-        entry.get("norm_tag_album"),
-        entry.get("album_dir_norm"),
-    ]
-
-    title_score = max(
-        (similarity(track["norm_title"], x) for x in title_candidates if x),
-        default=0.0,
-    )
-    artist_score = max(
-        (similarity(track["norm_artist"], x) for x in artist_candidates if x),
-        default=0.0,
-    )
-    album_score = max(
-        (similarity(track["norm_album"], x) for x in album_candidates if x),
-        default=0.0,
-    )
-
-    score = 0.0
-    score += title_score * 0.62
-    score += artist_score * 0.25
-    score += album_score * 0.08
-
-    td = track.get("duration")
-    ld = entry.get("duration")
-    if td and ld:
-        diff = abs(float(td) - float(ld))
-        if diff <= 2:
-            score += 0.10
-        elif diff <= 5:
-            score += 0.07
-        elif diff <= 10:
-            score += 0.04
-        elif diff > 20:
-            score -= 0.08
-
-    # Version flag comparison — disambiguates remix/live/radio edit variants
-    track_flags = set(track.get("version_flags") or [])
-    entry_flags = set(entry.get("version_flags") or [])
-    if track_flags or entry_flags:
-        if track_flags == entry_flags:
-            score += 0.08  # exact match (e.g. both remix)
-        else:
-            diff_flags = track_flags.symmetric_difference(entry_flags)
-            # Ignore "remaster" conflicts — remastered and original are interchangeable
-            meaningful = diff_flags - {"remaster"}
-            if meaningful:
-                score -= 0.18  # real version mismatch (remix vs original, live vs studio)
-            else:
-                score -= 0.03  # only remaster differs, minor penalty
-
-    return {
-        "score": round(score, 4),
-        "title_score": round(title_score, 4),
-        "artist_score": round(artist_score, 4),
-        "album_score": round(album_score, 4),
-    }
-
-
-def build_title_index(library: list) -> dict[str, list[int]]:
-    """Inverted word index: {word -> [entry_indices]} for fast candidate pre-filtering."""
-    idx: dict[str, list[int]] = {}
-    for i, entry in enumerate(library):
-        seen: set[str] = set()
-        for field in ("norm_tag_title", "norm_parsed_title", "norm_parsed_track_title", "stem_norm"):
-            for word in (entry.get(field) or "").split():
-                if len(word) >= 4 and word not in seen:
-                    seen.add(word)
-                    idx.setdefault(word, []).append(i)
-    return idx
-
-
-def find_best_match(track, library, title_index=None):
-    candidates = library
-    if title_index is not None:
-        query_words = [w for w in track["norm_title"].split() if len(w) >= 4]
-        if query_words:
-            lib_size = len(library)
-            candidate_indices: set[int] = set()
-            for word in query_words:
-                hits = title_index.get(word, [])
-                # Skip words present in >20% of the library — too common to be discriminating
-                if len(hits) < lib_size * 0.20:
-                    candidate_indices.update(hits)
-            if candidate_indices:
-                candidates = [library[i] for i in candidate_indices]
-
-    best = None
-    best_data = None
-    for entry in candidates:
-        scored = score_candidate(track, entry)
-        if scored["title_score"] < 0.72:
-            continue
-        if track["norm_artist"] and scored["artist_score"] < 0.45:
-            continue
-        if best is None or scored["score"] > best:
-            best = scored["score"]
-            best_data = {"entry": entry, **scored}
-    return best_data
-
-
 def map_host_path_to_navidrome(path: Path, mappings):
     path = path.resolve()
     for host_root, nav_root in mappings.items():
@@ -322,54 +223,49 @@ def relative_m3u_path(playlist_dir_host: Path, audio_file_host: Path, mappings) 
 
 def build_playlist_preview(playlist_id: str):
     playlist_title, deezer_tracks = fetch_deezer_playlist_tracks(playlist_id)
-    saved_state = get_preview_state(playlist_id)
+    saved_state = get_preview_state(playlist_id) or {}
+
+    # Saved rows are found by Deezer track ID, so a reordered playlist keeps its results.
+    saved_rows = saved_state.get("rows") if isinstance(saved_state.get("rows"), list) else []
+    by_track = {str(r.get("track_id")): r for r in saved_rows if r.get("track_id")}
+    by_number = {int(r["number"]): r for r in saved_rows if "number" in r}
 
     rows = []
-    saved_rows = {}
-    if saved_state and isinstance(saved_state.get("rows"), list):
-        saved_rows = {int(r["number"]): r for r in saved_state["rows"] if "number" in r}
-
     for track in deezer_tracks:
-        deezer_name = (
-            f"{track['artist']} - {track['title']}" if track["artist"] else track["title"]
-        )
-        old = saved_rows.get(track["position"])
+        old = by_track.get(str(track.get("track_id")))
+        if old is None:
+            legacy = by_number.get(track["position"])
+            if legacy and not legacy.get("track_id"):
+                old = legacy
+        row = {
+            "number": track["position"],
+            "track_id": track.get("track_id"),
+            "deezer_name": _deezer_name(track),
+            "deezer_artist": track["artist"],
+            "deezer_title": track["title"],
+            "deezer_album": track["album"],
+            "matched": None,
+            "source_name": "",
+            "manual": False,
+            "downloaded": False,
+        }
         if old:
-            rows.append(
-                {
-                    "convert": old.get("convert", "⚪"),
-                    "number": track["position"],
-                    "deezer_name": deezer_name,
-                    "source_name": old.get("source_name", ""),
-                    "matched": old.get("matched"),
-                    "track_id": old.get("track_id") or track.get("track_id"),
-                    "downloaded": bool(old.get("downloaded")),
-                }
-            )
-        else:
-            rows.append(
-                {
-                    "convert": "⚪",
-                    "number": track["position"],
-                    "deezer_name": deezer_name,
-                    "source_name": "",
-                    "matched": None,
-                    "track_id": track.get("track_id"),
-                    "downloaded": False,
-                }
-            )
-
-    matched_count = sum(1 for r in rows if r["matched"] is True)
-    unmatched_count = sum(1 for r in rows if r["matched"] is False)
-    unchecked_count = sum(1 for r in rows if r["matched"] is None)
+            row.update({
+                "matched": old.get("matched"),
+                "source_name": old.get("source_name", "") if old.get("matched") else "",
+                "local_path": old.get("local_path"),
+                "manual": bool(old.get("manual")),
+                "downloaded": bool(old.get("downloaded")),
+            })
+        rows.append(row)
 
     return {
         "playlist_id": playlist_id,
         "playlist_title": playlist_title,
         "rows": rows,
-        "matched_count": matched_count,
-        "unmatched_count": unmatched_count,
-        "unchecked_count": unchecked_count,
+        "matched_count": sum(1 for r in rows if r["matched"] is True),
+        "unmatched_count": sum(1 for r in rows if r["matched"] is False),
+        "unchecked_count": sum(1 for r in rows if r["matched"] is None),
     }
 
 
@@ -384,17 +280,147 @@ def _get_match_workers() -> int:
     return max(1, int(os.environ.get("MATCH_WORKERS", "4") or "4"))
 
 
+def _deezer_name(track):
+    return f"{track['artist']} - {track['title']}" if track["artist"] else track["title"]
+
+
+def _source_name(entry, audio_path: Path):
+    title = (
+        entry.get("tag_title")
+        or entry.get("parsed_title")
+        or entry.get("parsed_track_title")
+        or audio_path.stem
+    )
+    artist = entry.get("tag_artist") or entry.get("parsed_artist") or ""
+    return f"{artist} - {title}" if artist else title
+
+
+def _row(track, entry=None, *, score=None, manual=False):
+    """Preview row for one Deezer track; `entry` is the matched library entry or None."""
+    row = {
+        "number": track["position"],
+        "track_id": track.get("track_id"),
+        "deezer_name": _deezer_name(track),
+        "deezer_artist": track["artist"],
+        "deezer_title": track["title"],
+        "deezer_album": track["album"],
+        "manual": manual,
+        "downloaded": False,
+    }
+    if entry is None:
+        row.update({"convert": "❌", "matched": False, "source_name": "", "local_path": None})
+    else:
+        audio_path = Path(entry["path"])
+        row.update({
+            "convert": "✅",
+            "matched": True,
+            "source_name": _source_name(entry, audio_path),
+            "local_path": str(audio_path),
+        })
+        if score is not None:
+            row["score"] = score
+    return row
+
+
+def write_playlist_outputs(playlist_id: str, playlist_title: str, rows: list):
+    """Writes the .m3u8, report.json and missing.txt of a playlist from its preview rows."""
+    _, playlists_base_dir, _, mappings = get_paths_from_config()
+    folder = sanitize_filename(playlist_title) or f"playlist_{playlist_id}"
+    playlist_dir = playlists_base_dir / folder
+    playlist_dir.mkdir(parents=True, exist_ok=True)
+
+    lines = ["#EXTM3U"]
+    missing = []
+    report = {
+        "playlist_id": playlist_id,
+        "playlist_title": playlist_title,
+        "generated_at": int(time.time()),
+        "matched_count": 0,
+        "unmatched_count": 0,
+        "tracks": [],
+    }
+    for row in sorted(rows, key=lambda r: int(r["number"])):
+        item = {
+            "position": row["number"],
+            "deezer_artist": row.get("deezer_artist", ""),
+            "deezer_title": row.get("deezer_title", row.get("deezer_name", "")),
+            "deezer_album": row.get("deezer_album", ""),
+            "matched": row.get("matched") is True,
+        }
+        if row.get("matched") is True and row.get("local_path"):
+            m3u_rel = relative_m3u_path(playlist_dir, Path(row["local_path"]), mappings)
+            lines.append(m3u_rel)
+            report["matched_count"] += 1
+            item.update({"local_path": row["local_path"], "m3u_relative_path": m3u_rel, "manual": bool(row.get("manual"))})
+        else:
+            report["unmatched_count"] += 1
+            album = f" [{row['deezer_album']}]" if row.get("deezer_album") else ""
+            missing.append(f"{row.get('deezer_name', '')}{album}")
+        report["tracks"].append(item)
+
+    m3u8_path = playlist_dir / f"{folder}.m3u8"
+    m3u8_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    (playlist_dir / "report.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+    (playlist_dir / "missing.txt").write_text("\n".join(missing) + ("\n" if missing else ""), encoding="utf-8")
+    return m3u8_path, report
+
+
+def apply_manual_match(playlist_id: str, track_id: str, mode: str, path: str | None = None):
+    """Pins one track of a playlist: to a library file ("file"), as missing
+    ("missing"), or back to automatic matching ("auto"). Rewrites the playlist
+    files and returns the updated row."""
+    from core.library import library_snapshot
+
+    entry = None
+    if mode == "file":
+        entry = library_snapshot()["by_path"].get(path or "")
+        if entry is None:
+            raise ValueError("This file is not in the library index")
+    elif mode not in ("missing", "auto"):
+        raise ValueError("Unknown mode")
+
+    updated = {}
+
+    def change(state):
+        state = dict(state or {})
+        rows = [dict(r) for r in state.get("rows") or []]
+        row = next((r for r in rows if str(r.get("track_id")) == str(track_id)), None)
+        if row is None:
+            raise LookupError("Scan this playlist before fixing its matches")
+        overrides = dict(state.get("overrides") or {})
+
+        if mode == "auto":
+            overrides.pop(str(track_id), None)
+            row.update({"matched": None, "manual": False, "source_name": "", "local_path": None, "convert": "⚪"})
+        elif mode == "missing":
+            overrides[str(track_id)] = {"path": None}
+            row.update({"matched": False, "manual": True, "source_name": "", "local_path": None, "convert": "❌"})
+        else:
+            overrides[str(track_id)] = {"path": entry["path"]}
+            row.update({
+                "matched": True,
+                "manual": True,
+                "source_name": _source_name(entry, Path(entry["path"])),
+                "local_path": entry["path"],
+                "convert": "✅",
+                "downloaded": False,
+            })
+        row.pop("score", None)
+        updated.update(row)
+        state.update({"rows": rows, "overrides": overrides, "updated_at": int(time.time())})
+        return state
+
+    state = modify_preview_state(playlist_id, change)
+    write_playlist_outputs(playlist_id, state.get("playlist_title") or f"playlist_{playlist_id}", state["rows"])
+    return updated
+
+
 def convert_playlist(playlist_id: str, progress_cb=None, quick: bool = False):
     def emit(message=None, progress=None, stage=None, row_update=None):
         if progress_cb:
-            progress_cb(
-                message=message,
-                progress=progress,
-                stage=stage,
-                row_update=row_update,
-            )
+            progress_cb(message=message, progress=progress, stage=stage, row_update=row_update)
 
-    _, playlists_base_dir, library_cache_file, mappings = get_paths_from_config()
+    _, _, library_cache_file, _ = get_paths_from_config()
 
     emit("Fetching Deezer playlist info", stage="deezer")
     playlist_title, deezer_tracks = fetch_deezer_playlist_tracks(playlist_id)
@@ -408,205 +434,86 @@ def convert_playlist(playlist_id: str, progress_cb=None, quick: bool = False):
             )
         )
         library = load_library_cache(library_cache_file)
+    by_path = {e["path"]: e for e in library}
 
-    emit("Building title index", stage="matching", progress=0)
-    title_index = build_title_index(library)
-    match_workers = _get_match_workers()
+    saved = get_preview_state(playlist_id) or {}
+    saved_by_track = {str(r.get("track_id")): r for r in saved.get("rows", []) if r.get("track_id")}
+    overrides = saved.get("overrides") or {}
 
-    # Quick mode: reuse already-matched rows from previous scan
-    cached_rows: dict[int, dict] = {}
-    if quick:
-        saved = get_preview_state(playlist_id)
-        if saved and isinstance(saved.get("rows"), list):
-            # Build a source_name index for backward compat (old cache rows have no local_path)
-            _source_index: dict[str, str] = {}
-            for entry in library:
-                ea = entry.get("tag_artist") or entry.get("parsed_artist") or ""
-                et = (
-                    entry.get("tag_title")
-                    or entry.get("parsed_title")
-                    or entry.get("parsed_track_title")
-                    or Path(entry["path"]).stem
-                )
-                sn = f"{ea} - {et}" if ea else et
-                norm_sn = normalize_text(sn)
-                if norm_sn:
-                    _source_index[norm_sn] = entry["path"]
+    rows: dict[int, dict] = {}
 
-            for r in saved["rows"]:
-                if r.get("matched") is not True:
-                    continue
-                local_path = r.get("local_path")
-                if local_path:
-                    p = Path(local_path)
-                    if p.exists():
-                        cached_rows[r["number"]] = r
-                else:
-                    # Old cache format: no local_path, use source_name to find it
-                    norm_sn = normalize_text(r.get("source_name", ""))
-                    if norm_sn and norm_sn in _source_index:
-                        p = Path(_source_index[norm_sn])
-                        if p.exists():
-                            cached_rows[r["number"]] = {**r, "local_path": str(p)}
+    def keep(track, row):
+        # A track sent to Deezer Downloader stays marked until it shows up in the library.
+        old = saved_by_track.get(str(track.get("track_id"))) or {}
+        row["downloaded"] = bool(old.get("downloaded")) and not row["matched"]
+        rows[track["position"]] = row
+        emit(row_update=row)
 
-    tracks_to_match = [t for t in deezer_tracks if t["position"] not in cached_rows]
-    skipped = len(cached_rows)
-    total_to_match = len(tracks_to_match)
-
-    if quick and skipped:
-        emit(
-            f"Quick scan: {skipped} cached, matching {total_to_match} tracks",
-            stage="matching",
-            progress=0,
-        )
-    else:
-        emit("Matching tracks", stage="matching", progress=0)
-
-    match_results: dict[int, object] = {}
-    if total_to_match > 0:
-        if match_workers > 1 and total_to_match > 1:
-            done_count = 0
-            with ThreadPoolExecutor(max_workers=match_workers) as executor:
-                future_to_track = {
-                    executor.submit(find_best_match, t, library, title_index): t
-                    for t in tracks_to_match
-                }
-                for future in as_completed(future_to_track):
-                    done_count += 1
-                    t = future_to_track[future]
-                    match_results[t["position"]] = future.result()
-                    emit(
-                        f"Matching {done_count}/{total_to_match}: {t['artist']} - {t['title']}",
-                        stage="matching",
-                        progress=round(done_count / total_to_match * 100),
-                    )
-        else:
-            for idx, t in enumerate(tracks_to_match, start=1):
-                emit(
-                    f"Matching {idx}/{total_to_match}: {t['artist']} - {t['title']}",
-                    stage="matching",
-                    progress=round(idx / total_to_match * 100),
-                )
-                match_results[t["position"]] = find_best_match(t, library, title_index)
-
-    # Build output in playlist order
-    playlist_folder_name = sanitize_filename(playlist_title) or f"playlist_{playlist_id}"
-    playlist_dir = playlists_base_dir / playlist_folder_name
-    playlist_dir.mkdir(parents=True, exist_ok=True)
-
-    m3u8_path = playlist_dir / f"{playlist_folder_name}.m3u8"
-    report_path = playlist_dir / "report.json"
-    missing_path = playlist_dir / "missing.txt"
-
-    lines = ["#EXTM3U"]
-    report = {
-        "playlist_id": playlist_id,
-        "playlist_title": playlist_title,
-        "generated_at": int(time.time()),
-        "matched_count": 0,
-        "unmatched_count": 0,
-        "tracks": [],
-    }
-    missing_lines = []
-    preview_rows = []
-
+    # Manual choices win over matching, in quick and full scans alike.
+    to_match = []
     for track in deezer_tracks:
-        pos = track["position"]
-        deezer_name = (
-            f"{track['artist']} - {track['title']}" if track["artist"] else track["title"]
-        )
+        override = overrides.get(str(track.get("track_id")))
+        if override is not None:
+            path = override.get("path")
+            if path is None:
+                keep(track, _row(track, None, manual=True))
+                continue
+            # Trust the library index: a manual choice survives a briefly unmounted disk.
+            if path in by_path:
+                keep(track, _row(track, by_path[path], manual=True))
+                continue
+        to_match.append(track)
 
-        item = {
-            "position": pos,
-            "deezer_artist": track["artist"],
-            "deezer_title": track["title"],
-            "deezer_album": track["album"],
-        }
+    # Quick mode: reuse earlier automatic matches whose file still exists.
+    if quick:
+        remaining = []
+        for track in to_match:
+            old = saved_by_track.get(str(track.get("track_id")))
+            path = (old or {}).get("local_path")
+            if old and old.get("matched") is True and path in by_path and Path(path).exists():
+                keep(track, _row(track, by_path[path], score=old.get("score")))
+            else:
+                remaining.append(track)
+        to_match = remaining
 
-        # Use cached result if available (quick mode)
-        if pos in cached_rows and pos not in match_results:
-            cached = cached_rows[pos]
-            audio_path = Path(cached["local_path"])
-            m3u_rel = relative_m3u_path(playlist_dir, audio_path, mappings)
-            lines.append(m3u_rel)
-            report["matched_count"] += 1
-            item.update({"matched": True, "local_path": str(audio_path), "m3u_relative_path": m3u_rel})
-            preview_row = {**cached, "deezer_name": deezer_name}
-            report["tracks"].append(item)
-            preview_rows.append(preview_row)
-            emit(row_update=preview_row)
-            continue
-
-        best = match_results.get(pos)
-
-        if best is None:
-            report["unmatched_count"] += 1
-            item["matched"] = False
-            missing_lines.append(f"{track['artist']} - {track['title']} [{track['album']}]")
-            preview_row = {
-                "convert": "❌",
-                "number": pos,
-                "deezer_name": deezer_name,
-                "source_name": "not found",
-                "matched": False,
-                "local_path": None,
-                "track_id": track.get("track_id"),
-                "downloaded": False,
-            }
-        else:
-            audio_path = Path(best["entry"]["path"])
-            m3u_rel = relative_m3u_path(playlist_dir, audio_path, mappings)
-            lines.append(m3u_rel)
-            report["matched_count"] += 1
-            item.update(
-                {
-                    "matched": True,
-                    "local_path": str(audio_path),
-                    "m3u_relative_path": m3u_rel,
-                    "score": best["score"],
-                }
-            )
-            entry = best["entry"]
-            source_title = (
-                entry.get("tag_title")
-                or entry.get("parsed_title")
-                or entry.get("parsed_track_title")
-                or audio_path.stem
-            )
-            source_artist = entry.get("tag_artist") or entry.get("parsed_artist") or ""
-            source_name = f"{source_artist} - {source_title}" if source_artist else source_title
-            preview_row = {
-                "convert": "✅",
-                "number": pos,
-                "deezer_name": deezer_name,
-                "source_name": source_name,
-                "matched": True,
-                "local_path": str(audio_path),
-                "track_id": track.get("track_id"),
-                "downloaded": False,
-            }
-
-        report["tracks"].append(item)
-        preview_rows.append(preview_row)
-        emit(row_update=preview_row)
-
-    emit("Writing output files", stage="write", progress=100)
-
-    m3u8_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    report_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
-    missing_path.write_text(
-        "\n".join(missing_lines) + ("\n" if missing_lines else ""), encoding="utf-8"
+    total = len(to_match)
+    reused = len(deezer_tracks) - total
+    emit(
+        f"Matching {total} tracks" + (f", {reused} already settled" if reused else ""),
+        stage="matching",
+        progress=0,
     )
 
-    update_preview_state(
-        playlist_id,
-        {
+    if total:
+        index = build_title_index(library)
+        workers = _get_match_workers() if total > 1 else 1
+        with ThreadPoolExecutor(max_workers=workers) as executor:
+            futures = {executor.submit(find_best_match, t, library, index): t for t in to_match}
+            for done, future in enumerate(as_completed(futures), start=1):
+                track = futures[future]
+                best = future.result()
+                keep(track, _row(track, best["entry"], score=best["score"]) if best else _row(track, None))
+                emit(
+                    f"Matching {done}/{total}: {_deezer_name(track)}",
+                    stage="matching",
+                    progress=round(done / total * 100),
+                )
+
+    emit("Writing output files", stage="write", progress=100)
+    ordered = [rows[t["position"]] for t in deezer_tracks]
+    m3u8_path, report = write_playlist_outputs(playlist_id, playlist_title, ordered)
+
+    def merge(state):
+        # Overrides may have changed while the scan ran: keep the latest ones.
+        return {
             "playlist_id": playlist_id,
             "playlist_title": playlist_title,
             "updated_at": int(time.time()),
-            "rows": preview_rows,
-        },
-    )
+            "rows": ordered,
+            "overrides": (state or {}).get("overrides") or {},
+        }
+
+    modify_preview_state(playlist_id, merge)
 
     return {
         "playlist_title": playlist_title,
@@ -725,6 +632,8 @@ def search_deezer(query: str, search_type: str, limit: int = 25):
                     "title": item.get("title") or "Unknown title",
                     "artist": artist_name,
                     "subtitle": f"{artist_name or 'Artiste inconnu'} • {((item.get('album') or {}).get('title')) or 'Album inconnu'}",
+                    "album": ((item.get("album") or {}).get("title")) or "",
+                    "duration": item.get("duration"),
                     "cover": ((item.get("album") or {}).get("cover_medium"))
                     or ((item.get("album") or {}).get("cover_small"))
                     or "",
@@ -739,6 +648,7 @@ def search_deezer(query: str, search_type: str, limit: int = 25):
                     "type": "album",
                     "title": item.get("title") or "Album inconnu",
                     "subtitle": ((item.get("artist") or {}).get("name")) or "Artiste inconnu",
+                    "artist": ((item.get("artist") or {}).get("name")) or "",
                     "cover": item.get("cover_medium") or item.get("cover_small") or "",
                     "track_count": item.get("nb_tracks", 0),
                     "download_type": "album",
@@ -752,6 +662,7 @@ def search_deezer(query: str, search_type: str, limit: int = 25):
                     "type": "artist",
                     "title": item.get("name") or "Artiste inconnu",
                     "subtitle": f"{item.get('nb_album', 0)} albums",
+                    "nb_album": item.get("nb_album", 0),
                     "cover": item.get("picture_medium") or item.get("picture_small") or "",
                     "download_type": "artist",
                     "download_id": str(item.get("id") or ""),

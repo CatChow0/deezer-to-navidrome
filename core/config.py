@@ -1,9 +1,9 @@
 import json
 import os
+import threading
 import time
 import uuid
 from pathlib import Path
-from queue import Queue
 
 DATA_DIR = Path(os.environ.get("DATA_DIR", "./data"))
 COVERS_DIR = DATA_DIR / "covers"
@@ -60,7 +60,11 @@ DEFAULT_CONFIG = {
     "match_workers": int(os.environ.get("MATCH_WORKERS", "4") or "4"),
 }
 
+# Background tasks. Each keeps the full list of its events so any number of
+# pages can follow it, including pages opened after it started.
 TASKS = {}
+_tasks_lock = threading.Lock()
+TASK_RETENTION_SECONDS = 30 * 60
 
 
 def ensure_dirs():
@@ -68,21 +72,56 @@ def ensure_dirs():
     COVERS_DIR.mkdir(parents=True, exist_ok=True)
 
 
-def create_task():
+def _prune_tasks():
+    limit = time.time() - TASK_RETENTION_SECONDS
+    with _tasks_lock:
+        for task_id in [k for k, t in TASKS.items() if t["done"] and (t["finished_at"] or 0) < limit]:
+            TASKS.pop(task_id, None)
+
+
+def create_task(title="Task", kind="task", playlist_id=None, visible=True):
+    """`visible` tasks are listed in Activity; small ones (single downloads) are not."""
+    _prune_tasks()
     task_id = str(uuid.uuid4())
-    TASKS[task_id] = {
-        "queue": Queue(),
-        "done": False,
-        "error": None,
-    }
+    with _tasks_lock:
+        TASKS[task_id] = {
+            "id": task_id,
+            "title": title,
+            "kind": kind,
+            "playlist_id": str(playlist_id) if playlist_id else None,
+            "visible": visible,
+            "created_at": time.time(),
+            "finished_at": None,
+            "done": False,
+            "error": False,
+            "stage": None,
+            "message": None,
+            "progress": None,
+            "events": [],
+            "cond": threading.Condition(),
+        }
     return task_id
 
 
-def push_task_event(task_id, message=None, progress=None, stage=None, done=False, error=False):
+def push_task_payload(task_id, payload):
     task = TASKS.get(task_id)
     if not task:
         return
-    payload = {
+    with task["cond"]:
+        if payload.get("type") == "status":
+            for key in ("message", "stage", "progress"):
+                if payload.get(key) is not None:
+                    task[key] = payload[key]
+            if payload.get("done"):
+                task["done"] = True
+                task["error"] = bool(payload.get("error"))
+                task["finished_at"] = time.time()
+        task["events"].append(payload)
+        task["cond"].notify_all()
+
+
+def push_task_event(task_id, message=None, progress=None, stage=None, done=False, error=False):
+    push_task_payload(task_id, {
         "type": "status",
         "message": message,
         "progress": progress,
@@ -90,22 +129,50 @@ def push_task_event(task_id, message=None, progress=None, stage=None, done=False
         "done": done,
         "error": error,
         "timestamp": int(time.time()),
-    }
-    task["queue"].put(payload)
-    if done:
-        task["done"] = True
+    })
 
 
 def push_task_row_update(task_id, row):
+    push_task_payload(task_id, {"type": "row_update", "row": row, "timestamp": int(time.time())})
+
+
+def task_summary(task):
+    return {k: task[k] for k in (
+        "id", "title", "kind", "playlist_id", "created_at", "finished_at",
+        "done", "error", "stage", "message", "progress",
+    )}
+
+
+def list_tasks():
+    _prune_tasks()
+    with _tasks_lock:
+        tasks = [t for t in TASKS.values() if t["visible"]]
+    return [task_summary(t) for t in sorted(tasks, key=lambda t: t["created_at"], reverse=True)]
+
+
+def follow_task(task_id, keepalive=15):
+    """Yields every event of a task from the first one, then new ones as they
+    come; yields None when nothing happened for `keepalive` seconds."""
     task = TASKS.get(task_id)
     if not task:
         return
-    payload = {
-        "type": "row_update",
-        "row": row,
-        "timestamp": int(time.time()),
-    }
-    task["queue"].put(payload)
+    sent = 0
+    while True:
+        with task["cond"]:
+            if sent >= len(task["events"]) and not task["done"]:
+                task["cond"].wait(timeout=keepalive)
+            pending = task["events"][sent:]
+            finished = task["done"]
+        if not pending:
+            if finished:
+                return
+            yield None
+            continue
+        for event in pending:
+            yield event
+        sent += len(pending)
+        if finished and sent >= len(task["events"]):
+            return
 
 
 def load_config():
@@ -151,10 +218,25 @@ def save_preview_state(state):
     path.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
+# Scans, manual matches and download marks all rewrite the same file.
+_preview_lock = threading.RLock()
+
+
 def update_preview_state(playlist_id, payload):
-    state = load_preview_state()
-    state[str(playlist_id)] = payload
-    save_preview_state(state)
+    with _preview_lock:
+        state = load_preview_state()
+        state[str(playlist_id)] = payload
+        save_preview_state(state)
+
+
+def modify_preview_state(playlist_id, change):
+    """Read-modify-write of one playlist's state under a lock; `change(old) -> new`."""
+    with _preview_lock:
+        state = load_preview_state()
+        new = change(state.get(str(playlist_id)))
+        state[str(playlist_id)] = new
+        save_preview_state(state)
+        return new
 
 
 def get_preview_state(playlist_id):

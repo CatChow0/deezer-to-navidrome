@@ -9,9 +9,10 @@ from core.config import (
     push_task_event,
     push_task_row_update,
     get_preview_state,
-    TASKS,
 )
 from core.deezer import (
+    playlist_title,
+    apply_manual_match,
     build_playlist_preview,
     cache_cover,
     convert_playlist,
@@ -93,7 +94,11 @@ def convert_playlist_start(playlist_id):
     data = request.get_json(silent=True) or {}
     quick = data.get("mode") == "quick"
 
-    task_id = create_task()
+    task_id = create_task(
+        f"{'Quick' if quick else 'Full'} scan: {playlist_title(playlist_id)}",
+        kind="scan",
+        playlist_id=playlist_id,
+    )
 
     def on_progress(message=None, progress=None, stage=None, row_update=None):
         if row_update is not None:
@@ -152,6 +157,21 @@ def update_playlist_automation(playlist_id):
     })
 
 
+@playlists_bp.post("/playlist/<playlist_id>/match")
+def manual_match_route(playlist_id):
+    data = request.get_json(silent=True) or {}
+    track_id = str(data.get("track_id") or "").strip()
+    if not track_id:
+        return jsonify({"ok": False, "error": "track_id is required"}), 400
+    try:
+        row = apply_manual_match(playlist_id, track_id, str(data.get("mode") or ""), data.get("path"))
+    except LookupError as e:
+        return jsonify({"ok": False, "error": str(e)}), 409
+    except ValueError as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
+    return jsonify({"ok": True, "row": row})
+
+
 @playlists_bp.post("/playlist/<playlist_id>/download-missing/start")
 def download_missing_start(playlist_id: str):
     preview = get_preview_state(playlist_id)
@@ -173,7 +193,7 @@ def download_missing_start(playlist_id: str):
     if not base_url:
         return jsonify({"error": "deezer_dl_base_url not configured"}), 400
 
-    task_id = create_task()
+    task_id = create_task(f"Download missing: {playlist_title(playlist_id)}", kind="download-missing", playlist_id=playlist_id)
 
     def runner():
         total = len(missing_rows)

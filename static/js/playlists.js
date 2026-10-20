@@ -1,8 +1,8 @@
 // Playlists: tiles in the dashboard, and the detail drawer with match
 // breakdown, scans, downloads, automation and the track table.
 
-import { armed, escapeHtml, fetchJSON, on } from './core.js';
-import { runServerTask } from './activity.js';
+import { armed, escapeHtml, fetchJSON, on, toast } from './core.js';
+import { onTaskRow, runServerTask } from './activity.js';
 import { queueDownload } from './downloads.js';
 import { automationChips, automationSection, bindAutomationSection, settingsFromTile } from './automation.js';
 
@@ -28,24 +28,111 @@ const STATUS = {
   none: { dot: '', label: 'Not checked' },
 };
 
-function downloadCell(row) {
-  if (!row.track_id || row.matched === true) return '';
-  if (row.downloaded) return '<span class="dl-mark">Sent to downloader</span>';
-  return `<button type="button" class="btn btn--ghost btn--sm dl-btn" data-action="download-track" data-track-id="${escapeHtml(row.track_id)}">Download</button>`;
+function actionsCell(row) {
+  if (!row.track_id) return '';
+  const fix = row.matched === null || row.matched === undefined
+    ? ''
+    : `<button type="button" class="btn btn--ghost btn--sm" data-action="fix-match" data-number="${escapeHtml(row.number)}" title="Pick the right file, or mark the track as missing">Fix</button>`;
+  if (row.matched === true) return fix;
+  if (row.downloaded) return `<span class="dl-mark">Sent to downloader</span> ${fix}`;
+  return `<button type="button" class="btn btn--ghost btn--sm dl-btn" data-action="download-track" data-track-id="${escapeHtml(row.track_id)}">Download</button> ${fix}`;
 }
 
 function rowHtml(row) {
   const state = matchState(row);
   const status = STATUS[state];
+  const manual = row.manual ? ' <span class="chip chip--info" title="Set by hand, kept by every scan">Manual</span>' : '';
   return `
     <tr data-number="${escapeHtml(row.number)}" data-matched="${state}" data-track-id="${escapeHtml(row.track_id ?? '')}">
       <td class="num">${escapeHtml(row.number)}</td>
       <td class="track-name">${escapeHtml(row.deezer_name)}</td>
-      <td class="track-match">${row.matched === true ? escapeHtml(row.source_name || '') : ''}</td>
+      <td class="track-match">${row.matched === true ? escapeHtml(row.source_name || '') : ''}${manual}</td>
       <td><span class="track-status"><span class="dot ${status.dot}"></span>${status.label}</span></td>
-      <td class="actions">${downloadCell(row)}</td>
+      <td class="actions">${actionsCell(row)}</td>
     </tr>
   `;
+}
+
+// ── Fixing a match by hand ────────────────────────────────────────────────────
+
+function closeFixPanels() {
+  drawer.content.querySelectorAll('.fix-row').forEach(el => el.remove());
+}
+
+function fixResultsHtml(results) {
+  if (!results.length) return '<p class="muted">No file in the library looks like this. Try other words.</p>';
+  return results.map(item => `
+    <div class="fix-result">
+      <div>
+        <strong>${escapeHtml(item.artist ? `${item.artist} - ${item.title}` : item.title)}</strong>
+        <span class="muted">${escapeHtml([item.album, item.file].filter(Boolean).join(', '))}</span>
+      </div>
+      <button type="button" class="btn btn--ghost btn--sm" data-action="fix-use" data-path="${escapeHtml(item.path)}">Use this file</button>
+    </div>
+  `).join('');
+}
+
+async function searchFixCandidates(panel, query) {
+  const list = panel.querySelector('[data-fix-results]');
+  list.innerHTML = '<p class="muted">Searching the library…</p>';
+  const { data } = await fetchJSON(`/api/library/search?q=${encodeURIComponent(query)}`);
+  list.innerHTML = fixResultsHtml(data?.results || []);
+}
+
+function openFixPanel(number) {
+  const row = rowsByPlaylist.get(openId)?.get(Number(number));
+  const tr = drawer.content.querySelector(`[data-tracks] tr[data-number="${number}"]`);
+  if (!row || !tr) return;
+
+  const alreadyOpen = tr.nextElementSibling?.classList.contains('fix-row');
+  closeFixPanels();
+  if (alreadyOpen) return;
+
+  const query = [row.deezer_artist, row.deezer_title].filter(Boolean).join(' ') || row.deezer_name;
+  const canMarkMissing = !(row.matched === false && row.manual);
+  tr.insertAdjacentHTML('afterend', `
+    <tr class="fix-row" data-matched="${matchState(row)}" data-fix-number="${escapeHtml(row.number)}">
+      <td colspan="5">
+        <div class="fix-panel">
+          <form class="fix-search" data-fix-search>
+            <input type="search" name="q" value="${escapeHtml(query)}" aria-label="Search the library">
+            <button type="submit" class="btn btn--ghost btn--sm">Search</button>
+          </form>
+          <div class="fix-results" data-fix-results></div>
+          <div class="fix-actions">
+            ${canMarkMissing ? '<button type="button" class="btn btn--ghost btn--sm" data-action="fix-missing">Not in my library</button>' : ''}
+            ${row.manual ? '<button type="button" class="btn btn--ghost btn--sm" data-action="fix-auto">Back to automatic matching</button>' : ''}
+            <button type="button" class="btn btn--ghost btn--sm" data-action="fix-close">Cancel</button>
+          </div>
+        </div>
+      </td>
+    </tr>
+  `);
+  const panel = tr.nextElementSibling;
+  panel.querySelector('input').focus();
+  searchFixCandidates(panel, query);
+}
+
+async function saveFix(button, body) {
+  const panel = button.closest('.fix-row');
+  const number = Number(panel.dataset.fixNumber);
+  const playlistId = openId;
+  const row = rowsByPlaylist.get(playlistId)?.get(number);
+  if (!row) return;
+
+  button.disabled = true;
+  const { data } = await fetchJSON(`/playlist/${playlistId}/match`, { json: { track_id: row.track_id, ...body } });
+  button.disabled = false;
+  if (!data?.ok) {
+    toast(data?.error || 'The match was not saved', { tone: 'error' });
+    return;
+  }
+  closeFixPanels();
+  applyRowUpdate(playlistId, data.row);
+  toast(
+    body.mode === 'auto' ? 'Back to automatic matching. The next scan will match it again.' : 'Match saved and playlist file updated',
+    { tone: 'ok' },
+  );
 }
 
 function counts(playlistId) {
@@ -269,7 +356,7 @@ async function startScan(playlistId, mode) {
   const title = tileOf(playlistId)?.dataset.title || playlistId;
   await runServerTask(`${mode === 'quick' ? 'Quick scan' : 'Full scan'}: ${title}`, `/playlist/${playlistId}/convert/start`, {
     json: { mode },
-    onRow: row => applyRowUpdate(playlistId, row),
+    playlistId,
   });
 }
 
@@ -277,7 +364,7 @@ async function startDownloadMissing(playlistId) {
   const title = tileOf(playlistId)?.dataset.title || playlistId;
   const result = await runServerTask(`Download missing: ${title}`, `/playlist/${playlistId}/download-missing/start`, {
     logMode: 'replace',
-    onRow: row => applyRowUpdate(playlistId, row),
+    playlistId,
   });
   if (!result.error && openId === playlistId) loadPreview(playlistId);
 }
@@ -294,6 +381,23 @@ export function initPlaylists(drawerApi) {
   const content = drawer.content;
   on(content, 'click', '[data-action="scan"]', (_, btn) => openId && startScan(openId, btn.dataset.mode));
   on(content, 'click', '[data-action="download-missing"]', () => openId && startDownloadMissing(openId));
+
+  // Row updates from any scan: this page, another tab, or the scheduler.
+  onTaskRow(({ task, row }) => {
+    if (task.playlist_id) applyRowUpdate(String(task.playlist_id), row);
+  });
+
+  on(content, 'click', '[data-action="fix-match"]', (_, btn) => openFixPanel(btn.dataset.number));
+  on(content, 'click', '[data-action="fix-close"]', () => closeFixPanels());
+  on(content, 'click', '[data-action="fix-use"]', (_, btn) => saveFix(btn, { mode: 'file', path: btn.dataset.path }));
+  on(content, 'click', '[data-action="fix-missing"]', (_, btn) => saveFix(btn, { mode: 'missing' }));
+  on(content, 'click', '[data-action="fix-auto"]', (_, btn) => saveFix(btn, { mode: 'auto' }));
+  content.addEventListener('submit', event => {
+    const form = event.target.closest('[data-fix-search]');
+    if (!form) return;
+    event.preventDefault();
+    searchFixCandidates(form.closest('.fix-row'), form.elements.q.value.trim());
+  });
 
   on(content, 'click', '[data-action="download-track"]', (_, btn) => {
     queueDownload(btn, { url: `/deezer-dl/track/${encodeURIComponent(btn.dataset.trackId)}` });

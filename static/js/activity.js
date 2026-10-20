@@ -77,6 +77,9 @@ export function startTask(title) {
         node.scrollTop = node.scrollHeight;
       }
     },
+    dismiss() {
+      removeTask(elements);
+    },
     finish({ error = false, message } = {}) {
       elements.forEach(el => (el.dataset.state = error ? 'error' : 'done'));
       stages.forEach(node => (node.textContent = message || (error ? 'Failed' : 'Done')));
@@ -88,40 +91,99 @@ export function startTask(title) {
   };
 }
 
-// Starts a server task (POST returning { task_id }) and mirrors its stream
-// into the Activity cell. Resolves with { error } once the task is done.
-export async function runServerTask(title, url, { json, logMode = 'append', onStatus, onRow, onEvent } = {}) {
-  const task = startTask(title);
+// ── Following server tasks ───────────────────────────────────────────────────
+// Every task the server runs (started here, in another tab, or by the
+// scheduler) is followed once; its row updates are broadcast to listeners.
+
+const SYNC_INTERVAL_MS = 5000;
+const followed = new Map();
+const rowListeners = new Set();
+
+// listener({ task, row }) for every row update of any followed task.
+export function onTaskRow(listener) {
+  rowListeners.add(listener);
+}
+
+function follow(summary, ui, handlers = {}) {
+  let entry = followed.get(summary.id);
+  if (entry) {
+    entry.handlers.push(handlers);
+    if (handlers.logMode) entry.logMode = handlers.logMode;
+    return entry.promise;
+  }
+
+  entry = { summary, ui: ui || startTask(summary.title), handlers: [handlers], logMode: handlers.logMode || 'append' };
+  followed.set(summary.id, entry);
+  const each = (name, ...args) => entry.handlers.forEach(h => h[name]?.(...args));
+
+  entry.promise = new Promise(resolve => {
+    streamTask(summary.id, {
+      onStatus(payload) {
+        if (payload.message) entry.ui.log(payload.message, { replace: entry.logMode === 'replace' });
+        entry.ui.stage(payload.message || payload.stage);
+        entry.ui.progress(payload.progress);
+        each('onStatus', payload);
+      },
+      onRow(row) {
+        rowListeners.forEach(listener => listener({ task: entry.summary, row }));
+        each('onRow', row);
+      },
+      onEvent(payload) {
+        each('onEvent', payload);
+      },
+      onDone(payload) {
+        entry.ui.finish({ error: !!payload.error });
+        if (payload.error) toast(`${entry.summary.title} failed`, { tone: 'error' });
+        resolve({ error: !!payload.error });
+      },
+      onError() {
+        entry.ui.log('Lost connection to the task stream.');
+        entry.ui.finish({ error: true, message: 'Connection lost' });
+        resolve({ error: true });
+      },
+    });
+  });
+  return entry.promise;
+}
+
+// Starts a server task (POST returning { task_id }) and follows it.
+// Resolves with { error } once the task is done.
+export async function runServerTask(title, url, { json, playlistId = null, ...handlers } = {}) {
+  const ui = startTask(title);
   const { ok, data } = await fetchJSON(url, json !== undefined ? { json } : { method: 'POST' });
 
   if (!ok || !data?.task_id) {
     const message = data?.error || 'The server did not start the task';
-    task.log(message);
-    task.finish({ error: true, message });
+    ui.log(message);
+    ui.finish({ error: true, message });
     toast(`${title}: ${message}`, { tone: 'error' });
     return { error: true };
   }
 
-  return new Promise(resolve => {
-    streamTask(data.task_id, {
-      onStatus(payload) {
-        if (payload.message) task.log(payload.message, { replace: logMode === 'replace' });
-        task.stage(payload.message || payload.stage);
-        task.progress(payload.progress);
-        onStatus?.(payload);
-      },
-      onRow,
-      onEvent,
-      onDone(payload) {
-        task.finish({ error: !!payload.error });
-        if (payload.error) toast(`${title} failed`, { tone: 'error' });
-        resolve({ error: !!payload.error });
-      },
-      onError() {
-        task.log('Lost connection to the task stream.');
-        task.finish({ error: true, message: 'Connection lost' });
-        resolve({ error: true });
-      },
-    });
+  const existing = followed.get(data.task_id);
+  if (existing) {
+    // The periodic sync saw this task first: drop the duplicate row.
+    ui.dismiss();
+    return follow(existing.summary, null, handlers);
+  }
+  return follow({ id: data.task_id, title, playlist_id: playlistId }, ui, handlers);
+}
+
+// Picks up running tasks this page did not start.
+async function syncTasks() {
+  const { ok, data } = await fetchJSON('/api/tasks');
+  if (!ok || !data?.tasks) return;
+  for (const task of data.tasks) {
+    if (!task.done && !followed.has(task.id)) follow(task, null);
+  }
+}
+
+export function initActivity() {
+  syncTasks();
+  setInterval(() => {
+    if (!document.hidden) syncTasks();
+  }, SYNC_INTERVAL_MS);
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) syncTasks();
   });
 }

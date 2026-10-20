@@ -160,40 +160,89 @@ def load_library_cache(library_cache_file):
         return []
 
 
-_CACHE_META = {"key": None, "meta": None}
+_snapshot = {"key": None, "value": None}
+_snapshot_lock = threading.Lock()
 
 
-def load_library_cache_meta(library_cache_file):
-    """Résumé du cache (compteurs + date), mémorisé tant que le fichier ne change pas."""
-    if not library_cache_file.exists():
-        return {"count": 0, "artists": 0, "albums": 0, "generated_at": None}
-    stat = library_cache_file.stat()
-    key = (str(library_cache_file), stat.st_mtime_ns, stat.st_size)
-    if _CACHE_META["key"] == key:
-        return _CACHE_META["meta"]
+def library_snapshot():
+    """The library index as the web pages use it: entries, a matching index,
+    search labels and counters. Rebuilt only when the cache file changes."""
+    from core.matching import LibraryIndex
+
+    _, _, library_cache_file, _ = get_paths_from_config()
     try:
-        data = json.loads(library_cache_file.read_text(encoding="utf-8"))
-    except Exception:
-        data = {}
-    library = data.get("library", []) if isinstance(data, dict) else []
-    artists = set()
-    albums = set()
-    for entry in library:
-        artist = normalize_text(entry.get("tag_artist") or entry.get("parsed_artist") or entry.get("artist_dir_norm") or "")
-        album = normalize_text(entry.get("tag_album") or entry.get("album_dir_norm") or "")
-        if artist:
-            artists.add(artist)
-            if album:
-                albums.add((artist, album))
-    meta = {
-        "count": len(library),
-        "artists": len(artists),
-        "albums": len(albums),
-        "generated_at": data.get("generated_at") if isinstance(data, dict) else None,
+        stat = library_cache_file.stat()
+        key = (str(library_cache_file), stat.st_mtime_ns, stat.st_size)
+    except OSError:
+        key = (str(library_cache_file), None, None)
+
+    with _snapshot_lock:
+        if _snapshot["key"] == key:
+            return _snapshot["value"]
+
+        generated_at = None
+        library = []
+        if key[1] is not None:
+            try:
+                data = json.loads(library_cache_file.read_text(encoding="utf-8"))
+                library = data.get("library", []) if isinstance(data, dict) else []
+                generated_at = data.get("generated_at") if isinstance(data, dict) else None
+            except Exception:
+                library = []
+
+        artists, albums, labels = set(), set(), []
+        for entry in library:
+            artist = entry.get("tag_artist") or entry.get("parsed_artist") or ""
+            title = entry.get("tag_title") or entry.get("parsed_title") or entry.get("parsed_track_title") or Path(entry["path"]).stem
+            album = entry.get("tag_album") or ""
+            labels.append(normalize_text(f"{artist} {title} {album}"))
+            norm_artist = normalize_text(artist) or entry.get("artist_dir_norm") or ""
+            norm_album = normalize_text(album) or entry.get("album_dir_norm") or ""
+            if norm_artist:
+                artists.add(norm_artist)
+                if norm_album:
+                    albums.add((norm_artist, norm_album))
+
+        value = {
+            "library": library,
+            "index": LibraryIndex(library),
+            "labels": labels,
+            "by_path": {e["path"]: e for e in library},
+            "meta": {"count": len(library), "artists": len(artists), "albums": len(albums), "generated_at": generated_at},
+        }
+        _snapshot["key"] = key
+        _snapshot["value"] = value
+        return value
+
+
+def describe_entry(entry):
+    """Short public view of a library entry for the browser."""
+    path = Path(entry["path"])
+    return {
+        "path": entry["path"],
+        "artist": entry.get("tag_artist") or entry.get("parsed_artist") or "",
+        "title": entry.get("tag_title") or entry.get("parsed_title") or entry.get("parsed_track_title") or path.stem,
+        "album": entry.get("tag_album") or "",
+        "duration": entry.get("duration"),
+        "file": path.name,
     }
-    _CACHE_META["key"] = key
-    _CACHE_META["meta"] = meta
-    return meta
+
+
+def search_library(query: str, limit: int = 20):
+    snap = library_snapshot()
+    needle = normalize_text(query)
+    if not needle:
+        return []
+    try:
+        from rapidfuzz import fuzz, process
+
+        hits = process.extract(needle, snap["labels"], scorer=fuzz.WRatio, limit=limit, score_cutoff=72)
+        found = [(i, score) for _, score, i in hits]
+    except ImportError:
+        words = needle.split()
+        scored = [(i, sum(w in label for w in words) / len(words) * 100) for i, label in enumerate(snap["labels"])]
+        found = sorted((x for x in scored if x[1] >= 50), key=lambda x: -x[1])[:limit]
+    return [{**describe_entry(snap["library"][i]), "score": round(score)} for i, score in found]
 
 
 def _process_dir_into(scan_dir, dir_files, scan_dirs, library, lock, counter,

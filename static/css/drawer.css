@@ -550,3 +550,69 @@ tbody[data-filter="found"] tr:not([data-matched="true"]),
 tbody[data-filter="unchecked"] tr:not([data-matched="none"]) {
   display: none;
 }
+
+/* Manual match panel, opened under a track row */
+.fix-row > td {
+  background: rgba(4, 3, 14, 0.45);
+}
+
+.table tbody tr.fix-row:hover td {
+  background: rgba(4, 3, 14, 0.45);
+}
+
+.fix-panel {
+  display: grid;
+  gap: 12px;
+  padding: 6px 0;
+}
+
+.fix-search {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+
+.fix-results {
+  display: grid;
+  gap: 4px;
+  max-height: 280px;
+  overflow: auto;
+}
+
+.fix-result {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 10px;
+  border-radius: 10px;
+}
+
+.fix-result:hover {
+  background: var(--glass-raised);
+}
+
+.fix-result > div {
+  display: grid;
+  min-width: 0;
+}
+
+.fix-result strong {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fix-result .muted {
+  font-size: var(--step--1);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fix-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}

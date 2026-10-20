@@ -33,32 +33,29 @@ function coverImg(src, alt, className = '') {
 
 // ── Library ownership ─────────────────────────────────────────────────────────
 
-async function libraryCheck(type, ids, artist, totalAlbums = '') {
-  const params = new URLSearchParams({ type, ids, artist });
-  if (totalAlbums) params.set('total_albums', totalAlbums);
-  const { data } = await fetchJSON(`/search/library-check?${params}`);
+// items: [{ key, type: 'track'|'album'|'artist', title, artist, album, duration }]
+async function libraryCheck(items) {
+  if (!items.length) return {};
+  const { data } = await fetchJSON('/search/library-check', { json: { items } });
   return data?.ok ? data.results || {} : null;
+}
+
+function checkItem(type, item) {
+  if (type === 'track') {
+    return { key: item.id, type, title: item.title, artist: item.artist, album: item.album, duration: item.duration };
+  }
+  if (type === 'album') return { key: item.id, type, title: item.title, artist: item.artist || item.subtitle };
+  return { key: item.id, type, title: item.title };
 }
 
 async function updateResultBadges() {
   if (!currentResults.length) return;
   const type = currentType;
-  const artistName = currentResults[0]?.artist || '';
-
-  // Tracks and albums are looked up by title, artists by Deezer ID.
-  const keyOf = item => (type === 'artist' ? item.id : item.title || '');
-  const ids = currentResults.map(keyOf).join(',');
-  if (!ids) return;
-
-  const totalAlbums = type === 'artist'
-    ? currentResults.map(r => `${r.id}:${r.nb_album || 0}`).join('|')
-    : '';
-
-  const results = await libraryCheck(type, ids, artistName, totalAlbums);
+  const results = await libraryCheck(currentResults.map(item => checkItem(type, item)));
   if (!results || type !== currentType) return;
 
   for (const item of currentResults) {
-    const info = results[keyOf(item)];
+    const info = results[item.id];
     const slot = document.getElementById(`result-${type}-${item.id}-chips`);
     if (!info || !slot) continue;
 
@@ -67,20 +64,20 @@ async function updateResultBadges() {
     } else if (type === 'album') {
       slot.innerHTML = countChip(info.owned_count || 0, item.track_count || 0, 'tracks');
     } else {
-      slot.innerHTML = countChip(info.albums_owned || 0, info.total_albums || 0, 'albums');
+      slot.innerHTML = countChip(info.albums_owned || 0, item.nb_album || 0, 'albums');
     }
   }
 }
 
-async function markOwnedTracks(tracks, artistName, root) {
-  const titles = tracks.map(t => t.title || '').join(',');
-  if (!titles) return;
-  const results = await libraryCheck('track', titles, artistName);
+async function markOwnedTracks(tracks, album, root) {
+  const results = await libraryCheck(tracks.map(t => ({
+    key: t.track_id, type: 'track', title: t.title, artist: t.artist || album.artist, album: album.title, duration: t.duration,
+  })));
   if (!results) return;
 
   let owned = 0;
   for (const track of tracks) {
-    if (!results[track.title || '']?.owned) continue;
+    if (!results[track.track_id]?.owned) continue;
     owned++;
     const slot = root.querySelector(`[data-owned-slot="${CSS.escape(String(track.track_id))}"]`);
     if (slot) slot.innerHTML = ownedChip();
@@ -91,13 +88,11 @@ async function markOwnedTracks(tracks, artistName, root) {
 }
 
 async function markOwnedAlbums(albums, artistName, root) {
-  const titles = albums.map(a => a.title || '').join(',');
-  if (!titles) return;
-  const results = await libraryCheck('album', titles, artistName);
+  const results = await libraryCheck(albums.map(a => ({ key: a.id, type: 'album', title: a.title, artist: artistName })));
   if (!results) return;
 
   for (const album of albums) {
-    const info = results[album.title || ''];
+    const info = results[album.id];
     const slot = root.querySelector(`[data-album-chip="${CSS.escape(String(album.id))}"]`);
     if (info && slot) slot.innerHTML = countChip(info.owned_count || 0, album.track_count || 0, 'tracks');
   }
@@ -213,7 +208,7 @@ async function openAlbum(albumId) {
     </header>
     <section class="detail-section">${trackTable(tracks)}</section>
   `;
-  await markOwnedTracks(tracks, album.artist || '', drawer.content);
+  await markOwnedTracks(tracks, album, drawer.content);
 }
 
 async function openArtist(artistId) {
@@ -259,11 +254,10 @@ async function openArtist(artistId) {
     </section>
   `;
 
-  const totalAlbums = `${artist.id}:${artist.nb_album || 0}`;
-  libraryCheck('artist', artist.id, artist.name || '', totalAlbums).then(results => {
+  libraryCheck([{ key: artist.id, type: 'artist', title: artist.name }]).then(results => {
     const info = results?.[artist.id];
     const slot = drawer.content.querySelector('[data-artist-summary]');
-    if (info && slot) slot.innerHTML = countChip(info.albums_owned || 0, info.total_albums || 0, 'albums');
+    if (info && slot) slot.innerHTML = countChip(info.albums_owned || 0, artist.nb_album || 0, 'albums');
   });
   await markOwnedAlbums(albums, artist.name || '', drawer.content);
 }
@@ -303,7 +297,7 @@ async function toggleArtistAlbum(button) {
     </div>
     ${trackTable(tracks)}
   `;
-  await markOwnedTracks(tracks, album.artist || '', panel);
+  await markOwnedTracks(tracks, album, panel);
 }
 
 // ── Wiring ────────────────────────────────────────────────────────────────────

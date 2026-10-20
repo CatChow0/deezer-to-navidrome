@@ -11,8 +11,6 @@ from flask import (
     send_from_directory,
     url_for,
 )
-from queue import Empty
-
 import requests
 
 from core.config import (
@@ -27,6 +25,8 @@ from core.config import (
     clear_playlists_and_covers,
     clear_preview_state_file,
     create_task,
+    follow_task,
+    list_tasks,
     load_config,
     push_task_event,
     save_config,
@@ -74,22 +74,18 @@ def latest_version_route():
 @system_bp.get("/tasks/<task_id>/stream")
 def task_stream(task_id):
     def generate():
-        task = TASKS.get(task_id)
-        if not task:
+        if task_id not in TASKS:
             yield 'data: {"type":"status","message":"Task not found","done":true,"error":true}\n\n'
             return
-        while True:
-            try:
-                event = task["queue"].get(timeout=15)
-                yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
-                if event.get("done"):
-                    break
-            except Empty:
-                if task.get("done"):
-                    break
-                yield ": keepalive\n\n"
+        for event in follow_task(task_id):
+            yield ": keepalive\n\n" if event is None else f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
 
-    return Response(generate(), mimetype="text/event-stream")
+    return Response(generate(), mimetype="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
+@system_bp.get("/api/tasks")
+def tasks_route():
+    return jsonify({"ok": True, "tasks": list_tasks()})
 
 
 @system_bp.route("/config", methods=["GET", "POST"])
@@ -213,7 +209,7 @@ def deezer_dl_track(track_id):
     if not base_url:
         return jsonify({"error": "deezer_dl_base_url not configured"}), 400
 
-    task_id = create_task()
+    task_id = create_task(f"Download track {track_id}", kind="download", visible=False)
 
     def run():
         try:
@@ -278,7 +274,7 @@ def deezer_dl_download_start():
     if not base_url:
         return jsonify({"error": "deezer_dl_base_url not configured"}), 400
 
-    task_id = create_task()
+    task_id = create_task(f"Download {download_type} {music_id}", kind="download", visible=False)
 
     def runner():
         try:
