@@ -1,0 +1,11 @@
+.git
+.gitignore
+.idea
+.claude
+__pycache__
+*.pyc
+data
+Jenkinsfile
+docker-compose.yml
+README.md
+DOCKERHUB_README.md
