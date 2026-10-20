@@ -1,0 +1,4 @@
+# Deezer session cookie (ARL) and other credentials
+data/secrets.json
+__pycache__/
+*.pyc

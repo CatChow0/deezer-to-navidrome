@@ -29,6 +29,7 @@
         <nav class="view-switch" aria-label="Main" data-active="{{ view }}">
           <span class="view-switch-pill" aria-hidden="true"></span>
           <a href="{{ url_for('playlists.home') }}" data-view-link="dashboard" {% if view == 'dashboard' %}aria-current="page"{% endif %}>Dashboard</a>
+          <a href="{{ url_for('playlists.releases_view') }}" data-view-link="releases" {% if view == 'releases' %}aria-current="page"{% endif %}>Releases</a>
           <a href="{{ url_for('system.config_view') }}" data-view-link="settings" {% if view == 'settings' %}aria-current="page"{% endif %}>Settings</a>
         </nav>
       </div>

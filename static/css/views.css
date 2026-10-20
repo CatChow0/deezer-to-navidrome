@@ -28,11 +28,12 @@
     visibility 0s linear var(--t-slow);
 }
 
-.view[data-view-name="dashboard"]:not(.is-active) {
+/* views.js marks each hidden view as before or after the shown one */
+.view[data-pos="before"]:not(.is-active) {
   transform: translateX(calc(-100% - 4 * var(--gap)));
 }
 
-.view[data-view-name="settings"]:not(.is-active) {
+.view[data-pos="after"]:not(.is-active) {
   transform: translateX(calc(100% + 4 * var(--gap)));
 }
 
@@ -43,11 +44,11 @@
   }
 }
 
-/* Switch: two equal halves and a pill that slides under the active one */
+/* Switch: equal segments and a pill that slides under the active one */
 .view-switch {
   position: relative;
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(3, 1fr);
   padding: 4px;
   border-radius: var(--r-chip);
   background: rgba(0, 0, 0, 0.28);
@@ -57,7 +58,7 @@
 .view-switch a {
   position: relative;
   z-index: 1;
-  padding: 8px 18px;
+  padding: 8px 16px;
   border-radius: var(--r-chip);
   color: var(--muted);
   text-align: center;
@@ -80,15 +81,19 @@
   top: 4px;
   bottom: 4px;
   left: 4px;
-  width: calc(50% - 4px);
+  width: calc((100% - 8px) / 3);
   border-radius: var(--r-chip);
   background: var(--text);
   box-shadow: 0 4px 18px -6px rgba(238, 234, 248, 0.5);
   transition: transform var(--t-slow) var(--ease-out);
 }
 
-.view-switch[data-active="settings"] .view-switch-pill {
+.view-switch[data-active="releases"] .view-switch-pill {
   transform: translateX(100%);
+}
+
+.view-switch[data-active="settings"] .view-switch-pill {
+  transform: translateX(200%);
 }
 
 @media (prefers-reduced-motion: reduce) {

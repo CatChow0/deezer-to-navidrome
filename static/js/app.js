@@ -10,6 +10,9 @@ import { initAutomation } from './automation.js';
 import { initLibrary } from './library.js';
 import { initDedup } from './dedup.js';
 import { initSettings } from './settings.js';
+import { initAccount } from './account.js';
+import { initMixes } from './mixes.js';
+import { initReleases } from './releases.js';
 
 initViews();
 initActivity();
@@ -24,3 +27,6 @@ initAutomation();
 initLibrary();
 initDedup(overlay('dedup-modal'));
 initSettings();
+initAccount();
+initMixes(overlay('mix-picker'));
+initReleases();

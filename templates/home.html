@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% from '_macros.html' import tile %}
 
 {% block content %}
 <div class="views" data-view="{{ view }}">
@@ -43,32 +44,33 @@
         </form>
       </div>
       <div class="cell-body">
-        {% if playlists %}
+        {% set regular = playlists | selectattr('kind', 'equalto', 'playlist') | list %}
+        {% if regular %}
         <div class="tiles">
-          {% for playlist in playlists %}
-          {% set cover = url_for('system.serve_cover', filename=playlist.cover_cached) if playlist.cover_cached else '' %}
-          <button type="button" class="tile"
-            data-playlist-id="{{ playlist.id }}"
-            data-title="{{ playlist.title }}"
-            data-cover="{{ cover }}"
-            data-delete-url="{{ url_for('playlists.delete_playlist', playlist_id=playlist.id) }}"
-            data-auto-scan="{{ 'true' if playlist.auto_scan_enabled else 'false' }}"
-            data-auto-interval="{{ playlist.auto_scan_interval_minutes | default(60) }}"
-            data-auto-download="{{ 'true' if playlist.auto_download_after_scan else 'false' }}">
-            <span class="tile-cover">
-              {% if cover %}
-              <img src="{{ cover }}" alt="" loading="lazy">
-              {% else %}
-              <span class="placeholder" aria-hidden="true">{{ playlist.title[:1] }}</span>
-              {% endif %}
-              <span class="chips" data-tile-chips></span>
-            </span>
-            <span class="tile-title">{{ playlist.title }}</span>
-          </button>
-          {% endfor %}
+          {% for playlist in regular %}{{ tile(playlist) }}{% endfor %}
         </div>
         {% else %}
         <p class="empty">No playlists yet. Paste a Deezer playlist link above to start tracking it.</p>
+        {% endif %}
+      </div>
+    </section>
+
+    <section class="cell" aria-labelledby="mixes-title">
+      <div class="cell-head">
+        <div>
+          <h2 class="cell-title" id="mixes-title">Mixes</h2>
+          <p class="cell-sub">Mixes Deezer makes for you. Their tracks change, and every scan picks up the current ones.</p>
+        </div>
+        <button type="button" class="btn btn--ghost" data-action="choose-mixes">Choose mixes</button>
+      </div>
+      <div class="cell-body">
+        {% set mixes = playlists | selectattr('kind', 'equalto', 'mix') | list %}
+        {% if mixes %}
+        <div class="tiles">
+          {% for playlist in mixes %}{{ tile(playlist) }}{% endfor %}
+        </div>
+        {% else %}
+        <p class="empty">No mixes followed yet. Connect your Deezer account in Settings, then choose the mixes to keep in your library.</p>
         {% endif %}
       </div>
     </section>
@@ -107,6 +109,10 @@
 </div>
 </section>
 
+<section class="view{% if view == 'releases' %} is-active{% endif %}" data-view-name="releases" aria-label="Releases" {% if view != 'releases' %}inert{% endif %}>
+  {% include '_releases.html' %}
+</section>
+
 <section class="view{% if view == 'settings' %} is-active{% endif %}" data-view-name="settings" aria-label="Settings" {% if view != 'settings' %}inert{% endif %}>
   {% include '_settings.html' %}
 </section>
@@ -119,6 +125,20 @@
   <section class="overlay-panel cell" role="dialog" aria-modal="true" aria-label="Details" tabindex="-1">
     <button type="button" class="icon-btn overlay-close" data-overlay-close aria-label="Close">×</button>
     <div class="overlay-scroll" data-overlay-content></div>
+  </section>
+</div>
+
+<div id="mix-picker" class="overlay modal" aria-hidden="true">
+  <div class="overlay-backdrop" data-overlay-close></div>
+  <section class="overlay-panel cell mix-picker" role="dialog" aria-modal="true" aria-labelledby="mix-picker-title" tabindex="-1">
+    <button type="button" class="icon-btn overlay-close" data-overlay-close aria-label="Close">×</button>
+    <div class="overlay-scroll" data-overlay-content>
+      <header class="modal-head">
+        <h2 class="detail-title" id="mix-picker-title">Choose mixes</h2>
+        <p class="detail-sub">Followed mixes appear on the Dashboard and are scanned like playlists.</p>
+      </header>
+      <div class="mix-picker-body" data-mix-picker-body></div>
+    </div>
   </section>
 </div>
 

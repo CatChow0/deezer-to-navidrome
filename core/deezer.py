@@ -25,6 +25,28 @@ from core.matching import build_title_index, find_best_match
 from core.utils import sanitize_filename
 
 
+# Mixes from the Deezer account are followed like playlists, under IDs such
+# as "mix-stl-inspired-by-1" (smart tracklist) or "mix-flow-chill" (Flow mood).
+MIX_ID = re.compile(r"^mix-(stl|flow)-([a-z0-9_-]+)$")
+
+
+def mix_id(kind: str, source_id: str) -> str:
+    return f"mix-{kind}-{re.sub(r'[^a-z0-9_-]+', '-', str(source_id).lower())}"
+
+
+def parse_mix_id(playlist_id: str):
+    m = MIX_ID.match(str(playlist_id))
+    return (m.group(1), m.group(2)) if m else None
+
+
+def _valid_playlist_id(pid: str) -> bool:
+    return pid.isdigit() or parse_mix_id(pid) is not None
+
+
+def _playlist_sort_key(p):
+    return (1, p["title"].lower(), 0) if parse_mix_id(p["id"]) else (0, "", int(p["id"]))
+
+
 def fetch_deezer_playlist_info(playlist_id: str):
     url = f"https://api.deezer.com/playlist/{playlist_id}"
     r = requests.get(url, timeout=20)
@@ -69,7 +91,7 @@ def save_playlists(playlists):
     seen = set()
     for item in playlists:
         pid = str(item.get("id", "")).strip()
-        if not pid.isdigit() or pid in seen:
+        if not _valid_playlist_id(pid) or pid in seen:
             continue
         entry = {
             "id": pid,
@@ -85,7 +107,7 @@ def save_playlists(playlists):
         cleaned.append(entry)
         seen.add(pid)
 
-    cleaned.sort(key=lambda x: int(x["id"]))
+    cleaned.sort(key=_playlist_sort_key)
     PLAYLIST_IDS_FILE.write_text(
         json.dumps({"playlists": cleaned}, ensure_ascii=False, indent=2),
         encoding="utf-8",
@@ -108,11 +130,11 @@ def load_playlists():
     if isinstance(data.get("playlists"), list):
         for item in data["playlists"]:
             pid = str(item.get("id", "")).strip()
-            if not pid.isdigit():
+            if not _valid_playlist_id(pid):
                 continue
             title = str(item.get("title", "")).strip()
             picture = str(item.get("picture", "")).strip()
-            if not title or not picture:
+            if (not title or not picture) and pid.isdigit():
                 try:
                     info = fetch_deezer_playlist_info(pid)
                     title = title or info["title"]
@@ -122,7 +144,8 @@ def load_playlists():
                     title = title or "Unknown title"
             playlists.append({
                 "id": pid,
-                "title": title,
+                "kind": "mix" if parse_mix_id(pid) else "playlist",
+                "title": title or "Mix",
                 "picture": picture,
                 "auto_scan_enabled": bool(item.get("auto_scan_enabled", False)),
                 "auto_scan_interval_minutes": max(1, int(item.get("auto_scan_interval_minutes") or 60)),
@@ -140,9 +163,9 @@ def load_playlists():
                 playlists.append({"id": pid, "title": "Unknown title", "picture": ""})
                 changed = True
 
-    playlists = sorted(
-        {p["id"]: p for p in playlists}.values(), key=lambda x: int(x["id"])
-    )
+    playlists = sorted({p["id"]: p for p in playlists}.values(), key=_playlist_sort_key)
+    for p in playlists:
+        p.setdefault("kind", "playlist")
 
     if changed:
         save_playlists(playlists)
@@ -166,6 +189,12 @@ def playlist_title(playlist_id: str) -> str:
 
 
 def fetch_deezer_playlist_tracks(playlist_id: str):
+    mix = parse_mix_id(playlist_id)
+    if mix:
+        from core.deezer_account import mix_tracks
+
+        return playlist_title(playlist_id), mix_tracks(*mix)
+
     info = fetch_deezer_playlist_info(playlist_id)
     url = f"https://api.deezer.com/playlist/{playlist_id}"
     r = requests.get(url, timeout=30)
@@ -196,6 +225,21 @@ def fetch_deezer_playlist_tracks(playlist_id: str):
         )
 
     return info["title"], parsed
+
+
+def follow_mix(kind: str, source_id: str, title: str):
+    """Adds a Deezer mix to the followed playlists; its cover is the album art of its first track."""
+    from core.deezer_account import mix_tracks
+
+    pid = mix_id(kind, source_id)
+    playlists = load_playlists()
+    if any(p["id"] == pid for p in playlists):
+        return pid, False
+    tracks = mix_tracks(kind, source_id)
+    entry = {"id": pid, "title": title, "picture": next((t["picture"] for t in tracks if t.get("picture")), "")}
+    save_playlists([*playlists, entry])
+    cache_cover(entry)
+    return pid, True
 
 
 def map_host_path_to_navidrome(path: Path, mappings):

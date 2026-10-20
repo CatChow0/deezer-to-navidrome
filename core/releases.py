@@ -1,0 +1,103 @@
+"""Release feed: recent albums, EPs and singles from the user's favorite
+Deezer artists. Refreshing walks every artist's discography (one public API
+call each), so the result is cached in data/releases.json."""
+import json
+import threading
+import time
+from datetime import date, timedelta
+
+import requests
+
+from core.config import DATA_DIR, ensure_dirs
+from core.deezer_account import API_URL, favorite_artists
+
+RELEASES_FILE = DATA_DIR / "releases.json"
+refresh_lock = threading.Lock()
+WINDOW_DAYS = 180
+REFRESH_EVERY_SECONDS = 12 * 3600
+# Deezer allows 50 requests per 5 seconds; stay well under it.
+REQUEST_GAP_SECONDS = 0.15
+
+
+def load_releases():
+    try:
+        return json.loads(RELEASES_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        return {"updated_at": None, "artists": 0, "window_days": WINDOW_DAYS, "releases": []}
+
+
+def is_stale():
+    updated = load_releases().get("updated_at")
+    return not updated or time.time() - updated > REFRESH_EVERY_SECONDS
+
+
+def _artist_releases(artist, since):
+    found = []
+    index = 0
+    while True:
+        page = requests.get(
+            f"{API_URL}/artist/{artist['id']}/albums", params={"limit": 100, "index": index}, timeout=30
+        ).json()
+        data = page.get("data") or []
+        for album in data:
+            released = album.get("release_date") or ""
+            if released >= since:
+                found.append({
+                    "id": str(album["id"]),
+                    "title": album.get("title") or "",
+                    "artist": artist["name"],
+                    "artist_id": artist["id"],
+                    "cover": album.get("cover_medium") or "",
+                    "release_date": released,
+                    "record_type": album.get("record_type") or "album",
+                })
+        index += len(data)
+        if not data or index >= int(page.get("total") or 0) or "next" not in page:
+            return found
+        time.sleep(REQUEST_GAP_SECONDS)
+
+
+def refresh_releases(progress_cb=None):
+    def emit(message=None, progress=None, stage=None):
+        if progress_cb:
+            progress_cb(message=message, progress=progress, stage=stage)
+
+    emit("Reading your favorite artists", stage="artists", progress=0)
+    artists = favorite_artists()
+    since = (date.today() - timedelta(days=WINDOW_DAYS)).isoformat()
+
+    releases, failed = {}, 0
+    for i, artist in enumerate(artists, start=1):
+        try:
+            for release in _artist_releases(artist, since):
+                releases.setdefault(release["id"], release)
+        except Exception:
+            failed += 1
+        emit(f"{i}/{len(artists)}: {artist['name']}", stage="releases", progress=round(i / max(1, len(artists)) * 100))
+        time.sleep(REQUEST_GAP_SECONDS)
+
+    # The discography lists have no track count; each recent release has it.
+    previous = {r["id"]: r for r in load_releases().get("releases", [])}
+    for i, release in enumerate(releases.values(), start=1):
+        known = previous.get(release["id"], {}).get("nb_tracks")
+        if known:
+            release["nb_tracks"] = known
+            continue
+        try:
+            album = requests.get(f"{API_URL}/album/{release['id']}", timeout=30).json()
+            release["nb_tracks"] = album.get("nb_tracks") or 0
+        except Exception:
+            release["nb_tracks"] = 0
+        emit(f"Track counts {i}/{len(releases)}", stage="details", progress=round(i / max(1, len(releases)) * 100))
+        time.sleep(REQUEST_GAP_SECONDS)
+
+    feed = {
+        "updated_at": int(time.time()),
+        "artists": len(artists),
+        "failed_artists": failed,
+        "window_days": WINDOW_DAYS,
+        "releases": sorted(releases.values(), key=lambda r: (r["release_date"], r["artist"]), reverse=True),
+    }
+    ensure_dirs()
+    RELEASES_FILE.write_text(json.dumps(feed, ensure_ascii=False, indent=2), encoding="utf-8")
+    return feed

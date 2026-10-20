@@ -8,6 +8,8 @@ from pathlib import Path
 DATA_DIR = Path(os.environ.get("DATA_DIR", "./data"))
 COVERS_DIR = DATA_DIR / "covers"
 CONFIG_FILE = DATA_DIR / "config.json"
+# Credentials live apart from config.json, which is meant to be shareable (see .gitignore).
+SECRETS_FILE = DATA_DIR / "secrets.json"
 PLAYLIST_IDS_FILE = DATA_DIR / "deezer_playlist_ids.json"
 LIBRARY_CACHE_FILE = DATA_DIR / "music_library_cache.json"
 PREVIEW_STATE_FILE = DATA_DIR / "playlist_preview_state.json"
@@ -173,6 +175,38 @@ def follow_task(task_id, keepalive=15):
         sent += len(pending)
         if finished and sent >= len(task["events"]):
             return
+
+
+def load_secret(name):
+    """A credential from the environment (upper-case, DEEZER_ARL for "deezer_arl") or secrets.json."""
+    env = os.environ.get(name.upper())
+    if env:
+        return env.strip()
+    try:
+        return (json.loads(SECRETS_FILE.read_text(encoding="utf-8")).get(name) or "").strip()
+    except Exception:
+        return ""
+
+
+def secret_from_env(name):
+    return bool(os.environ.get(name.upper()))
+
+
+def save_secret(name, value):
+    ensure_dirs()
+    try:
+        secrets = json.loads(SECRETS_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        secrets = {}
+    if value:
+        secrets[name] = value
+    else:
+        secrets.pop(name, None)
+    SECRETS_FILE.write_text(json.dumps(secrets, indent=2), encoding="utf-8")
+    try:
+        SECRETS_FILE.chmod(0o600)
+    except OSError:
+        pass
 
 
 def load_config():

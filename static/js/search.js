@@ -34,7 +34,7 @@ function coverImg(src, alt, className = '') {
 // ── Library ownership ─────────────────────────────────────────────────────────
 
 // items: [{ key, type: 'track'|'album'|'artist', title, artist, album, duration }]
-async function libraryCheck(items) {
+export async function libraryCheck(items) {
   if (!items.length) return {};
   const { data } = await fetchJSON('/search/library-check', { json: { items } });
   return data?.ok ? data.results || {} : null;
@@ -183,7 +183,7 @@ function loadingDetail(kind) {
   return `<div class="detail-head"><div class="detail-cover"></div><div><p class="detail-kind">${kind}</p><p class="detail-title">Loading…</p></div></div>`;
 }
 
-async function openAlbum(albumId) {
+export async function openAlbum(albumId) {
   drawer.open({ html: loadingDetail('Album'), label: 'Album' });
   const { data } = await fetchJSON(`/search/album/${encodeURIComponent(albumId)}`);
   if (!data?.ok) {

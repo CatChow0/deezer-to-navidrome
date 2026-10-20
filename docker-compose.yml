@@ -44,6 +44,10 @@ services:
       # threads run on separate cores. Set to your Docker CPU count. Default: 4.
       MATCH_WORKERS: "4"
 
+      # Optional: session cookie (arl) of the Deezer account used for your mixes
+      # and the release feed. You can also paste it in Settings instead.
+      # DEEZER_ARL: ""
+
     volumes:
       # Persistent data (config, cache, covers)
       - ./data:/data

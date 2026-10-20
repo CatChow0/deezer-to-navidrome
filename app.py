@@ -5,6 +5,7 @@ from flask import Flask
 
 from core.config import ensure_dirs
 from core import scheduler
+from routes.account import account_bp
 from routes.cache import cache_bp
 from routes.dedup import dedup_bp
 from routes.playlists import playlists_bp
@@ -18,6 +19,7 @@ app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "change-me")
 
 app.register_blueprint(playlists_bp)
+app.register_blueprint(account_bp)
 app.register_blueprint(cache_bp)
 app.register_blueprint(dedup_bp)
 app.register_blueprint(search_bp)

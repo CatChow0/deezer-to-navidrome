@@ -47,6 +47,11 @@ def home():
     return render_app("dashboard")
 
 
+@playlists_bp.get("/releases")
+def releases_view():
+    return render_app("releases")
+
+
 @playlists_bp.post("/playlist/add")
 def add_playlist():
     value = request.form.get("playlist_input", "")

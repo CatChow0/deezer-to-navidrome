@@ -360,3 +360,152 @@
   .task { animation: none; }
   .tile-cover { transition: none; }
 }
+
+/* Releases view */
+.release-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+}
+
+.toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--text-soft);
+  cursor: pointer;
+}
+
+.release-list {
+  display: grid;
+  gap: 4px;
+}
+
+.release-group {
+  margin: 18px 0 6px;
+  padding-left: 8px;
+  font-family: var(--font-display);
+  font-size: var(--step-0);
+  font-weight: 500;
+  color: var(--text-soft);
+}
+
+.release-group:first-child {
+  margin-top: 0;
+}
+
+.release-meta {
+  margin: 2px 0 0;
+  color: var(--faint);
+  font-size: 0.78rem;
+}
+
+.release .chips {
+  margin-top: 6px;
+}
+
+.release .chips:empty {
+  display: none;
+}
+
+.feed-meta {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--step--1);
+}
+
+.feed-meta a {
+  color: var(--cyan);
+}
+
+/* Mix picker */
+.modal .overlay-panel.mix-picker {
+  width: min(900px, 100%);
+}
+
+.pick-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 2px 12px;
+}
+
+.mix-picker-body {
+  display: grid;
+  gap: 22px;
+  padding: 20px 28px 28px;
+}
+
+.pick-group .section-title {
+  margin-bottom: 6px;
+}
+
+.pick-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 8px 10px;
+  border-radius: var(--r-tile);
+}
+
+.pick-row:hover {
+  background: var(--glass-raised);
+}
+
+.pick-row img {
+  width: 44px;
+  height: 44px;
+  border-radius: 8px;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.pick-row > div {
+  flex: 1;
+  display: grid;
+  min-width: 0;
+}
+
+.pick-row strong {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pick-row .muted {
+  font-size: var(--step--1);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Deezer account (Settings) */
+.account-state {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 12px;
+}
+
+.account-form {
+  display: grid;
+  gap: 10px;
+}
+
+.account-help {
+  margin-top: 14px;
+  color: var(--muted);
+  font-size: var(--step--1);
+}
+
+.account-help summary {
+  cursor: pointer;
+  width: fit-content;
+}
+
+.account-help code {
+  color: var(--text-soft);
+}

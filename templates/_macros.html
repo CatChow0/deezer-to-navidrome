@@ -1,0 +1,22 @@
+{% macro tile(playlist) %}
+{% set cover = url_for('system.serve_cover', filename=playlist.cover_cached) if playlist.cover_cached else '' %}
+<button type="button" class="tile"
+  data-playlist-id="{{ playlist.id }}"
+  data-kind="{{ playlist.kind }}"
+  data-title="{{ playlist.title }}"
+  data-cover="{{ cover }}"
+  data-delete-url="{{ url_for('playlists.delete_playlist', playlist_id=playlist.id) }}"
+  data-auto-scan="{{ 'true' if playlist.auto_scan_enabled else 'false' }}"
+  data-auto-interval="{{ playlist.auto_scan_interval_minutes | default(60) }}"
+  data-auto-download="{{ 'true' if playlist.auto_download_after_scan else 'false' }}">
+  <span class="tile-cover">
+    {% if cover %}
+    <img src="{{ cover }}" alt="" loading="lazy">
+    {% else %}
+    <span class="placeholder" aria-hidden="true">{{ playlist.title[:1] }}</span>
+    {% endif %}
+    <span class="chips" data-tile-chips></span>
+  </span>
+  <span class="tile-title">{{ playlist.title }}</span>
+</button>
+{% endmacro %}

@@ -1,0 +1,55 @@
+<div class="bento">
+  <div class="page-head span-12">
+    <h1 class="page-title">Releases</h1>
+    <p class="page-lead">What your favorite Deezer artists put out recently, and whether it is already in your library.</p>
+  </div>
+
+  <section class="cell span-8" aria-labelledby="releases-title">
+    <div class="cell-head">
+      <h2 class="cell-title sr-only" id="releases-title">New releases</h2>
+      <div class="release-filters">
+        <div class="segmented" role="group" aria-label="Release type">
+          <button type="button" data-release-type="all" aria-pressed="true">All</button>
+          <button type="button" data-release-type="album" aria-pressed="false">Albums</button>
+          <button type="button" data-release-type="short" aria-pressed="false">EPs and singles</button>
+        </div>
+        <label class="toggle">
+          <span class="switch">
+            <input type="checkbox" data-release-hide-owned>
+            <span class="switch-slider"></span>
+          </span>
+          Hide what I own
+        </label>
+      </div>
+    </div>
+    <div class="cell-body">
+      <div class="release-list" data-release-list>
+        <p class="empty">Loading the release feed…</p>
+      </div>
+    </div>
+  </section>
+
+  <aside class="stack span-4 side">
+    <section class="cell" aria-labelledby="feed-title">
+      <div class="cell-head">
+        <h2 class="cell-title" id="feed-title">Feed</h2>
+      </div>
+      <div class="cell-body">
+        <p class="feed-meta" data-feed-meta>Not loaded yet.</p>
+      </div>
+      <div class="cell-foot">
+        <button type="button" class="btn btn--ghost btn--sm" data-action="refresh-releases">Refresh now</button>
+      </div>
+    </section>
+
+    <section class="cell" aria-labelledby="releases-activity-title">
+      <div class="cell-head">
+        <h2 class="cell-title" id="releases-activity-title">Activity</h2>
+      </div>
+      <div class="cell-body">
+        <p class="activity-empty">Scans, downloads and library refreshes you start will show their progress here.</p>
+        <div class="activity-list" aria-live="polite"></div>
+      </div>
+    </section>
+  </aside>
+</div>

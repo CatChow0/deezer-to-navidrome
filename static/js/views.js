@@ -3,8 +3,26 @@
 
 const TITLES = {
   dashboard: 'Deezer → Navidrome',
+  releases: 'Releases · Deezer → Navidrome',
   settings: 'Settings · Deezer → Navidrome',
 };
+
+const listeners = new Set();
+
+// listener(name) runs every time a view is shown, including the first one.
+export function onViewShown(listener) {
+  listeners.add(listener);
+  if (current) listener(current);
+}
+
+// Hidden views wait on the side they will slide in from.
+function placeViews(active) {
+  const views = [...document.querySelectorAll('.view')];
+  const index = views.findIndex(view => view.dataset.viewName === active);
+  views.forEach((view, i) => {
+    view.dataset.pos = i < index ? 'before' : i > index ? 'after' : 'current';
+  });
+}
 
 let current = null;
 
@@ -21,6 +39,7 @@ export function showView(name, { push = true } = {}) {
     view.classList.toggle('is-active', active);
     view.inert = !active;
   });
+  placeViews(name);
 
   const nav = document.querySelector('.view-switch');
   if (nav) nav.dataset.active = name;
@@ -31,6 +50,7 @@ export function showView(name, { push = true } = {}) {
 
   current = name;
   document.title = TITLES[name] || document.title;
+  listeners.forEach(listener => listener(name));
   if (push) history.pushState({ view: name }, '', urlFor(name));
 
   // Bring the top of the new view into sight if the page was scrolled down.
@@ -42,6 +62,7 @@ export function initViews() {
   const root = document.querySelector('.views');
   if (!root) return;
   current = root.dataset.view;
+  placeViews(current);
   history.replaceState({ view: current }, '');
 
   document.addEventListener('click', event => {
@@ -52,7 +73,8 @@ export function initViews() {
   });
 
   window.addEventListener('popstate', event => {
-    const name = event.state?.view || (location.pathname.startsWith('/config') ? 'settings' : 'dashboard');
+    const fromPath = location.pathname.startsWith('/config') ? 'settings' : location.pathname.startsWith('/releases') ? 'releases' : 'dashboard';
+    const name = event.state?.view || fromPath;
     showView(name, { push: false });
   });
 }

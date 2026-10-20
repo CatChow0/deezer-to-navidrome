@@ -115,6 +115,28 @@ def _refresh_library_after_scans(count):
         push_task_event(task_id, f"Library refresh failed: {e}", stage="error", done=True, error=True)
 
 
+_last_release_attempt = 0.0
+RELEASE_RETRY_SECONDS = 3600
+
+
+def _refresh_releases_if_stale():
+    """Keeps the release feed fresh when a Deezer account is connected; after
+    a failed attempt, waits an hour before trying again."""
+    global _last_release_attempt
+    from core.config import load_secret
+    from core.releases import is_stale
+    from routes.account import start_release_refresh
+
+    if time.time() - _last_release_attempt < RELEASE_RETRY_SECONDS:
+        return
+    try:
+        if load_secret("deezer_arl") and is_stale():
+            _last_release_attempt = time.time()
+            start_release_refresh("Release feed refresh (automatic)")
+    except Exception as e:
+        logger.error(f"[releases] Automatic refresh failed to start: {e}")
+
+
 def _scheduler_loop():
     while not _stop_event.is_set():
         if _stop_event.wait(timeout=30):
@@ -125,6 +147,8 @@ def _scheduler_loop():
 
         playlists = load_playlists()
         _sync_state_from_playlists(playlists)
+
+        _refresh_releases_if_stale()
 
         now = int(time.time())
         due = []

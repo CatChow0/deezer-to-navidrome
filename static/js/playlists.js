@@ -265,7 +265,7 @@ function drawerHtml(tile) {
     <header class="detail-head">
       ${cover ? `<img class="detail-cover" src="${escapeHtml(cover)}" alt="">` : '<div class="detail-cover"></div>'}
       <div>
-        <p class="detail-kind">Deezer playlist ${escapeHtml(id)}</p>
+        <p class="detail-kind">${tile.dataset.kind === 'mix' ? 'Mix made for you by Deezer, refreshed at each scan' : `Deezer playlist ${escapeHtml(id)}`}</p>
         <h2 class="detail-title">${escapeHtml(title)}</h2>
         <div class="chips detail-chips" data-drawer-chips>${automationChips(id, settings)}</div>
         <div class="breakdown" data-breakdown></div>
