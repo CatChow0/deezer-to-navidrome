@@ -123,6 +123,8 @@ def preview_route(track_id):
         "album": (data.get("album") or {}).get("title") or "",
         "cover": (data.get("album") or {}).get("cover_medium") or "",
         "preview": data.get("preview") or "",
+        # Loudness measured by Deezer, in dB (0 when unknown); used to level previews.
+        "gain": data.get("gain") or 0,
         "link": data.get("link") or f"https://www.deezer.com/track/{track_id}",
     }
     if len(_previews) > 500:

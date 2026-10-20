@@ -13,10 +13,85 @@ const ICONS = {
   pause: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5h3.5v14H7zM13.5 5H17v14h-3.5z" fill="currentColor"/></svg>',
   prev: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 6h2v12H7zM20 6v12l-9-6z" fill="currentColor"/></svg>',
   next: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 6h2v12h-2zM4 6l9 6-9 6z" fill="currentColor"/></svg>',
+  volume: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9h4l5-4v14l-5-4H4z" fill="currentColor"/><path d="M16 8.5a5 5 0 0 1 0 7M18.5 6a8.5 8.5 0 0 1 0 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>',
+  muted: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9h4l5-4v14l-5-4H4z" fill="currentColor"/><path d="M16.5 9.5l5 5M21.5 9.5l-5 5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>',
 };
 
 const audio = new Audio();
 audio.preload = 'auto';
+// Deezer's preview CDN allows cross-origin reads, which Web Audio needs.
+audio.crossOrigin = 'anonymous';
+
+// ── Volume and loudness levelling ─────────────────────────────────────────────
+// Deezer measures each track's loudness ("gain", in dB, 0 when unknown).
+// Previews are brought towards TARGET_DB, within CUT_DB / BOOST_DB, and a
+// limiter catches the peaks a boost could push into clipping.
+const TARGET_DB = -12;
+const CUT_DB = -12;
+const BOOST_DB = 6;
+const PREFS_KEY = 'd2n-player';
+
+const prefs = { volume: 0.8, muted: false, level: true };
+try {
+  Object.assign(prefs, JSON.parse(localStorage.getItem(PREFS_KEY) || '{}'));
+} catch (_) {}
+
+function savePrefs() {
+  try {
+    localStorage.setItem(PREFS_KEY, JSON.stringify(prefs));
+  } catch (_) {}
+}
+
+let audioCtx = null;
+let gainNode = null;
+
+// Built on the first play (browsers only allow audio contexts after a click).
+function ensureAudioGraph() {
+  if (audioCtx) {
+    if (audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
+    return;
+  }
+  try {
+    audioCtx = new AudioContext();
+    const source = audioCtx.createMediaElementSource(audio);
+    gainNode = audioCtx.createGain();
+    const limiter = audioCtx.createDynamicsCompressor();
+    limiter.threshold.value = -1.5;
+    limiter.knee.value = 0;
+    limiter.ratio.value = 20;
+    limiter.attack.value = 0.003;
+    limiter.release.value = 0.15;
+    source.connect(gainNode).connect(limiter).connect(audioCtx.destination);
+  } catch (_) {
+    audioCtx = null;
+    gainNode = null;
+  }
+}
+
+function levelFactor() {
+  const gain = Number(current?.gain);
+  if (!prefs.level || !gain) return 1;
+  const db = Math.max(CUT_DB, Math.min(BOOST_DB, TARGET_DB - gain));
+  return 10 ** (db / 20);
+}
+
+function applyVolume() {
+  // Squared so the slider feels even to the ear.
+  const level = prefs.muted ? 0 : prefs.volume ** 2;
+  if (gainNode) {
+    audio.volume = 1;
+    gainNode.gain.value = level * levelFactor();
+  } else {
+    // Without Web Audio, the element can only turn the sound down.
+    audio.volume = Math.min(1, level * Math.min(1, levelFactor()));
+  }
+}
+
+async function startPlayback() {
+  ensureAudioGraph();
+  applyVolume();
+  await audio.play();
+}
 
 let queue = [];
 let index = -1;
@@ -110,7 +185,7 @@ async function load(position) {
     openWidget();
   } else {
     try {
-      await audio.play();
+      await startPlayback();
     } catch (_) {
       // Autoplay can be refused until the page got a click; the toggle still works.
     }
@@ -148,7 +223,7 @@ function togglePlay() {
   if (!current) return;
   if (audio.paused) {
     closeWidget();
-    audio.play().catch(() => {});
+    startPlayback().catch(() => {});
   } else {
     audio.pause();
   }
@@ -176,9 +251,66 @@ function closeWidget() {
   $('[data-player-full]').textContent = 'Listen in full';
 }
 
+function syncVolumeControls() {
+  const button = $('[data-player-volume]');
+  const silent = prefs.muted || prefs.volume === 0;
+  button.innerHTML = silent ? ICONS.muted : ICONS.volume;
+  button.setAttribute('aria-label', silent ? 'Volume (muted)' : `Volume ${Math.round(prefs.volume * 100)}%`);
+  $('[data-player-volume-range]').value = String(Math.round(prefs.volume * 100));
+  $('[data-player-mute]').textContent = prefs.muted ? 'Unmute' : 'Mute';
+  $('[data-player-level]').checked = prefs.level;
+}
+
+function initVolume() {
+  const popover = $('[data-player-volume-popover]');
+  const toggle = $('[data-player-volume]');
+
+  toggle.addEventListener('click', event => {
+    event.stopPropagation();
+    popover.hidden = !popover.hidden;
+    toggle.setAttribute('aria-expanded', String(!popover.hidden));
+  });
+  document.addEventListener('click', event => {
+    if (!popover.hidden && !popover.contains(event.target)) {
+      popover.hidden = true;
+      toggle.setAttribute('aria-expanded', 'false');
+    }
+  });
+  popover.addEventListener('keydown', event => {
+    if (event.key === 'Escape') {
+      event.stopPropagation();
+      popover.hidden = true;
+      toggle.focus();
+    }
+  });
+
+  $('[data-player-volume-range]').addEventListener('input', event => {
+    prefs.volume = Number(event.target.value) / 100;
+    prefs.muted = false;
+    applyVolume();
+    syncVolumeControls();
+    savePrefs();
+  });
+  $('[data-player-mute]').addEventListener('click', () => {
+    prefs.muted = !prefs.muted;
+    applyVolume();
+    syncVolumeControls();
+    savePrefs();
+  });
+  $('[data-player-level]').addEventListener('change', event => {
+    prefs.level = event.target.checked;
+    applyVolume();
+    savePrefs();
+  });
+
+  syncVolumeControls();
+  applyVolume();
+}
+
 export function initPlayer() {
   el = document.getElementById('player');
   if (!el) return;
+  initVolume();
 
   $('[data-player-prev]').innerHTML = ICONS.prev;
   $('[data-player-next]').innerHTML = ICONS.next;

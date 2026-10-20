@@ -58,6 +58,26 @@
         <div class="progress" data-player-seek><div class="progress-bar" data-player-bar></div></div>
         <span class="player-time" data-player-time>0:00 / 0:30</span>
       </div>
+      <div class="player-volume">
+        <button type="button" class="icon-btn" data-player-volume aria-haspopup="true" aria-expanded="false" aria-label="Volume"></button>
+        <div class="player-volume-popover" data-player-volume-popover hidden>
+          <label class="player-volume-row">
+            <span class="sr-only">Volume</span>
+            <input type="range" min="0" max="100" step="1" data-player-volume-range aria-label="Volume">
+          </label>
+          <div class="player-volume-row">
+            <label class="toggle">
+              <span class="switch">
+                <input type="checkbox" data-player-level>
+                <span class="switch-slider"></span>
+              </span>
+              Level out loudness
+            </label>
+            <button type="button" class="btn btn--ghost btn--sm" data-player-mute>Mute</button>
+          </div>
+          <p class="player-volume-hint">Brings every preview to a similar loudness, using Deezer's measure of each track.</p>
+        </div>
+      </div>
       <button type="button" class="btn btn--ghost btn--sm player-full" data-player-full>Listen in full</button>
       <button type="button" class="icon-btn player-close" data-player-close aria-label="Close the player">×</button>
     </div>

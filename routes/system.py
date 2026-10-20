@@ -225,6 +225,8 @@ def clear_dedup_choices_route():
 
 @system_bp.route("/deezer-dl/track/<track_id>", methods=["POST"])
 def deezer_dl_track(track_id):
+    if not track_id.isdigit():
+        return jsonify({"error": "invalid track id"}), 400
     cfg = load_config()
     base_url = (cfg.get("deezer_dl_base_url") or "").rstrip("/")
     if not base_url:
@@ -237,7 +239,8 @@ def deezer_dl_track(track_id):
             push_task_event(task_id, message=f"Sending DL request for track {track_id}…", stage="dl", progress=0)
             payload = {
                 "type": "track",
-                "music_id": track_id,
+                # Deezer Downloader rejects a string ID ("music_id must be a integer").
+                "music_id": int(track_id),
                 "add_to_playlist": False,
                 "create_zip": False,
             }

@@ -23,7 +23,7 @@
 
 .player-main {
   display: grid;
-  grid-template-columns: 52px minmax(0, 1fr) auto minmax(140px, 1.2fr) auto auto;
+  grid-template-columns: 52px minmax(0, 1fr) auto minmax(140px, 1.2fr) auto auto auto;
   align-items: center;
   gap: 14px;
   padding: 10px 12px 10px 10px;
@@ -126,6 +126,64 @@
   color: var(--cyan);
 }
 
+/* Volume: a button opening a small panel above the dock */
+.player-volume {
+  position: relative;
+}
+
+.player-volume .icon-btn svg {
+  width: 18px;
+  height: 18px;
+}
+
+.player-volume-popover {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 14px);
+  z-index: 2;
+  display: grid;
+  gap: 12px;
+  width: 280px;
+  padding: 16px;
+  border-radius: var(--r-tile);
+  background: var(--glass-strong);
+  -webkit-backdrop-filter: blur(18px);
+  backdrop-filter: blur(18px);
+  border: 1px solid var(--line-strong);
+  box-shadow: 0 20px 50px -20px rgba(0, 0, 0, 0.9);
+}
+
+.player-volume-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.player-volume-row input[type="range"] {
+  width: 100%;
+  accent-color: var(--mint);
+  cursor: pointer;
+}
+
+.player-volume-row .toggle {
+  font-size: var(--step--1);
+}
+
+.player-volume-hint {
+  margin: 0;
+  color: var(--faint);
+  font-size: 0.75rem;
+  line-height: 1.45;
+}
+
+@media (max-width: 760px) {
+  .player-volume-popover {
+    left: 0;
+    right: auto;
+  }
+}
+
 /* Play buttons in lists */
 .play-btn {
   width: 32px;
@@ -173,8 +231,13 @@ body.has-player .save-bar {
     grid-row: 2;
   }
 
+  .player-volume {
+    grid-column: 1;
+    grid-row: 3;
+  }
+
   .player-full {
-    grid-column: 1 / 3;
+    grid-column: 2;
     grid-row: 3;
     justify-self: start;
   }
