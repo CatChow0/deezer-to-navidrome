@@ -1,0 +1,552 @@
+/* Drawer (side panel) and modal: the two overlay surfaces. */
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.overlay.is-open {
+  visibility: visible;
+  pointer-events: auto;
+}
+
+.overlay-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(5, 4, 18, 0.45);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  opacity: 0;
+  transition: opacity var(--t-mid);
+}
+
+.overlay.is-open .overlay-backdrop {
+  opacity: 1;
+}
+
+.overlay-panel {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  background: var(--glass-strong);
+  border-radius: var(--r-panel);
+  overflow: hidden;
+}
+
+.overlay-close {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  z-index: 3;
+}
+
+.overlay-scroll {
+  overflow: auto;
+  flex: 1;
+  overscroll-behavior: contain;
+}
+
+/* Drawer: slides in from the right */
+.drawer {
+  justify-content: flex-end;
+}
+
+.drawer .overlay-panel {
+  width: min(980px, calc(100vw - 2 * var(--gap)));
+  margin: var(--gap);
+  transform: translateX(calc(100% + 2 * var(--gap)));
+  transition: transform var(--t-slow) var(--ease-out);
+}
+
+.drawer.is-open .overlay-panel {
+  transform: none;
+}
+
+@media (max-width: 700px) {
+  .drawer .overlay-panel {
+    width: 100vw;
+    margin: 0;
+    margin-top: 40px;
+    border-radius: var(--r-panel) var(--r-panel) 0 0;
+    transform: translateY(100%);
+  }
+}
+
+/* Modal: centered, wide */
+.modal {
+  align-items: center;
+  justify-content: center;
+  padding: var(--gap);
+}
+
+.modal .overlay-panel {
+  width: min(1240px, 100%);
+  max-height: calc(100vh - 2 * var(--gap));
+  opacity: 0;
+  transform: translateY(16px) scale(0.985);
+  transition: opacity var(--t-mid), transform var(--t-mid) var(--ease-out);
+}
+
+.modal.is-open .overlay-panel {
+  opacity: 1;
+  transform: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .drawer .overlay-panel,
+  .modal .overlay-panel {
+    transition: none;
+  }
+}
+
+/* Detail header shared by playlist / album / artist */
+.detail-head {
+  display: grid;
+  grid-template-columns: 168px minmax(0, 1fr);
+  gap: 24px;
+  align-items: end;
+  padding: 28px 72px 22px 28px;
+}
+
+.detail-cover {
+  width: 168px;
+  height: 168px;
+  border-radius: 20px;
+  object-fit: cover;
+  background: rgba(255, 255, 255, 0.06);
+  box-shadow: 0 24px 50px -20px rgba(0, 0, 0, 0.9);
+}
+
+.detail-cover--round {
+  border-radius: 50%;
+}
+
+.detail-kind {
+  margin: 0 0 6px;
+  color: var(--muted);
+  font-size: var(--step--1);
+}
+
+.detail-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: clamp(1.4rem, 3vw, var(--step-3));
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  line-height: 1.08;
+  overflow-wrap: anywhere;
+}
+
+.detail-sub {
+  margin: 8px 0 0;
+  color: var(--text-soft);
+}
+
+.detail-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+.detail-actions .spacer {
+  flex: 1;
+}
+
+.detail-section {
+  padding: 0 28px 24px;
+}
+
+.detail-section + .detail-section {
+  border-top: 1px solid var(--line);
+  padding-top: 22px;
+}
+
+.section-title {
+  margin: 0 0 12px;
+  font-family: var(--font-display);
+  font-size: var(--step-0);
+  font-weight: 500;
+}
+
+@media (max-width: 700px) {
+  .detail-head {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 16px;
+    padding: 22px 18px 18px;
+  }
+
+  .detail-cover {
+    width: 112px;
+    height: 112px;
+  }
+
+  .detail-actions .spacer {
+    display: none;
+  }
+
+  .detail-section {
+    padding: 0 18px 20px;
+  }
+}
+
+/* Match breakdown: one bar split by state */
+.breakdown {
+  margin-top: 16px;
+  max-width: 520px;
+}
+
+.breakdown-bar {
+  display: flex;
+  height: 8px;
+  border-radius: var(--r-chip);
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.08);
+  gap: 2px;
+}
+
+.breakdown-bar span {
+  height: 100%;
+  transition: flex-grow var(--t-mid) var(--ease-out);
+}
+
+.breakdown-bar .is-ok { background: var(--ok); }
+.breakdown-bar .is-miss { background: var(--miss); }
+.breakdown-bar .is-idle { background: rgba(163, 159, 191, 0.35); }
+
+.breakdown-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  margin-top: 8px;
+  color: var(--text-soft);
+  font-size: var(--step--1);
+}
+
+.breakdown-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.breakdown-legend b {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Track table inside the playlist drawer */
+.track-filter {
+  margin-bottom: 12px;
+}
+
+.track-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+  color: var(--text-soft);
+}
+
+.track-name {
+  min-width: 180px;
+}
+
+.track-match {
+  color: var(--muted);
+  min-width: 180px;
+}
+
+tr[data-matched="true"] .track-match {
+  color: var(--text-soft);
+}
+
+.dl-mark {
+  color: var(--muted);
+  font-size: var(--step--1);
+}
+
+/* Automation */
+.automation {
+  display: grid;
+  gap: 4px;
+  max-width: 560px;
+}
+
+.auto-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 0;
+}
+
+.auto-row + .auto-row {
+  border-top: 1px solid var(--line);
+}
+
+.auto-row-title {
+  font-weight: 600;
+}
+
+.auto-row-desc {
+  color: var(--muted);
+  font-size: var(--step--1);
+}
+
+.auto-row.is-disabled {
+  opacity: 0.45;
+}
+
+.auto-interval {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 0 12px;
+  color: var(--muted);
+}
+
+.auto-interval input {
+  width: 5rem;
+  text-align: center;
+}
+
+.auto-interval select {
+  width: auto;
+}
+
+.auto-status {
+  margin: 4px 0 0;
+  color: var(--ok);
+  font-size: var(--step--1);
+}
+
+.auto-actions {
+  display: flex;
+  gap: 8px;
+  padding-top: 8px;
+}
+
+/* Artist albums inside the drawer */
+.album-list {
+  display: grid;
+  gap: 8px;
+}
+
+.album-row {
+  border-radius: var(--r-tile);
+  background: var(--glass-raised);
+  border: 1px solid var(--line);
+}
+
+.album-row.is-open {
+  border-color: var(--line-strong);
+}
+
+.album-toggle {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: center;
+  width: 100%;
+  padding: 8px 14px 8px 8px;
+  border: 0;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+}
+
+.album-toggle img,
+.album-toggle .placeholder {
+  width: 52px;
+  height: 52px;
+  border-radius: 10px;
+  object-fit: cover;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.album-toggle strong {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.album-toggle span.muted {
+  font-size: var(--step--1);
+}
+
+.album-inline {
+  padding: 4px 14px 14px;
+}
+
+.album-inline-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 10px;
+  color: var(--muted);
+  font-size: var(--step--1);
+}
+
+/* Dedup modal */
+.modal-head {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  padding: 26px 72px 18px 28px;
+  border-bottom: 1px solid var(--line);
+  background: rgba(12, 10, 30, 0.94);
+  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(16px);
+}
+
+.modal-head .detail-title {
+  font-size: var(--step-2);
+}
+
+.modal-toolbar {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 16px;
+}
+
+.modal-toolbar > div {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.dedup-body {
+  padding: 22px 28px 28px;
+  display: grid;
+  gap: 18px;
+}
+
+.dedup-album {
+  border-radius: var(--r-cell);
+  background: var(--glass-raised);
+  border: 1px solid var(--line);
+  padding: 18px;
+}
+
+.dedup-album h3 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--step-0);
+  font-weight: 500;
+}
+
+.dedup-album > p {
+  margin: 4px 0 14px;
+  color: var(--muted);
+  font-size: var(--step--1);
+}
+
+.dedup-table {
+  min-width: 600px;
+}
+
+.dedup-table td {
+  vertical-align: top;
+  border-right: 1px solid var(--line);
+}
+
+.dedup-table td:last-child {
+  border-right: 0;
+}
+
+.dedup-track {
+  font-weight: 600;
+  min-width: 140px;
+}
+
+.dedup-folder-head {
+  display: grid;
+  gap: 8px;
+  min-width: 180px;
+}
+
+.dedup-folder-path {
+  color: var(--text-soft);
+  font-weight: 500;
+  word-break: break-word;
+}
+
+.dedup-folder-head div {
+  display: flex;
+  gap: 6px;
+}
+
+.dedup-entry {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 6px 0;
+  cursor: pointer;
+}
+
+.dedup-entry + .dedup-entry {
+  border-top: 1px solid var(--line);
+}
+
+.dedup-entry input {
+  width: 16px;
+  height: 16px;
+  margin-top: 3px;
+  accent-color: var(--mint);
+  flex-shrink: 0;
+}
+
+.dedup-entry-info {
+  display: grid;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.dedup-entry-title {
+  word-break: break-word;
+}
+
+.dedup-entry-meta {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 700px) {
+  .modal-head {
+    padding: 22px 60px 16px 18px;
+  }
+
+  .dedup-body {
+    padding: 16px 18px 20px;
+  }
+}
+
+.detail-chips {
+  margin-top: 10px;
+}
+
+.detail-chips:empty {
+  display: none;
+}
+
+.owned-slot {
+  display: inline-flex;
+  vertical-align: middle;
+  margin-right: 6px;
+}
+
+/* Track filter: hides rows that do not match the chosen state */
+tbody[data-filter="missing"] tr:not([data-matched="false"]),
+tbody[data-filter="found"] tr:not([data-matched="true"]),
+tbody[data-filter="unchecked"] tr:not([data-matched="none"]) {
+  display: none;
+}

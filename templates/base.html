@@ -3,84 +3,43 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Deezer → Navidrome</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <meta name="theme-color" content="#07061a">
+  <title>{% block title %}Deezer → Navidrome{% endblock %}</title>
+  <link rel="preload" href="{{ url_for('static', filename='fonts/unbounded-latin-wght-normal.woff2') }}" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="{{ url_for('static', filename='fonts/instrument-sans-latin-wght-normal.woff2') }}" as="font" type="font/woff2" crossorigin>
+  {% for sheet in ['tokens', 'layers', 'cells', 'components', 'drawer'] %}
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/' ~ sheet ~ '.css') }}">
+  {% endfor %}
+  {% block styles %}{% endblock %}
 </head>
 <body>
-  <header class="topbar">
-    <div class="brand">
-      Deezer → Navidrome
-      <sub id="version-tag" style="font-size: 0.65rem; opacity: 0.7;"></sub>
-      <a id="new-version-tag" class="new-version-badge hidden" href="#" target="_blank" title="Click to view release">
-        <span class="badge-content">New version available</span>
+  <canvas id="bg-noise" aria-hidden="true"></canvas>
+  <div class="blur-field" aria-hidden="true"></div>
+  <div class="grain" aria-hidden="true"></div>
+
+  <div class="app">
+    <header class="cell topbar">
+      <a class="brand" href="{{ url_for('playlists.home') }}">
+        <span class="brand-name">Deezer <span>→</span> Navidrome</span>
+        <span class="brand-version" id="version-tag"></span>
       </a>
-    </div>
-    <nav>
-      <a href="{{ url_for('playlists.home') }}">Home</a>
-      <a href="{{ url_for('system.config_view') }}">Config</a>
-    </nav>
-  </header>
+      <div class="topbar-right">
+        <a id="new-version-tag" class="update-badge hidden" href="#" target="_blank" rel="noopener">Update available</a>
+        <nav class="nav" aria-label="Main">
+          <a href="{{ url_for('playlists.home') }}" {% if request.endpoint == 'playlists.home' %}aria-current="page"{% endif %}>Dashboard</a>
+          <a href="{{ url_for('system.config_view') }}" {% if request.endpoint == 'system.config_view' %}aria-current="page"{% endif %}>Settings</a>
+        </nav>
+      </div>
+    </header>
 
-  <main class="page">
-    {% with messages = get_flashed_messages() %}
-      {% if messages %}
-        <div class="flash-wrap">
-          {% for message in messages %}
-            <div class="flash">{{ message }}</div>
-          {% endfor %}
-        </div>
-      {% endif %}
-    {% endwith %}
+    <main>
+      {% block content %}{% endblock %}
+    </main>
+  </div>
 
-    {% block content %}{% endblock %}
-  </main>
+  {% block overlays %}{% endblock %}
 
-  <script>
-    // Configuration
-    const VERSION_CHECK_INTERVAL = 15 * 60 * 1000; // 15 minutes
-
-    // Display current version
-    function displayCurrentVersion() {
-      fetch('/api/version')
-        .then(r => r.json())
-        .then(data => {
-          const tag = document.getElementById('version-tag');
-          if (tag && data.version) {
-            tag.textContent = 'v' + data.version;
-          }
-        })
-        .catch(err => console.log('Version check skipped'));
-    }
-
-    // Check for latest version
-    async function checkForLatestVersion() {
-      try {
-        const response = await fetch('/api/latest-version');
-        const data = await response.json();
-
-        if (data.update_available && data.latest_version) {
-          const badge = document.getElementById('new-version-tag');
-          if (badge) {
-            badge.href = data.url || '#';
-            badge.classList.remove('hidden');
-            const contentSpan = badge.querySelector('.badge-content');
-            if (contentSpan) {
-              contentSpan.textContent = `New: v${data.latest_version}`;
-              contentSpan.title = `Update available from v${data.current_version} to v${data.latest_version}`;
-            }
-          }
-        }
-      } catch (err) {
-        console.log('Latest version check skipped:', err);
-      }
-    }
-
-    // Initialize version checking
-    displayCurrentVersion();
-    checkForLatestVersion();
-
-    // Check for updates periodically
-    setInterval(checkForLatestVersion, VERSION_CHECK_INTERVAL);
-  </script>
+  <script type="application/json" id="flash-messages">{{ get_flashed_messages() | tojson }}</script>
+  {% block scripts %}{% endblock %}
 </body>
 </html>

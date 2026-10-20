@@ -1,0 +1,362 @@
+/* Dashboard: main column (search, playlists) + side column (library, activity). */
+
+.side {
+  position: sticky;
+  top: calc(var(--gap) + 76px);
+}
+
+@media (max-width: 1100px) {
+  .side {
+    position: static;
+  }
+}
+
+/* Search */
+.search-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+}
+
+.search-input {
+  font-size: var(--step-1);
+  padding: 13px 16px;
+}
+
+.search-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+
+.search-status {
+  color: var(--muted);
+  font-size: var(--step--1);
+}
+
+.results {
+  display: grid;
+  gap: 6px;
+  margin-top: 14px;
+  max-height: min(620px, 62vh);
+  overflow: auto;
+  margin-right: -8px;
+  padding-right: 8px;
+}
+
+.results:empty {
+  display: none;
+}
+
+.result {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  padding: 8px;
+  border-radius: var(--r-tile);
+  transition: background var(--t-fast);
+}
+
+.result:hover {
+  background: var(--glass-raised);
+}
+
+.result-cover,
+.result-cover img {
+  width: 56px;
+  height: 56px;
+  border-radius: 10px;
+  object-fit: cover;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.result--artist .result-cover,
+.result--artist .result-cover img {
+  border-radius: 50%;
+}
+
+.result-title {
+  margin: 0;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.result-sub {
+  margin: 2px 0 0;
+  color: var(--muted);
+  font-size: var(--step--1);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.result .chips {
+  margin-top: 6px;
+}
+
+.result .chips:empty {
+  display: none;
+}
+
+.result-actions {
+  display: flex;
+  gap: 8px;
+}
+
+@media (max-width: 560px) {
+  .search-form {
+    grid-template-columns: 1fr;
+  }
+
+  .result {
+    grid-template-columns: 48px minmax(0, 1fr);
+  }
+
+  .result-cover,
+  .result-cover img {
+    width: 48px;
+    height: 48px;
+  }
+
+  .result-actions {
+    grid-column: 2;
+  }
+}
+
+/* Playlists */
+.add-form {
+  display: flex;
+  gap: 8px;
+  flex: 1;
+  max-width: 460px;
+}
+
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(156px, 1fr));
+  gap: 18px 14px;
+}
+
+.tile {
+  display: grid;
+  gap: 10px;
+  padding: 0;
+  border: 0;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+  min-width: 0;
+}
+
+.tile-cover {
+  position: relative;
+  aspect-ratio: 1;
+  border-radius: var(--r-tile);
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.06);
+  box-shadow: 0 14px 30px -16px rgba(0, 0, 0, 0.9);
+  transition: transform var(--t-mid) var(--ease-out), box-shadow var(--t-mid);
+}
+
+.tile-cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.tile-cover .placeholder {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  color: var(--faint);
+  font-family: var(--font-display);
+  font-size: 2rem;
+}
+
+.tile .chips {
+  position: absolute;
+  left: 8px;
+  bottom: 8px;
+  right: 8px;
+}
+
+.tile .chip {
+  background: rgba(7, 6, 26, 0.72);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+}
+
+.tile:hover .tile-cover,
+.tile:focus-visible .tile-cover {
+  transform: translateY(-3px);
+  box-shadow: 0 22px 40px -18px rgba(0, 0, 0, 0.95), 0 0 0 1px var(--line-strong);
+}
+
+.tile:focus-visible {
+  outline: none;
+}
+
+.tile-title {
+  font-weight: 600;
+  line-height: 1.3;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+@media (max-width: 560px) {
+  .add-form {
+    max-width: none;
+    flex-basis: 100%;
+  }
+
+  .tiles {
+    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  }
+}
+
+/* Library */
+.figures {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+}
+
+.figure {
+  margin: 0;
+}
+
+.figure dt {
+  color: var(--muted);
+  font-size: var(--step--1);
+}
+
+.figure dd {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--step-2);
+  font-weight: 500;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+}
+
+.figure:first-child dd {
+  background: linear-gradient(90deg, var(--mint), var(--cyan));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.library-meta {
+  margin: 12px 0 0;
+  color: var(--muted);
+  font-size: var(--step--1);
+}
+
+/* Activity */
+.activity-list {
+  display: grid;
+  gap: 10px;
+}
+
+.activity-empty {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--step--1);
+}
+
+.task {
+  display: grid;
+  gap: 8px;
+  padding: 12px 14px;
+  border-radius: var(--r-tile);
+  background: var(--glass-raised);
+  border: 1px solid var(--line);
+  animation: task-in var(--t-mid) var(--ease-out);
+}
+
+.task-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.task-title {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.task-dismiss {
+  width: 26px;
+  height: 26px;
+  font-size: 1rem;
+}
+
+.task-stage {
+  color: var(--muted);
+  font-size: var(--step--1);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.task[data-state="done"] .progress-bar {
+  background: var(--ok);
+}
+
+.task[data-state="error"] {
+  border-color: var(--miss-line);
+}
+
+.task[data-state="error"] .progress-bar {
+  background: var(--miss);
+}
+
+.task details summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: var(--step--1);
+  width: fit-content;
+}
+
+.task-log {
+  margin: 8px 0 0;
+  max-height: 220px;
+  overflow: auto;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.35);
+  color: var(--text-soft);
+  font-size: 0.78rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.task.is-leaving {
+  opacity: 0;
+  transform: scale(0.98);
+  transition: opacity var(--t-mid), transform var(--t-mid);
+}
+
+@keyframes task-in {
+  from { opacity: 0; transform: translateY(-6px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .task { animation: none; }
+  .tile-cover { transition: none; }
+}

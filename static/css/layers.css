@@ -1,0 +1,129 @@
+/* The three planes: generated aurora (back), uneven blur (middle), cells (front). */
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  background: var(--ink);
+}
+
+/* Transparent on purpose: the negative z-index planes paint between the html
+   background and the body, so a body background would hide them. */
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: transparent;
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: var(--step-0);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Back plane */
+#bg-noise {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: -4;
+  display: block;
+  background: var(--ink);
+  opacity: 0;
+  transition: opacity 1.6s ease;
+}
+
+#bg-noise.is-ready {
+  opacity: 1;
+}
+
+/* Middle plane: stacked blur layers, each only visible through a soft random mask */
+.blur-field {
+  position: fixed;
+  inset: 0;
+  z-index: -3;
+  pointer-events: none;
+}
+
+.blur-zone {
+  position: absolute;
+  inset: -12%;
+  -webkit-mask-image: radial-gradient(
+    var(--rx, 40%) var(--ry, 34%) at var(--x, 50%) var(--y, 50%),
+    #000 0%,
+    rgba(0, 0, 0, 0.55) 45%,
+    transparent 100%
+  );
+  mask-image: radial-gradient(
+    var(--rx, 40%) var(--ry, 34%) at var(--x, 50%) var(--y, 50%),
+    #000 0%,
+    rgba(0, 0, 0, 0.55) 45%,
+    transparent 100%
+  );
+  animation: blur-drift var(--dur, 90s) ease-in-out var(--delay, 0s) infinite alternate;
+}
+
+.blur-zone[data-depth="1"] { -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); }
+.blur-zone[data-depth="2"] { -webkit-backdrop-filter: blur(22px); backdrop-filter: blur(22px); }
+.blur-zone[data-depth="3"] { -webkit-backdrop-filter: blur(46px) saturate(120%); backdrop-filter: blur(46px) saturate(120%); }
+.blur-zone[data-depth="4"] { -webkit-backdrop-filter: blur(90px) saturate(130%); backdrop-filter: blur(90px) saturate(130%); }
+
+@keyframes blur-drift {
+  from { transform: translate3d(0, 0, 0) scale(1); }
+  to   { transform: translate3d(var(--dx, 4%), var(--dy, -3%), 0) scale(1.06); }
+}
+
+/* Darkens the edges and the top so the foreground always reads */
+.blur-field::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(120% 90% at 50% 40%, transparent 40%, rgba(5, 4, 18, 0.55) 100%),
+    linear-gradient(180deg, rgba(5, 4, 18, 0.35) 0%, transparent 30%);
+}
+
+.grain {
+  position: fixed;
+  inset: 0;
+  z-index: -2;
+  pointer-events: none;
+  opacity: 0.07;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 1.4 -0.2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .blur-zone {
+    animation: none;
+  }
+
+  #bg-noise {
+    transition: none;
+  }
+}
+
+/* Front plane */
+.app {
+  position: relative;
+  max-width: 1480px;
+  margin: 0 auto;
+  padding: var(--gap) var(--gap) 48px;
+  display: grid;
+  gap: var(--gap);
+}
+
+[hidden],
+.hidden {
+  display: none !important;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}

@@ -1,0 +1,90 @@
+@font-face {
+  font-family: "Unbounded";
+  src: url("../fonts/unbounded-latin-wght-normal.woff2") format("woff2-variations");
+  font-weight: 200 900;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Instrument Sans";
+  src: url("../fonts/instrument-sans-latin-wght-normal.woff2") format("woff2-variations");
+  font-weight: 400 700;
+  font-display: swap;
+}
+
+:root {
+  color-scheme: dark;
+
+  /* Night sky the aurora is painted on */
+  --ink: #07061a;
+  --ink-2: #0e0c26;
+
+  /* Aurora */
+  --violet: #8b5cf6;
+  --magenta: #e0479e;
+  --cyan: #22d3ee;
+  --mint: #5eead4;
+
+  /* Text */
+  --text: #eeeaf8;
+  --text-soft: #cfc9e6;
+  --muted: #a39fbf;
+  --faint: #6f6a8e;
+
+  /* Glass */
+  --glass: rgba(14, 12, 34, 0.58);
+  --glass-strong: rgba(12, 10, 30, 0.82);
+  --glass-raised: rgba(255, 255, 255, 0.05);
+  --glass-hover: rgba(255, 255, 255, 0.08);
+  --line: rgba(255, 255, 255, 0.09);
+  --line-strong: rgba(255, 255, 255, 0.16);
+
+  /* States */
+  --ok: #5eead4;
+  --ok-bg: rgba(94, 234, 212, 0.12);
+  --ok-line: rgba(94, 234, 212, 0.32);
+  --miss: #fb7185;
+  --miss-bg: rgba(251, 113, 133, 0.12);
+  --miss-line: rgba(251, 113, 133, 0.34);
+  --partial: #fbbf24;
+  --partial-bg: rgba(251, 191, 36, 0.12);
+  --partial-line: rgba(251, 191, 36, 0.32);
+  --info: #7dd3fc;
+  --info-bg: rgba(125, 211, 252, 0.12);
+  --info-line: rgba(125, 211, 252, 0.32);
+  --idle: #a39fbf;
+  --idle-bg: rgba(163, 159, 191, 0.12);
+  --idle-line: rgba(163, 159, 191, 0.28);
+  --danger: #f43f5e;
+
+  /* Type */
+  --font-display: "Unbounded", "Segoe UI", system-ui, sans-serif;
+  --font-body: "Instrument Sans", "Segoe UI", system-ui, sans-serif;
+  --step--1: 0.8125rem;
+  --step-0: 0.9375rem;
+  --step-1: 1.125rem;
+  --step-2: 1.5rem;
+  --step-3: 2.25rem;
+
+  /* Shape: radius grows with the size of the surface */
+  --r-chip: 999px;
+  --r-control: 12px;
+  --r-tile: 16px;
+  --r-cell: 24px;
+  --r-panel: 30px;
+
+  --gap: 16px;
+  --pad: 22px;
+
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --t-fast: 140ms;
+  --t-mid: 280ms;
+  --t-slow: 520ms;
+}
+
+@media (max-width: 700px) {
+  :root {
+    --gap: 12px;
+    --pad: 16px;
+  }
+}

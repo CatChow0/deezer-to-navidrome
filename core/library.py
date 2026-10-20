@@ -160,6 +160,42 @@ def load_library_cache(library_cache_file):
         return []
 
 
+_CACHE_META = {"key": None, "meta": None}
+
+
+def load_library_cache_meta(library_cache_file):
+    """Résumé du cache (compteurs + date), mémorisé tant que le fichier ne change pas."""
+    if not library_cache_file.exists():
+        return {"count": 0, "artists": 0, "albums": 0, "generated_at": None}
+    stat = library_cache_file.stat()
+    key = (str(library_cache_file), stat.st_mtime_ns, stat.st_size)
+    if _CACHE_META["key"] == key:
+        return _CACHE_META["meta"]
+    try:
+        data = json.loads(library_cache_file.read_text(encoding="utf-8"))
+    except Exception:
+        data = {}
+    library = data.get("library", []) if isinstance(data, dict) else []
+    artists = set()
+    albums = set()
+    for entry in library:
+        artist = normalize_text(entry.get("tag_artist") or entry.get("parsed_artist") or entry.get("artist_dir_norm") or "")
+        album = normalize_text(entry.get("tag_album") or entry.get("album_dir_norm") or "")
+        if artist:
+            artists.add(artist)
+            if album:
+                albums.add((artist, album))
+    meta = {
+        "count": len(library),
+        "artists": len(artists),
+        "albums": len(albums),
+        "generated_at": data.get("generated_at") if isinstance(data, dict) else None,
+    }
+    _CACHE_META["key"] = key
+    _CACHE_META["meta"] = meta
+    return meta
+
+
 def _process_dir_into(scan_dir, dir_files, scan_dirs, library, lock, counter,
                       total, emit_fn=None, progress_interval=50):
     """

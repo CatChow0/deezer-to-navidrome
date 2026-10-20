@@ -1,231 +1,206 @@
 {% extends 'base.html' %}
+
+{% block title %}Settings · Deezer → Navidrome{% endblock %}
+
+{% block styles %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/home.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/config.css') }}">
+{% endblock %}
+
 {% block content %}
-
-<div id="task-modal" class="task-modal hidden">
-  <div class="task-box">
-    <div class="task-header">
-      <h3>Task in progress</h3>
-      <button type="button" onclick="closeTaskModal()">×</button>
-    </div>
-
-    <div class="task-progress">
-      <div id="task-progress-bar" class="task-progress-bar"></div>
-    </div>
-
-    <div id="task-stage" class="task-stage">Initializing…</div>
-    <pre id="task-log" class="task-log"></pre>
+<div class="bento">
+  <div class="page-head span-12">
+    <h1 class="page-title">Settings</h1>
+    <p class="page-lead">Where your music lives, how Navidrome sees it, and how hard the scanner may work.</p>
   </div>
+
+  <form method="post" class="stack span-8" id="config-form">
+    <section class="cell" aria-labelledby="sources-title">
+      <div class="cell-head">
+        <div>
+          <h2 class="cell-title" id="sources-title">Music folders</h2>
+          <p class="cell-sub">Folders scanned to build the library index, one per line.</p>
+        </div>
+      </div>
+      <div class="cell-body">
+        <label class="form-field">
+          <span class="sr-only">Music folders</span>
+          <textarea class="mono" name="scan_dirs" rows="5">{{ config.scan_dirs | join('\n') }}</textarea>
+        </label>
+      </div>
+    </section>
+
+    <section class="cell" aria-labelledby="mapping-title">
+      <div class="cell-head">
+        <div>
+          <h2 class="cell-title" id="mapping-title">Navidrome paths</h2>
+          <p class="cell-sub">How each folder above appears inside Navidrome, so generated playlists point to the right files.</p>
+        </div>
+        <button type="button" class="btn btn--ghost btn--sm" data-action="add-mapping">Add mapping</button>
+      </div>
+      <div class="cell-body">
+        <div class="mappings">
+          <div class="mapping-head"><span>Folder on this server</span><span>→</span><span>Same folder in Navidrome</span><span>×</span></div>
+          <div class="mappings" id="mappings">
+            {% for m in config.host_to_navidrome_roots %}
+            <div class="mapping-row">
+              <input class="mono" type="text" name="mapping_host[]" value="{{ m.host }}" placeholder="/music/library" aria-label="Folder on this server">
+              <span class="mapping-arrow" aria-hidden="true">→</span>
+              <input class="mono" type="text" name="mapping_navidrome[]" value="{{ m.navidrome }}" placeholder="/music" aria-label="Same folder in Navidrome">
+              <button type="button" class="icon-btn" data-action="remove-mapping" aria-label="Remove mapping">×</button>
+            </div>
+            {% endfor %}
+          </div>
+        </div>
+        <template id="mapping-template">
+          <div class="mapping-row">
+            <input class="mono" type="text" name="mapping_host[]" placeholder="/music/library" aria-label="Folder on this server">
+            <span class="mapping-arrow" aria-hidden="true">→</span>
+            <input class="mono" type="text" name="mapping_navidrome[]" placeholder="/music" aria-label="Same folder in Navidrome">
+            <button type="button" class="icon-btn" data-action="remove-mapping" aria-label="Remove mapping">×</button>
+          </div>
+        </template>
+      </div>
+    </section>
+
+    <div class="bento">
+      <section class="cell span-6" aria-labelledby="dl-title">
+        <div class="cell-head">
+          <h2 class="cell-title" id="dl-title">Deezer Downloader</h2>
+        </div>
+        <div class="cell-body">
+          <label class="form-field">
+            <span>Server address</span>
+            <input type="text" name="deezer_dl_base_url" value="{{ config.deezer_dl_base_url or '' }}" placeholder="https://dzr-dl.your-domain.com">
+            <small>Downloads are sent to this Deezer Downloader instance.</small>
+          </label>
+        </div>
+      </section>
+
+      <section class="cell span-6" aria-labelledby="perf-title">
+        <div class="cell-head">
+          <h2 class="cell-title" id="perf-title">Performance</h2>
+        </div>
+        <div class="cell-body form-grid">
+          <label class="form-field">
+            <span>Library scan threads per folder</span>
+            <select name="library_workers_per_dir">
+              {% for n in [1, 2, 4, 6, 8, 12, 16] %}
+              <option value="{{ n }}" {% if (config.library_workers_per_dir | int) == n %}selected{% endif %}>
+                {{ n }}{% if n == 2 %}, spinning disk (recommended){% elif n == 4 %}, fast disk or RAID{% elif n == 8 %}, SSD or NVMe{% endif %}
+              </option>
+              {% endfor %}
+            </select>
+            <small>Each folder gets its own pool. More than 2 on a spinning disk causes seeks and slows the scan down.</small>
+          </label>
+          <label class="form-field">
+            <span>Playlist matching threads</span>
+            <select name="match_workers">
+              {% for n in [1, 2, 4, 6, 8, 12, 16] %}
+              <option value="{{ n }}" {% if (config.match_workers | int) == n %}selected{% endif %}>
+                {{ n }}{% if n == 4 %}, default{% elif n == 1 %}, single thread{% endif %}
+              </option>
+              {% endfor %}
+            </select>
+            <small>Set it to the number of CPU cores given to the container.</small>
+          </label>
+        </div>
+      </section>
+    </div>
+
+    <section class="cell" aria-labelledby="files-title">
+      <div class="cell-head">
+        <div>
+          <h2 class="cell-title" id="files-title">Data files</h2>
+          <p class="cell-sub">Where the app keeps its state. The defaults are fine unless you moved them.</p>
+        </div>
+      </div>
+      <div class="cell-body form-grid">
+        <label class="form-field">
+          <span>Generated playlists folder</span>
+          <input class="mono" type="text" name="playlists_base_dir" value="{{ config.playlists_base_dir }}">
+        </label>
+        <label class="form-field">
+          <span>Saved playlists</span>
+          <input class="mono" type="text" name="playlist_ids_file" value="{{ config.playlist_ids_file }}">
+        </label>
+        <label class="form-field">
+          <span>Library index</span>
+          <input class="mono" type="text" name="library_cache_file" value="{{ config.library_cache_file }}">
+        </label>
+        <label class="form-field">
+          <span>Playlist match results</span>
+          <input class="mono" type="text" name="preview_state_file" value="{{ config.preview_state_file or '' }}" placeholder="/data/playlist_preview_state.json">
+        </label>
+      </div>
+    </section>
+
+    <div class="cell save-bar">
+      <p>Changes apply as soon as they are saved.</p>
+      <button type="submit" class="btn">Save settings</button>
+    </div>
+  </form>
+
+  <aside class="stack span-4 side">
+    <section class="cell" aria-labelledby="index-title">
+      <div class="cell-head">
+        <h2 class="cell-title" id="index-title">Library index</h2>
+      </div>
+      <div class="cell-body cache-actions">
+        <div class="cache-action">
+          <button type="button" class="btn btn--ghost btn--block" data-action="cache-refresh" data-mode="incremental">Refresh library</button>
+          <p>Indexes new and changed files only. Use this after downloads.</p>
+        </div>
+        <div class="cache-action">
+          <button type="button" class="btn btn--ghost btn--block" data-action="cache-refresh" data-mode="full">Rebuild from scratch</button>
+          <p>Reads every file again. Slow on large libraries.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="cell" aria-labelledby="activity-title">
+      <div class="cell-head">
+        <h2 class="cell-title" id="activity-title">Activity</h2>
+      </div>
+      <div class="cell-body">
+        <p class="activity-empty" id="activity-empty">Library refreshes you start will show their progress here.</p>
+        <div class="activity-list" id="activity-list" aria-live="polite"></div>
+      </div>
+    </section>
+
+    <section class="cell cell--danger" aria-labelledby="danger-title">
+      <div class="cell-head">
+        <div>
+          <h2 class="cell-title" id="danger-title">Reset data</h2>
+          <p class="cell-sub">These cannot be undone. Each button needs a second click.</p>
+        </div>
+      </div>
+      <div class="cell-body danger-list">
+        {% set resets = [
+          ('system.clear_library_cache_route', 'Clear library index', 'Forget every indexed file. Refresh the library afterwards.'),
+          ('system.clear_preview_state_route', 'Clear match results', 'Playlists will show every track as not checked.'),
+          ('system.clear_playlists_route', 'Remove all playlists', 'Also removes their covers and match results.'),
+          ('system.clear_dedup_report_route', 'Clear duplicate report', 'The next duplicate scan starts fresh.'),
+          ('system.clear_dedup_choices_route', 'Forget duplicate decisions', 'Groups you already reviewed come back.'),
+          ('system.clear_all_route', 'Reset everything', 'Playlists, covers, match results and the library index.'),
+        ] %}
+        {% for endpoint, label, hint in resets %}
+        <div class="danger-item">
+          <div>
+            <strong>{{ label }}</strong>
+            <p>{{ hint }}</p>
+          </div>
+          <form method="post" action="{{ url_for(endpoint) }}" data-confirm-form="Click again to confirm">
+            <button type="submit" class="btn btn--danger btn--sm">{{ label.split(' ')[0] }}</button>
+          </form>
+        </div>
+        {% endfor %}
+      </div>
+    </section>
+  </aside>
 </div>
+{% endblock %}
 
-<h1>Configuration</h1>
-
-<form method="post" class="config-form">
-  <label>
-    Source directories
-    <textarea name="scan_dirs" rows="6">{{ config.scan_dirs | join('\n') }}</textarea>
-  </label>
-
-  <label>
-    Playlists directory
-    <input type="text" name="playlists_base_dir" value="{{ config.playlists_base_dir }}">
-  </label>
-
-  <label>
-    Path to deezer_playlist_ids.json
-    <input type="text" name="playlist_ids_file" value="{{ config.playlist_ids_file }}">
-  </label>
-
-  <label>
-    Path to music_library_cache.json
-    <input type="text" name="library_cache_file" value="{{ config.library_cache_file }}">
-  </label>
-
-  <label>
-    Path to playlist_preview_state.json
-    <input type="text" name="preview_state_file"
-           value="{{ config.preview_state_file or '' }}"
-           placeholder="/data/playlist_preview_state.json">
-  </label>
-
-  <label>
-    Deezer Downloader base URL
-    <input type="text" name="deezer_dl_base_url"
-           value="{{ config.deezer_dl_base_url or '' }}"
-           placeholder="https://dzr-dl.your-domain.com">
-  </label>
-
-  <label>
-    Library scan workers per directory
-    <select name="library_workers_per_dir">
-      {% for n in [1, 2, 4, 6, 8, 12, 16] %}
-        <option value="{{ n }}" {% if (config.library_workers_per_dir | int) == n %}selected{% endif %}>
-          {{ n }}{% if n == 2 %} — HDD (recommended){% elif n == 4 %} — fast HDD / RAID{% elif n == 8 %} — SSD / NVMe{% endif %}
-        </option>
-      {% endfor %}
-    </select>
-    <small>Each source directory gets its own isolated thread pool of this size. More than 2 on spinning HDDs causes random seeks and slows things down.</small>
-  </label>
-
-  <label>
-    Playlist matching workers
-    <select name="match_workers">
-      {% for n in [1, 2, 4, 6, 8, 12, 16] %}
-        <option value="{{ n }}" {% if (config.match_workers | int) == n %}selected{% endif %}>
-          {{ n }}{% if n == 4 %} — default{% elif n == 1 %} — single-threaded{% endif %}
-        </option>
-      {% endfor %}
-    </select>
-    <small>Parallel threads for playlist matching. Uses rapidfuzz (releases the GIL) so threads run on separate cores. Set to your Docker CPU count.</small>
-  </label>
-
-  <div class="mapping-block">
-    <h2>Navidrome Mappings</h2>
-
-    {% for m in config.host_to_navidrome_roots %}
-    <div class="mapping-row">
-      <input type="text" name="mapping_host[]" value="{{ m.host }}" placeholder="Host/container source directory">
-      <input type="text" name="mapping_navidrome[]" value="{{ m.navidrome }}" placeholder="Path as seen by Navidrome">
-    </div>
-    {% endfor %}
-
-    <div class="mapping-row">
-      <input type="text" name="mapping_host[]" placeholder="Add a source directory">
-      <input type="text" name="mapping_navidrome[]" placeholder="Add a Navidrome path">
-    </div>
-  </div>
-
-  <div class="button-row">
-    <button type="submit">Save</button>
-  </div>
-</form>
-
-<div class="button-row top-gap">
-  <button type="button" onclick="startCacheRebuild('full')">Full library cache rebuild</button>
-  <button type="button" onclick="startCacheRebuild('incremental')">Incremental library cache refresh</button>
-</div>
-
-<!-- Danger zone -->
-<details class="danger-section top-gap">
-  <summary>Danger Zone (Clear)</summary>
-
-  <p class="danger-hint">
-    These actions are destructive. Only use them if you know exactly what you're doing.
-  </p>
-
-  <div class="button-row">
-    <form method="post" action="{{ url_for('system.clear_library_cache_route') }}">
-      <button type="submit" class="danger"
-              onclick="return confirm('Clear music_library_cache completely?');">
-        Clear music_library_cache
-      </button>
-    </form>
-
-    <form method="post" action="{{ url_for('system.clear_preview_state_route') }}">
-      <button type="submit" class="danger"
-              onclick="return confirm('Clear playlist_preview_state?');">
-        Clear playlist_preview_state cache
-      </button>
-    </form>
-  </div>
-
-  <div class="button-row top-gap">
-    <form method="post" action="{{ url_for('system.clear_playlists_route') }}">
-      <button type="submit" class="danger"
-              onclick="return confirm('Delete all playlists, covers and playlist_preview_state?');">
-        Clear playlists
-      </button>
-    </form>
-
-    <form method="post" action="{{ url_for('system.clear_all_route') }}">
-      <button type="submit" class="danger"
-              onclick="return confirm('Clear everything (playlists, covers, preview_state, music_library_cache)?');">
-        Clear ALL
-      </button>
-    </form>
-  </div>
-
-  <div class="button-row top-gap">
-    <form method="post" action="{{ url_for('system.clear_dedup_report_route') }}">
-      <button type="submit" class="danger"
-              onclick="return confirm('Clear dedup_report?');">
-        Clear dedup_report
-      </button>
-    </form>
-
-    <form method="post" action="{{ url_for('system.clear_dedup_choices_route') }}">
-      <button type="submit" class="danger"
-              onclick="return confirm('Clear dedup_choices? All saved dedup decisions will be lost.');">
-        Clear dedup_choices
-      </button>
-    </form>
-  </div>
-</details>
-
-
-<script>
-let currentSource = null;
-
-function openTaskModal() {
-  document.getElementById('task-modal').classList.remove('hidden');
-  document.getElementById('task-log').textContent = '';
-  document.getElementById('task-stage').textContent = 'Initializing…';
-  document.getElementById('task-progress-bar').style.width = '0%';
-}
-
-function closeTaskModal() {
-  document.getElementById('task-modal').classList.add('hidden');
-  if (currentSource) {
-    currentSource.close();
-    currentSource = null;
-  }
-}
-
-async function startCacheRebuild(mode) {
-  openTaskModal();
-
-  const response = await fetch(`/cache/${mode}/start`, {
-    method: 'POST'
-  });
-
-  const data = await response.json();
-  const taskId = data.task_id;
-
-  currentSource = new EventSource(`/tasks/${taskId}/stream`);
-
-  currentSource.onmessage = function(event) {
-    const payload = JSON.parse(event.data);
-    const log = document.getElementById('task-log');
-    const stage = document.getElementById('task-stage');
-    const bar = document.getElementById('task-progress-bar');
-
-    if (payload.message) {
-      log.textContent += payload.message + "\n";
-      log.scrollTop = log.scrollHeight;
-    }
-
-    if (payload.stage) {
-      stage.textContent = `Step: ${payload.stage}`;
-    }
-
-    if (typeof payload.progress === 'number') {
-      bar.style.width = payload.progress + '%';
-    }
-
-    if (payload.done) {
-      currentSource.close();
-      currentSource = null;
-      stage.textContent = payload.error ? 'Error' : 'Done';
-    }
-  };
-
-  currentSource.onerror = function() {
-    const log = document.getElementById('task-log');
-    log.textContent += "Stream connection interrupted\n";
-    if (currentSource) {
-      currentSource.close();
-      currentSource = null;
-    }
-  };
-}
-</script>
+{% block scripts %}
+<script type="module" src="{{ url_for('static', filename='js/config-page.js') }}"></script>
 {% endblock %}

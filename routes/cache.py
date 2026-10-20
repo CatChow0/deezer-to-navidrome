@@ -2,8 +2,9 @@ import threading
 
 from flask import Blueprint, flash, jsonify, redirect, url_for
 
-from core.config import create_task, push_task_event
+from core.config import create_task, get_paths_from_config, push_task_event
 from core.library import (
+    load_library_cache_meta,
     rebuild_library_cache_full,
     rebuild_library_cache_full_with_progress,
     refresh_library_cache_incremental,
@@ -11,6 +12,12 @@ from core.library import (
 )
 
 cache_bp = Blueprint("cache", __name__)
+
+
+@cache_bp.get("/api/library/stats")
+def library_stats_route():
+    _, _, library_cache_file, _ = get_paths_from_config()
+    return jsonify({"ok": True, **load_library_cache_meta(library_cache_file)})
 
 
 @cache_bp.post("/cache/rebuild")
