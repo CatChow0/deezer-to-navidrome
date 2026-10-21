@@ -67,10 +67,11 @@ def set_account(name, password):
 
 
 def session_stamp():
-    """Changes with the password, so a new password signs out the other sessions."""
-    if account_from_env():
-        return hmac.new(secret_key().encode(), os.environ["APP_PASSWORD"].encode(), "sha256").hexdigest()[:16]
-    return (load_secret("app_password_hash") or "")[-16:]
+    """Changes with the account, so a new password signs out the other sessions.
+    A keyed digest: the session cookie is readable, it must not carry any part
+    of the password hash."""
+    source = os.environ["APP_PASSWORD"] if account_from_env() else (load_secret("app_password_hash") or "")
+    return hmac.new(secret_key().encode(), f"{username()}\0{source}".encode(), "sha256").hexdigest()[:32]
 
 
 # --- API token -----------------------------------------------------------------
