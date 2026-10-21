@@ -166,6 +166,12 @@
   width: min(420px, 100%);
   display: grid;
   gap: 14px;
+  /* Cells take their padding from .cell-head / .cell-body: this one has neither. */
+  padding: var(--pad);
+}
+
+.login-form .btn {
+  margin-top: 4px;
 }
 
 .login-card .brand-name {
