@@ -32,6 +32,11 @@
           <a href="{{ url_for('playlists.releases_view') }}" data-view-link="releases" {% if view == 'releases' %}aria-current="page"{% endif %}>Releases</a>
           <a href="{{ url_for('system.config_view') }}" data-view-link="settings" {% if view == 'settings' %}aria-current="page"{% endif %}>Settings</a>
         </nav>
+        {% if session.get('user') %}
+        <form method="post" action="{{ url_for('auth.logout') }}">
+          <button type="submit" class="btn btn--ghost btn--sm" title="Signed in as {{ session.get('user') }}">Sign out</button>
+        </form>
+        {% endif %}
       </div>
     </header>
 

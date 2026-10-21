@@ -66,7 +66,11 @@ docker compose up -d
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `SECRET_KEY` | — | Flask session key. Change to a random string. |
+| `SECRET_KEY` | random, kept in `secrets.json` | Flask session key. |
+| `APP_USERNAME` / `APP_PASSWORD` | — | The sign-in account. Without them, the first visit asks you to create it. |
+| `API_TOKEN` | — | Token other apps (CatBoard) send as `Authorization: Bearer`; else create one in Settings. |
+| `DISABLE_AUTH` | `false` | `true` turns sign-in off (a reverse proxy already asks for a login). |
+| `COOKIE_SECURE` | `false` | `true` makes the session cookie HTTPS-only. |
 | `DATA_DIR` | `/data` | Persistent directory for config, cache, covers. **Must be a volume.** |
 | `SCAN_DIRS` | — | Comma-separated music directories to scan. |
 | `PLAYLISTS_BASE_DIR` | — | Where `.m3u8` files are written. |
@@ -202,7 +206,12 @@ Each Deezer track is scored against library candidates using five factors:
 |----------|-------------|
 | `/playlist/<id>/automation` | Get/set automation settings for a playlist |
 | `/automation/status` | Scheduler status for all playlists |
-| `/search/library-check` | Check if items exist in local library |
+| `/search/library-check` | Check if items exist in local library (API token accepted) |
+| `/api/releases` | Release feed of the favorite Deezer artists (API token accepted) |
+
+## CatBoard
+
+Create an API token in **Settings → Sign-in and other apps**, add the app in CatBoard (**Settings → Integrations → Deezer to Navidrome**) with that token, then paste the webhook URL CatBoard shows under **CatBoard webhook**. The app calls it when the release feed or the library index is refreshed, so CatBoard updates at once.
 
 ---
 

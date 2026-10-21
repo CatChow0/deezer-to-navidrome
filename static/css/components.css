@@ -17,6 +17,8 @@ button {
 input[type="text"],
 input[type="number"],
 input[type="search"],
+input[type="password"],
+input[type="url"],
 textarea,
 select {
   width: 100%;

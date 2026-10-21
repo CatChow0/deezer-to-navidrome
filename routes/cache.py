@@ -3,6 +3,7 @@ import threading
 from flask import Blueprint, flash, jsonify, redirect, request, url_for
 
 from core.config import create_task, push_task_event
+from core.webhook import notify
 from core.library import (
     library_snapshot,
     search_library,
@@ -30,6 +31,7 @@ def cache_rebuild_route():
     try:
         result = rebuild_library_cache_full()
         flash(f"Full cache rebuilt: {result['count']} entries")
+        notify("library.updated", entries=result["count"])
     except Exception as e:
         flash(f"Cache rebuild error: {e}")
     return redirect(url_for("system.config_view"))
@@ -54,6 +56,7 @@ def cache_full_start():
                 progress=100,
                 done=True,
             )
+            notify("library.updated", entries=result["count"])
         except Exception as e:
             push_task_event(task_id, f"Full rebuild error: {e}", stage="error", done=True, error=True)
 
@@ -80,6 +83,7 @@ def cache_incremental_start():
                 progress=100,
                 done=True,
             )
+            notify("library.updated", entries=result["count"])
         except Exception as e:
             push_task_event(task_id, f"Incremental refresh error: {e}", stage="error", done=True, error=True)
 
@@ -92,6 +96,7 @@ def cache_refresh_route():
     try:
         result = refresh_library_cache_incremental()
         flash(f"Incremental cache done: {result['count']} entries, {result['rebuilt']} rebuilt")
+        notify("library.updated", entries=result["count"])
     except Exception as e:
         flash(f"Cache refresh error: {e}")
     return redirect(url_for("system.config_view"))

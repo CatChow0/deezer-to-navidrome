@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#07061a">
+  <title>{{ 'Create your account' if mode == 'setup' else 'Sign in' }} · Deezer → Navidrome</title>
+  {% for sheet in ['tokens', 'layers', 'cells', 'components', 'config'] %}
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/' ~ sheet ~ '.css') }}">
+  {% endfor %}
+</head>
+<body>
+  <canvas id="bg-noise" aria-hidden="true"></canvas>
+  <div class="blur-field" aria-hidden="true"></div>
+  <div class="grain" aria-hidden="true"></div>
+  <script src="{{ url_for('static', filename='js/background.js') }}"></script>
+
+  <main class="login-page">
+    <section class="cell login-card" aria-labelledby="login-title">
+      <p class="brand-name">Deezer <span>→</span> Navidrome</p>
+      {% if mode == 'setup' %}
+      <h1 class="cell-title" id="login-title">Create your account</h1>
+      <p class="cell-sub">This account protects the app. Other apps, like CatBoard, use an API token you get in Settings afterwards.</p>
+      {% else %}
+      <h1 class="cell-title" id="login-title">Sign in</h1>
+      {% endif %}
+
+      {% if error %}<p class="login-error" role="alert">{{ error }}</p>{% endif %}
+
+      <form method="post" class="login-form">
+        {% if mode == 'login' %}<input type="hidden" name="next" value="{{ next }}">{% endif %}
+        <label class="form-field">
+          <span>Username</span>
+          <input type="text" name="username" autocomplete="username" required autofocus value="{{ request.form.get('username', '') }}">
+        </label>
+        <label class="form-field">
+          <span>Password</span>
+          <input type="password" name="password" autocomplete="{{ 'new-password' if mode == 'setup' else 'current-password' }}" required {% if mode == 'setup' %}minlength="8"{% endif %}>
+          {% if mode == 'setup' %}<small>At least 8 characters.</small>{% endif %}
+        </label>
+        {% if mode == 'setup' %}
+        <label class="form-field">
+          <span>Confirm the password</span>
+          <input type="password" name="confirm" autocomplete="new-password" required minlength="8">
+        </label>
+        {% endif %}
+        <button type="submit" class="btn btn--block">{{ 'Create the account' if mode == 'setup' else 'Sign in' }}</button>
+      </form>
+    </section>
+  </main>
+</body>
+</html>

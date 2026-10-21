@@ -153,3 +153,67 @@
     align-items: stretch;
   }
 }
+
+/* Sign-in and first-run pages */
+.login-page {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px 16px;
+}
+
+.login-card {
+  width: min(420px, 100%);
+  display: grid;
+  gap: 14px;
+}
+
+.login-card .brand-name {
+  margin: 0;
+}
+
+.login-form {
+  display: grid;
+  gap: 14px;
+}
+
+.login-error {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: var(--r-control);
+  background: rgba(255, 80, 110, 0.12);
+  color: var(--text);
+}
+
+/* Settings: sign-in, API token and webhook */
+.security-block {
+  display: grid;
+  gap: 10px;
+}
+
+.security-block + .security-block {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+
+.security-block h3 {
+  margin: 0;
+  font-size: var(--step-0);
+}
+
+.secret-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.secret-row input {
+  flex: 1;
+}
+
+.button-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}

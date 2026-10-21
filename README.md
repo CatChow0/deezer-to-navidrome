@@ -599,7 +599,7 @@ Set this to your Docker CPU count (`cpus` value) for best results.
 
 #### `SECRET_KEY`
 
-Flask secret key for session signing.
+Flask secret key for session signing. Optional: without it, the app makes a random key on first start and keeps it in `data/secrets.json`, so sign-ins survive restarts.
 
 ```env
 SECRET_KEY=your-random-secret-key-here
@@ -609,6 +609,31 @@ Generate one with:
 ```bash
 python -c "import secrets; print(secrets.token_urlsafe(32))"
 ```
+
+#### Sign-in: `APP_USERNAME`, `APP_PASSWORD`, `API_TOKEN`, `DISABLE_AUTH`, `COOKIE_SECURE`
+
+The web interface asks for a sign-in. On the first visit, the app asks you to create the account (password of 8 characters or more, stored hashed in `data/secrets.json`). To set the account from the environment instead:
+
+```env
+APP_USERNAME=admin
+APP_PASSWORD=a-long-password
+```
+
+- After 5 failed sign-ins in 15 minutes, the username and the address wait 30 s, then twice as long after each new failure (up to 15 min). Behind a reverse proxy every request has the proxy's address, so a burst of failures briefly blocks everyone.
+- Changing the password (**Settings → Sign-in and other apps**) signs out your other browsers.
+- `API_TOKEN` sets the token other apps (CatBoard) send as `Authorization: Bearer <token>`; without it, create one in Settings. The token only opens `GET /api/releases`, `POST /search/library-check` and `GET /api/version`.
+- `DISABLE_AUTH=true` turns sign-in off, for setups where a reverse proxy already asks for a login.
+- `COOKIE_SECURE=true` marks the session cookie HTTPS-only (set it when the app is only reached over HTTPS).
+
+### CatBoard
+
+[CatBoard](https://github.com/CatChow0/catboard) shows the release feed in its Calendar and New releases widgets:
+
+1. In this app, **Settings → Sign-in and other apps**: create an API token.
+2. In CatBoard, **Settings → Integrations → Deezer to Navidrome**: enter this app's URL and the token, then save.
+3. Copy the **webhook URL** CatBoard shows, and paste it under **CatBoard webhook** here; **Send a test** checks it.
+
+The app then calls the webhook when the release feed is refreshed (or an artist is muted) and when the library index is refreshed, so CatBoard reloads the feed and the "in library" status right away instead of polling.
 
 ### Web Configuration UI
 

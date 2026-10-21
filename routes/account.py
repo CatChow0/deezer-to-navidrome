@@ -6,6 +6,7 @@ from core.config import create_task, load_secret, push_task_event, save_secret, 
 from core.deezer import follow_mix, load_playlists, mix_id
 from core.deezer_account import DeezerAccountError, account_status, available_mixes, forget_session
 from core.releases import load_prefs, load_releases, refresh_hours, refresh_lock, refresh_releases, set_muted
+from core.webhook import notify
 
 account_bp = Blueprint("account", __name__)
 
@@ -87,6 +88,7 @@ def mute_artist_route():
     if not artist_id.isdigit():
         return jsonify({"ok": False, "error": "Unknown artist"}), 400
     prefs = set_muted(artist_id, str(data.get("name") or ""), bool(data.get("muted")))
+    notify("releases.updated", reason="muted")
     return jsonify({"ok": True, "muted": prefs["muted"]})
 
 
@@ -110,6 +112,7 @@ def start_release_refresh(title="Release feed refresh"):
                 progress=100,
                 done=True,
             )
+            notify("releases.updated", releases=len(feed["releases"]), artists=feed["artists"])
         except Exception as e:
             push_task_event(task_id, f"Release feed failed: {e}", stage="error", done=True, error=True)
         finally:

@@ -44,6 +44,12 @@ services:
       # threads run on separate cores. Set to your Docker CPU count. Default: 4.
       MATCH_WORKERS: "4"
 
+      # Optional: the sign-in account (else the first visit asks you to create it),
+      # and the API token CatBoard uses (else create one in Settings).
+      # APP_USERNAME: "admin"
+      # APP_PASSWORD: "a-long-password"
+      # API_TOKEN: "a-long-random-token"
+
       # Optional: session cookie (arl) of the Deezer account used for your mixes
       # and the release feed. You can also paste it in Settings instead.
       # DEEZER_ARL: ""

@@ -110,6 +110,8 @@ def _refresh_library_after_scans(count):
             )
         )
         push_task_event(task_id, "Library refreshed", stage="done", progress=100, done=True)
+        from core.webhook import notify
+        notify("library.updated")
     except Exception as e:
         logger.error(f"[auto-scan] Cache refresh failed: {e}")
         push_task_event(task_id, f"Library refresh failed: {e}", stage="error", done=True, error=True)
