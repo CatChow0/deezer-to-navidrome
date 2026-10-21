@@ -37,6 +37,11 @@
   overflow: hidden;
 }
 
+/* The panel takes focus so Escape and Tab start inside it; it is not a control. */
+.overlay-panel:focus {
+  outline: none;
+}
+
 .overlay-close {
   position: absolute;
   top: 16px;
@@ -615,4 +620,219 @@ tbody[data-filter="unchecked"] tr:not([data-matched="none"]) {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+/* Help window: release notes and guide */
+.help-modal .overlay-panel {
+  width: min(820px, 100%);
+}
+
+.help-eyebrow {
+  margin: 0 0 6px;
+  color: var(--cyan);
+  font-size: var(--step--1);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.help-tabs {
+  margin-top: 16px;
+}
+
+.help-body {
+  padding: 22px 28px 8px;
+}
+
+.help-h {
+  margin: 26px 0 12px;
+  font-family: var(--font-display);
+  font-size: var(--step-1);
+  font-weight: 500;
+}
+
+.help-body > .help-h:first-child {
+  margin-top: 0;
+}
+
+.help-callout {
+  padding: 16px 18px;
+  border-radius: var(--r-tile);
+  border: 1px solid var(--ok-line);
+  background: var(--ok-bg);
+}
+
+.help-callout strong {
+  color: var(--ok);
+}
+
+.help-callout p {
+  margin: 6px 0 0;
+  color: var(--text-soft);
+}
+
+.help-steps,
+.help-guide {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.help-step {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: 12px;
+  padding: 14px 16px;
+  border-radius: var(--r-tile);
+  border: 1px solid var(--line);
+  background: var(--glass-raised);
+}
+
+.help-step-state {
+  display: grid;
+  place-items: center;
+  height: 1.5em;
+}
+
+.help-step-num {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 1px solid var(--line-strong);
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.help-step p,
+.help-guide li,
+.help-list li,
+.help-faq dd {
+  color: var(--text-soft);
+}
+
+.help-step p {
+  margin: 4px 0 0;
+}
+
+.help-step .help-live {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  color: var(--ok);
+  font-size: var(--step--1);
+}
+
+.help-live code {
+  word-break: break-all;
+}
+
+.help-step .help-live--warn {
+  color: var(--miss);
+}
+
+.help-code {
+  margin: 10px 0 0;
+  padding: 12px 14px;
+  overflow-x: auto;
+  border-radius: var(--r-control);
+  border: 1px solid var(--line);
+  background: rgba(4, 3, 14, 0.55);
+  color: var(--muted);
+  font-size: 0.8rem;
+  line-height: 1.6;
+}
+
+.help-del { color: var(--miss); }
+.help-add { color: var(--ok); }
+
+.help-list {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding-left: 1.1em;
+}
+
+.help-list strong,
+.help-guide strong {
+  color: var(--text);
+}
+
+.help-guide {
+  counter-reset: guide;
+}
+
+.help-guide li {
+  position: relative;
+  padding-left: 34px;
+  counter-increment: guide;
+}
+
+.help-guide li::before {
+  content: counter(guide);
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 1px solid var(--line-strong);
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.help-faq {
+  margin: 0;
+}
+
+.help-reopen {
+  margin: 22px 0 0;
+  color: var(--muted);
+  font-size: var(--step--1);
+}
+
+.help-faq dt {
+  margin-top: 12px;
+  font-weight: 600;
+}
+
+.help-faq dd {
+  margin: 4px 0 0;
+}
+
+.help-foot {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 18px;
+  padding: 14px 28px;
+  border-top: 1px solid var(--line);
+  background: rgba(12, 10, 30, 0.94);
+}
+
+.help-foot > div {
+  display: flex;
+  gap: 8px;
+}
+
+@media (max-width: 560px) {
+  .help-body {
+    padding: 18px 18px 8px;
+  }
+
+  .help-foot {
+    padding: 12px 18px;
+  }
 }

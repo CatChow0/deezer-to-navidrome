@@ -82,6 +82,7 @@ select option {
   color: var(--ink);
   font-weight: 600;
   white-space: nowrap;
+  text-decoration: none;
   cursor: pointer;
   transition: background var(--t-fast), border-color var(--t-fast), color var(--t-fast), transform var(--t-fast);
 }
@@ -461,4 +462,23 @@ select option {
 
 @media (prefers-reduced-motion: reduce) {
   .toast { animation: none; }
+}
+
+/* Explicit lyrics: the small "E" Deezer shows next to a title */
+.explicit-mark {
+  display: inline-grid;
+  place-items: center;
+  width: 1.25em;
+  height: 1.25em;
+  margin-left: 4px;
+  border-radius: 4px;
+  background: var(--idle-bg);
+  border: 1px solid var(--idle-line);
+  color: var(--text-soft);
+  font-family: var(--font-body);
+  font-size: 0.65rem;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0;
+  vertical-align: 0.15em;
 }

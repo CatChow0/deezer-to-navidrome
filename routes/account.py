@@ -38,6 +38,7 @@ def _download_status():
             "has_premium_arl": True,
             "premium": bool(info.get("premium")),
             "format": info.get("format"),
+            "country": info.get("country"),
             "error": info.get("error"),
         }
     # No second account: the downloads use the main one.
@@ -46,6 +47,7 @@ def _download_status():
         "has_premium_arl": False,
         "premium": bool(info.get("premium")),
         "format": info.get("format"),
+        "country": info.get("country"),
         "error": info.get("error"),
     }
 

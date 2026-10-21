@@ -165,12 +165,15 @@ class DownloadQueue:
                 task.progress, task.progress_maximum = percent, 100
                 task.report("downloading", summary["label"], percent, f"{percent}%")
 
-        path = deezer_dl.download_track(task.music_id, on_start=on_start, on_bytes=on_bytes)
+        def on_note(note):
+            summary["note"] = note
+
+        path = deezer_dl.download_track(task.music_id, on_start=on_start, on_bytes=on_bytes, on_note=on_note)
         summary.update({"saved": 1, "path": str(path)})
         return summary
 
     def _run_album(self, task, album_id, on_track_done=None):
-        summary = {"label": "", "saved": 0, "total": 0, "failed": [], "files": []}
+        summary = {"label": "", "saved": 0, "total": 0, "failed": [], "files": [], "replaced": []}
 
         def on_start(songs):
             first = songs[0]
@@ -199,14 +202,17 @@ class DownloadQueue:
                     f"{done}/{total}",
                 )
 
-        deezer_dl.download_album(album_id, on_start=on_start, on_track=on_track)
+        def on_note(song, note):
+            summary["replaced"].append(deezer_dl.song_label(song))
+
+        deezer_dl.download_album(album_id, on_start=on_start, on_track=on_track, on_note=on_note)
         return summary
 
     def _run_artist(self, task):
         albums = deezer_dl.artist_albums(task.music_id)
         if not albums:
             raise deezer_dl.DeezerDownloadError("Deezer lists no release for this artist")
-        summary = {"label": "", "saved": 0, "total": 0, "failed": [], "albums": len(albums)}
+        summary = {"label": "", "saved": 0, "total": 0, "failed": [], "replaced": [], "albums": len(albums)}
         for index, album in enumerate(albums):
             def on_track_done(done, total, song, index=index, album=album):
                 share = (index + (done / total if total else 1)) / len(albums)
@@ -227,6 +233,7 @@ class DownloadQueue:
             summary["saved"] += result["saved"]
             summary["total"] += result["total"]
             summary["failed"] += result["failed"]
+            summary["replaced"] += result["replaced"]
         return summary
 
     def snapshot(self):

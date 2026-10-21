@@ -1,7 +1,7 @@
 // Deezer search: results list, library ownership chips, and album/artist
 // details opened in the drawer.
 
-import { escapeHtml, fetchJSON, on } from './core.js';
+import { escapeHtml, explicitMark, fetchJSON, on } from './core.js';
 import { downloadButton } from './downloads.js';
 import { playAlbumButton, playButton } from './player.js';
 
@@ -110,7 +110,7 @@ function renderResult(item) {
     <article class="result result--${escapeHtml(type)}" id="${escapeHtml(id)}">
       <div class="result-cover">${item.cover ? `<img src="${escapeHtml(item.cover)}" alt="" loading="lazy">` : ''}</div>
       <div>
-        <p class="result-title">${escapeHtml(item.title)}</p>
+        <p class="result-title">${escapeHtml(item.title)}${explicitMark(item)}</p>
         <p class="result-sub">${escapeHtml((item.subtitle || '').replaceAll(' • ', ', '))}</p>
         <div class="chips" id="${escapeHtml(id)}-chips"></div>
       </div>
@@ -162,7 +162,7 @@ function trackTable(tracks) {
           ${tracks.map(track => `
             <tr>
               <td class="num">${escapeHtml(track.position)}</td>
-              <td>${escapeHtml(track.title)}</td>
+              <td>${escapeHtml(track.title)}${explicitMark(track)}</td>
               <td class="muted">${escapeHtml(track.artist || '')}</td>
               <td class="num">${formatDuration(track.duration)}</td>
               <td class="actions">
@@ -202,7 +202,7 @@ export async function openAlbum(albumId) {
       ${coverImg(album.cover, album.title, 'detail-cover')}
       <div>
         <p class="detail-kind">Album</p>
-        <h2 class="detail-title">${escapeHtml(album.title)}</h2>
+        <h2 class="detail-title">${escapeHtml(album.title)}${explicitMark(album)}</h2>
         <p class="detail-sub">${escapeHtml(album.artist)}, ${tracks.length} tracks${albumMinutes(tracks)}</p>
         <div class="chips detail-chips" data-owned-summary></div>
         <div class="detail-actions">
@@ -246,7 +246,7 @@ async function openArtist(artistId) {
             <button type="button" class="album-toggle" data-action="toggle-album" data-album-id="${escapeHtml(album.id)}" aria-expanded="false">
               ${coverImg(album.cover, album.title)}
               <span>
-                <strong>${escapeHtml(album.title)}</strong>
+                <strong>${escapeHtml(album.title)}${explicitMark(album)}</strong>
                 <span class="muted">${escapeHtml([album.record_type, (album.release_date || '').slice(0, 4)].filter(Boolean).join(', '))}</span>
               </span>
               <span class="chips" data-album-chip="${escapeHtml(album.id)}"></span>

@@ -25,6 +25,8 @@ from core.config import (
     clear_preview_state_file,
     create_task,
     follow_task,
+    kept_config_keys,
+    mark_whats_new_seen,
     list_tasks,
     push_task_event,
     push_task_payload,
@@ -152,6 +154,7 @@ def config_view():
             "match_workers": match_workers,
             "release_refresh_hours": release_refresh_hours,
             "download_workers": download_workers,
+            **kept_config_keys(),
         }
         save_config(cfg)
         scheduler.restart()
@@ -253,11 +256,14 @@ def _final_message(kind, summary):
     if kind == "track":
         if summary.get("already"):
             return f"Already downloaded: {label}"
-        return f"Downloaded: {label}"
+        note = summary.get("note")
+        return f"Downloaded: {label}{f' ({note[0].lower()}{note[1:]})' if note else ''}"
     saved, total, failed = summary.get("saved", 0), summary.get("total", 0), summary.get("failed") or []
+    replaced = len(summary.get("replaced") or [])
+    extra = f", {replaced} from another release" if replaced else ""
     if failed:
-        return f"{label}: {saved}/{total} tracks saved, {len(failed)} failed ({', '.join(failed[:3])}{'…' if len(failed) > 3 else ''})"
-    return f"Downloaded: {label} ({saved} track{'s' if saved != 1 else ''})"
+        return f"{label}: {saved}/{total} tracks saved{extra}, {len(failed)} failed ({', '.join(failed[:3])}{'…' if len(failed) > 3 else ''})"
+    return f"Downloaded: {label} ({saved} track{'s' if saved != 1 else ''}{extra})"
 
 
 def _start_download(kind, music_id, label="", playlist_id=None):
@@ -298,6 +304,12 @@ def _download_request(kind, music_id):
     playlist_id = str(data.get("playlist_id") or "").strip() or None
     task_id = _start_download(kind, str(music_id), str(data.get("label") or ""), playlist_id)
     return jsonify({"task_id": task_id})
+
+
+@system_bp.post("/api/whats-new/seen")
+def whats_new_seen_route():
+    mark_whats_new_seen()
+    return jsonify({"ok": True})
 
 
 @system_bp.route("/deezer-dl/track/<track_id>", methods=["POST"])

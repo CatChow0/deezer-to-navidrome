@@ -9,6 +9,7 @@ from core.config import (
     push_task_event,
     push_task_row_update,
     get_preview_state,
+    whats_new_state,
 )
 from core import deezer_dl
 from core import download_queue
@@ -44,6 +45,7 @@ def render_app(view):
         config=load_config(),
         view=view,
         download_dir=deezer_dl.download_dir_status(),
+        whats_new=whats_new_state(),
     )
 
 

@@ -484,7 +484,7 @@ def convert_playlist(playlist_id: str, progress_cb=None, quick: bool = False):
     rows: dict[int, dict] = {}
 
     def keep(track, row):
-        # A track sent to Deezer Downloader stays marked until it shows up in the library.
+        # A downloaded track stays marked until it shows up in the library.
         old = saved_by_track.get(str(track.get("track_id"))) or {}
         row["downloaded"] = bool(old.get("downloaded")) and not row["matched"]
         rows[track["position"]] = row
@@ -624,6 +624,7 @@ def search_deezer(query: str, search_type: str, limit: int = 25):
                     "subtitle": f"{artist_name or 'Artiste inconnu'} • {((item.get('album') or {}).get('title')) or 'Album inconnu'}",
                     "album": ((item.get("album") or {}).get("title")) or "",
                     "duration": item.get("duration"),
+                    "explicit": bool(item.get("explicit_lyrics")),
                     "cover": ((item.get("album") or {}).get("cover_medium"))
                     or ((item.get("album") or {}).get("cover_small"))
                     or "",
@@ -641,6 +642,7 @@ def search_deezer(query: str, search_type: str, limit: int = 25):
                     "artist": ((item.get("artist") or {}).get("name")) or "",
                     "cover": item.get("cover_medium") or item.get("cover_small") or "",
                     "track_count": item.get("nb_tracks", 0),
+                    "explicit": bool(item.get("explicit_lyrics")),
                     "download_type": "album",
                     "download_id": str(item.get("id") or ""),
                 }
@@ -679,6 +681,7 @@ def fetch_deezer_album_details(album_id: str):
                 or ((data.get("artist") or {}).get("name"))
                 or "",
                 "duration": t.get("duration"),
+                "explicit": bool(t.get("explicit_lyrics")),
             }
         )
 
@@ -692,6 +695,7 @@ def fetch_deezer_album_details(album_id: str):
         or data.get("cover_small")
         or "",
         "track_count": data.get("nb_tracks") or len(tracks),
+        "explicit": bool(data.get("explicit_lyrics")),
         "tracks": tracks,
     }
 
@@ -716,6 +720,7 @@ def fetch_deezer_artist_albums(artist_id: str, limit: int = 50):
                 "cover": item.get("cover_medium") or item.get("cover_small") or "",
                 "release_date": item.get("release_date") or "",
                 "record_type": item.get("record_type") or "",
+                "explicit": bool(item.get("explicit_lyrics")),
             }
         )
     return albums

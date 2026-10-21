@@ -10,6 +10,12 @@ export function escapeHtml(value) {
 }
 
 // Returns { ok, status, data } and never throws; network errors come back as ok: false.
+// The "E" Deezer puts next to explicit tracks and albums, so the version is
+// known before it is downloaded (the censored one is a separate release).
+export function explicitMark(item) {
+  return item?.explicit ? ' <span class="explicit-mark" title="Explicit lyrics" aria-label="Explicit">E</span>' : '';
+}
+
 export async function fetchJSON(url, options = {}) {
   const opts = { ...options };
   if (opts.json !== undefined) {

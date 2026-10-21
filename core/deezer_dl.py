@@ -40,6 +40,9 @@ class DeezerDownloadError(RuntimeError):
     pass
 
 
+NO_LINK = "Deezer returned no download link for this track"
+
+
 def _log(message):
     print(f"[deezer-dl] {message}", flush=True)
 
@@ -73,6 +76,7 @@ def account_info():
             "premium": s.is_premium(),
             "quality": s.quality,
             "format": s.sound_format(),
+            "country": s.country,
             "error": None,
         }
     except DeezerAccountError as e:
@@ -253,22 +257,67 @@ def _media_url(track_token, sound_format):
         raise DeezerDownloadError(errors[0].get("message", "Deezer refused the download"))
     sources = (data["data"][0].get("media") or [{}])[0].get("sources") or []
     if not sources:
-        raise DeezerDownloadError("Deezer returned no download link for this track")
+        raise DeezerDownloadError(NO_LINK)
     return sources[0]["url"]
 
 
-def download_song(song, target, on_bytes=None):
+def is_explicit(song):
+    return str(song.get("EXPLICIT_LYRICS") or "0") == "1"
+
+
+def _in_country():
+    country = session().country
+    return f" ({country})" if country else ""
+
+
+def _unavailable(error):
+    """The message for a track Deezer will not serve to this account."""
+    if str(error) != NO_LINK:
+        return DeezerDownloadError(str(error))
+    return DeezerDownloadError(f"Not available for your Deezer account{_in_country()}")
+
+
+def _source(song, sound_format):
+    """(url, song the file comes from).
+
+    When a release is not available, Deezer often names another release of the
+    same recording (FALLBACK). It is only used when it is explicit exactly when
+    the requested track is: otherwise an explicit track could silently come
+    back as its censored version."""
+    try:
+        return _media_url(song["TRACK_TOKEN"], sound_format), song
+    except DeezerDownloadError as error:
+        fallback = song.get("FALLBACK") or {}
+        if not fallback.get("TRACK_TOKEN"):
+            raise _unavailable(error)
+        if is_explicit(fallback) != is_explicit(song):
+            version = "censored" if is_explicit(song) else "explicit"
+            raise DeezerDownloadError(f"Only the {version} version is available for your Deezer account{_in_country()}")
+        try:
+            return _media_url(fallback["TRACK_TOKEN"], sound_format), fallback
+        except DeezerDownloadError:
+            raise _unavailable(error)
+
+
+def download_song(song, target, on_bytes=None, on_note=None):
     """Downloads one track to `target` and writes its tags.
 
     `on_bytes(received, total)` follows the transfer; `total` is 0 when Deezer
-    does not say the size. Returns the path."""
+    does not say the size. `on_note(message)` is told when the file comes from
+    another release of the same recording. The tags stay those of the
+    requested track, so an album keeps its own title and numbering.
+    Returns the path."""
     s = session()
     sound_format = s.sound_format()
-    track_token = song.get("TRACK_TOKEN")
-    if not track_token:
+    if not song.get("TRACK_TOKEN"):
         raise DeezerDownloadError("Deezer did not give a download token for this track")
 
-    url = _media_url(track_token, sound_format)
+    url, source = _source(song, sound_format)
+    if source is not song:
+        note = f"From another release: {source.get('ALB_TITLE') or 'unknown album'}"
+        _log(f"{song_label(song)}: {note}")
+        if on_note:
+            on_note(note)
     resp = s.http.get(url, stream=True, timeout=120)
     resp.raise_for_status()
     total = int(resp.headers.get("Content-Length") or 0)
@@ -278,7 +327,7 @@ def download_song(song, target, on_bytes=None):
         received += len(chunk)
         if on_bytes:
             on_bytes(received, total)
-    payload = _decrypt(b"".join(chunks), _cipher_key(song["SNG_ID"]))
+    payload = _decrypt(b"".join(chunks), _cipher_key(source["SNG_ID"]))
 
     target.parent.mkdir(parents=True, exist_ok=True)
     temporary = target.with_suffix(target.suffix + ".part")
@@ -335,7 +384,7 @@ def song_label(song):
     return f"{song.get('ART_NAME') or 'Unknown artist'} - {song.get('SNG_TITLE') or 'Unknown title'}"
 
 
-def download_track(track_id, base_dir=None, on_start=None, on_bytes=None):
+def download_track(track_id, base_dir=None, on_start=None, on_bytes=None, on_note=None):
     """Downloads one track into the songs folder.
 
     `on_start(song, already_there)` is called once the track is known.
@@ -350,10 +399,10 @@ def download_track(track_id, base_dir=None, on_start=None, on_bytes=None):
     if already:
         _log(f"Already there: {target.name}")
         return target
-    return download_song(song, target, on_bytes=on_bytes)
+    return download_song(song, target, on_bytes=on_bytes, on_note=on_note)
 
 
-def download_album(album_id, base_dir=None, on_track=None, on_start=None):
+def download_album(album_id, base_dir=None, on_track=None, on_start=None, on_note=None):
     """Downloads every track of an album into its own folder.
 
     `on_start(songs)` is called once the track list is known; `on_track` with
@@ -375,7 +424,7 @@ def download_album(album_id, base_dir=None, on_track=None, on_start=None):
             if target.exists():
                 _log(f"Already there: {target.name}")
             else:
-                download_song(song, target)
+                download_song(song, target, on_note=(lambda note, song=song: on_note(song, note)) if on_note else None)
             downloaded.append(target)
             if on_track:
                 on_track(song, target, None)

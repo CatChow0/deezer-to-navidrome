@@ -42,6 +42,7 @@ class DeezerSession:
         self.token = None
         self.user = None
         self.license_token = None
+        self.country = ""
         self.quality = {}
         if arl:
             self.login(arl)
@@ -73,6 +74,8 @@ class DeezerSession:
         self.token = results.get("checkForm")
         self.user = {"id": str(user["USER_ID"]), "name": user.get("BLOG_NAME") or ""}
         self.license_token = options.get("license_token")
+        # The catalogue the account may download from: its subscription country.
+        self.country = options.get("license_country") or results.get("COUNTRY") or ""
         self.quality = options.get("web_sound_quality") or {}
 
     def reset(self, keep_arl=False):
@@ -82,6 +85,7 @@ class DeezerSession:
             self.arl = None
         self.http = self.token = self.user = None
         self.license_token = None
+        self.country = ""
         self.quality = {}
 
     def is_premium(self):
@@ -149,6 +153,7 @@ def account_status(arl=None):
                 "name": _session.user["name"],
                 "user_id": _session.user["id"],
                 "premium": _session.is_premium(),
+                "country": _session.country,
                 "error": None,
             }
     except DeezerAccountError as e:

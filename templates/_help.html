@@ -1,0 +1,120 @@
+{# Help window: what changed in this version, and how to use the app. It opens
+   on its own once after an upgrade (whats_new.show), and from the Help button
+   in the topbar at any time. #}
+<div id="help-modal" class="overlay modal help-modal" aria-hidden="true"
+     data-auto-open="{{ 'true' if whats_new.show else 'false' }}" data-notes-id="{{ whats_new.id }}">
+  <div class="overlay-backdrop" data-overlay-close></div>
+  <section class="overlay-panel cell" role="dialog" aria-modal="true" aria-labelledby="help-title" tabindex="-1">
+    <button type="button" class="icon-btn overlay-close" data-overlay-close aria-label="Close">×</button>
+    <div class="overlay-scroll" data-overlay-content>
+      <header class="modal-head">
+        <p class="help-eyebrow">Version {{ whats_new.id }}</p>
+        <h2 class="detail-title" id="help-title">Downloads are built in</h2>
+        <p class="detail-sub">This app now downloads from Deezer by itself. Here is what changed, and how to use it.</p>
+        <div class="segmented help-tabs" role="group" aria-label="Help sections">
+          <button type="button" data-help-tab="new" aria-pressed="true">What's new</button>
+          <button type="button" data-help-tab="guide" aria-pressed="false">How to use</button>
+        </div>
+      </header>
+
+      <div class="help-body" data-help-panel="new">
+        {% if whats_new.legacy %}
+        <div class="help-callout">
+          <strong>You no longer need the deezer-downloader container</strong>
+          <p>Until now, this app sent its downloads to a separate <code>kmille2/deezer-downloader</code> service. That job is now done here: you can stop and remove that container once the three steps below are green.</p>
+        </div>
+        {% endif %}
+
+        <h3 class="help-h">{% if whats_new.legacy %}Finish the move{% else %}Check your setup{% endif %}</h3>
+        <ol class="help-steps">
+          <li class="help-step" data-help-account>
+            <span class="help-step-state"><span class="dot"></span></span>
+            <div>
+              <strong>Connect your Deezer account</strong>
+              <p>Downloads use the <code>arl</code> cookie of your Deezer account, pasted in <b>Settings → Deezer account</b>.{% if whats_new.legacy %} The arl you gave deezer-downloader works here too.{% endif %}</p>
+              <p class="help-live" data-help-account-status>Checking…</p>
+            </div>
+          </li>
+          <li class="help-step">
+            <span class="help-step-state"><span class="dot {{ 'dot--ok' if download_dir.writable else 'dot--miss' }}"></span></span>
+            <div>
+              <strong>Mount the downloads folder in this container</strong>
+              <p>The <code>deezer-dl</code> folder{% if whats_new.legacy %} you mounted in deezer-downloader{% endif %} must now be mounted here, writable. Albums still go in <code>albums/Artist - Album/</code> and single tracks in <code>songs/</code>, so your Navidrome paths and playlists keep working.</p>
+              <p class="help-live{{ '' if download_dir.writable else ' help-live--warn' }}">
+                {% if download_dir.writable %}Downloads go to <code>{{ download_dir.path }}</code>
+                {% elif download_dir.exists %}<code>{{ download_dir.path }}</code> exists but cannot be written to.
+                {% else %}<code>{{ download_dir.path }}</code> does not exist in this container.{% endif %}
+              </p>
+            </div>
+          </li>
+          <li class="help-step">
+            <span class="help-step-state"><span class="help-step-num">3</span></span>
+            <div>
+              <strong>{% if whats_new.legacy %}Clean up your docker-compose.yml{% else %}Your docker-compose.yml{% endif %}</strong>
+              <p>Only this app's container is needed. The old download server address (<code>DEEZER_DL_BASE_URL</code>) is no longer read, and its field is gone from Settings.</p>
+<pre class="help-code"><span class="help-del">- deezer-downloader:</span>
+<span class="help-del">-   image: kmille2/deezer-downloader</span>
+<span class="help-del">-   …</span>
+  deezer-to-navidrome:
+    image: catchow/deezer-to-navidrome:latest
+    environment:
+<span class="help-del">-     DEEZER_DL_BASE_URL: "http://deezer-downloader:5000"</span>
+<span class="help-add">+     # DEEZER_ARL: ""   # optional, or paste it in Settings</span>
+    volumes:
+<span class="help-add">+     - /path/on/host/deezer-dl:/music/deezer-dl   # writable</span></pre>
+            </div>
+          </li>
+        </ol>
+
+        <h3 class="help-h">What changed</h3>
+        <ul class="help-list">
+          <li><strong>Download anything from the app.</strong> A track, a whole album, or an artist's discography, from search, a playlist, or the Releases view. Files are tagged with the cover included.</li>
+          <li><strong>See where each download is.</strong> The button shows <span class="chip chip--info">Queued</span>, then <span class="chip chip--info">42%</span> or <span class="chip chip--info">3/14</span>, then <span class="chip chip--ok">Downloaded</span>. The <b>Activity</b> cell shows the details.</li>
+          <li><strong>Retry what failed.</strong> When some tracks of an album fail, the button shows <span class="chip chip--partial">13/14 saved</span>: click it again to fetch only the missing ones.</li>
+          <li><strong>Quality follows your account.</strong> Premium downloads FLAC, a free account MP3 128 kbps. With a free account, add the arl of a premium one in Settings for the downloads only: your mixes keep using the first.</li>
+          <li><strong>Explicit stays explicit.</strong> Explicit tracks and albums are marked <span class="explicit-mark">E</span>, and you get exactly the version you clicked. When a release is not available in your account's country, the app may take another release of the same recording, but never the censored one in place of the explicit one.</li>
+          <li><strong>Your account's country.</strong> <b>Settings → Deezer account</b> shows the country next to the account badge: Deezer serves the catalogue of that country, which decides what can be downloaded.</li>
+          <li><strong>New setting.</strong> <b>Settings → Performance → Download threads</b> sets how many downloads run at the same time.</li>
+        </ul>
+
+        <p class="help-reopen">Reopen this window anytime with <b>Help</b> in the top bar.</p>
+      </div>
+
+      <div class="help-body" data-help-panel="guide" hidden>
+        <h3 class="help-h">Getting started</h3>
+        <ol class="help-guide">
+          <li><strong>Settings.</strong> Check the music folders and the Navidrome paths, make sure the line under <b>Downloads</b> is green, and connect your Deezer account.</li>
+          <li><strong>Index your library.</strong> <b>Settings → Library index → Rebuild from scratch</b> the first time; afterwards <b>Refresh library</b> only reads new files.</li>
+          <li><strong>Add playlists.</strong> Paste a Deezer playlist link in <b>Playlists</b>, or follow your Flow and daily mixes with <b>Mixes → Choose mixes</b>.</li>
+          <li><strong>Scan.</strong> Open a playlist and run a <b>Quick scan</b> (only re-checks what is missing) or a <b>Full scan</b>. It writes the <code>.m3u8</code> Navidrome imports.</li>
+          <li><strong>Download what is missing.</strong> <b>Download missing</b> in the playlist, or <b>Download</b> on a single row. Then <b>Refresh library</b> and a <b>Quick scan</b> so the new files count as <i>In library</i>.</li>
+          <li><strong>Automate.</strong> <b>Automation</b> in the playlist scans it on a schedule and can download what is missing each time.</li>
+        </ol>
+
+        <h3 class="help-h">If something goes wrong</h3>
+        <dl class="help-faq">
+          <dt>A download fails</dt>
+          <dd>Hover the <b>Retry</b> button or look in <b>Activity</b> for the reason. "Not available for your Deezer account" means the track is not in your account's catalogue: its country is shown in <b>Settings → Deezer account</b>.</dd>
+          <dt>"Only the censored version is available"</dt>
+          <dd>The explicit version is not in your account's catalogue (its country is shown in <b>Settings → Deezer account</b>). The app refuses to save the censored one in its place.</dd>
+          <dt>Only MP3 128 kbps</dt>
+          <dd>The account is free. Add a premium account's arl in <b>Settings → Deezer account</b>.</dd>
+          <dt>Downloaded tracks still show as Missing</dt>
+          <dd>Run <b>Refresh library</b>, then a <b>Quick scan</b> of the playlist.</dd>
+          <dt>A track matched the wrong file</dt>
+          <dd>Click <b>Fix</b> on its row and pick the right file, or choose <b>Not in my library</b>.</dd>
+          <dt>The arl stopped working</dt>
+          <dd>Deezer revokes it when you sign out of deezer.com. Copy a fresh one.</dd>
+        </dl>
+      </div>
+
+      <footer class="help-foot">
+        <a class="btn btn--ghost btn--sm" href="https://github.com/CatChow0/deezer-to-navidrome#downloads" target="_blank" rel="noopener">Full documentation</a>
+        <div>
+          <a class="btn btn--ghost btn--sm" href="{{ url_for('system.config_view') }}" data-view-link="settings" data-help-settings>Open Settings</a>
+          <button type="button" class="btn btn--sm" data-overlay-close>Got it</button>
+        </div>
+      </footer>
+    </div>
+  </section>
+</div>

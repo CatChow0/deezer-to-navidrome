@@ -2,7 +2,7 @@
 // you already own. The feed is built on the server and loaded the first time
 // the view is shown.
 
-import { escapeHtml, fetchJSON, on, toast } from './core.js';
+import { escapeHtml, explicitMark, fetchJSON, on, toast } from './core.js';
 import { runServerTask } from './activity.js';
 import { downloadButton } from './downloads.js';
 import { playAlbumButton } from './player.js';
@@ -74,7 +74,7 @@ function releaseRow(release, today) {
     <article class="result release" data-release-id="${escapeHtml(release.id)}">
       <div class="result-cover">${release.cover ? `<img src="${escapeHtml(release.cover)}" alt="" loading="lazy">` : ''}</div>
       <div>
-        <p class="result-title">${escapeHtml(release.title)}</p>
+        <p class="result-title">${escapeHtml(release.title)}${explicitMark(release)}</p>
         <p class="result-sub">${escapeHtml(release.artist)}${release.featured ? `<span class="release-with"> with ${escapeHtml(followedOf(release).map(a => a.name).join(', '))}</span>` : ''}</p>
         <p class="release-meta">${escapeHtml(type)}${tracks}, ${escapeHtml(dateFormat.format(parseDate(release.release_date)))}</p>
         <div class="chips">${ownedChip(release)}</div>

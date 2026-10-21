@@ -42,6 +42,12 @@ def env_host_to_navidrome_roots(name: str, default=None):
     return mappings
 
 
+# The release notes shown once in the Help window. A new install starts with
+# them read; an install upgraded from before the built-in downloader still has
+# the old downloader address in its config.json, which is how it is spotted.
+WHATS_NEW_ID = "1.11"
+LEGACY_DOWNLOADER_KEY = "deezer_dl_base_url"
+
 DEFAULT_CONFIG = {
     "scan_dirs": env_list("SCAN_DIRS", ["/music/deezer-dl", "/music/library"]),
     "playlists_base_dir": os.environ.get("PLAYLISTS_BASE_DIR", "/music/playlists").strip()
@@ -56,14 +62,15 @@ DEFAULT_CONFIG = {
             {"host": "/music/library", "navidrome": "/music"},
         ],
     ),
-    "deezer_dl_dir": os.environ.get("DEEZER_DL_DIR", "").strip()
-    or "https://deezerdl.example.com",
+    # Empty: the deezer-dl folder of the music folders (see deezer_dl.download_dir).
+    "deezer_dl_dir": os.environ.get("DEEZER_DL_DIR", "").strip(),
     "library_workers_per_dir": int(os.environ.get("LIBRARY_WORKERS_PER_DIR", "2") or "2"),
     "match_workers": int(os.environ.get("MATCH_WORKERS", "4") or "4"),
     # Threads downloading from Deezer at the same time.
     "download_workers": int(os.environ.get("DOWNLOAD_WORKERS", "4") or "4"),
     # Hours between automatic refreshes of the release feed; 0 = manual only.
     "release_refresh_hours": 24,
+    "notes_seen": WHATS_NEW_ID,
 }
 
 # Background tasks. Each keeps the full list of its events so any number of
@@ -231,6 +238,40 @@ def load_config():
 def save_config(cfg):
     ensure_dirs()
     CONFIG_FILE.write_text(json.dumps(cfg, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _raw_config():
+    """config.json as saved, without the defaults filled in."""
+    try:
+        data = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def whats_new_state():
+    """Whether the Help window opens on its own, and if the install still used
+    the separate downloader before this version."""
+    raw = _raw_config()
+    legacy = LEGACY_DOWNLOADER_KEY in raw
+    return {
+        "id": WHATS_NEW_ID,
+        "legacy": legacy,
+        "show": legacy or raw.get("notes_seen", WHATS_NEW_ID) != WHATS_NEW_ID,
+    }
+
+
+def mark_whats_new_seen():
+    cfg = load_config()
+    cfg.pop(LEGACY_DOWNLOADER_KEY, None)
+    cfg["notes_seen"] = WHATS_NEW_ID
+    save_config(cfg)
+
+
+def kept_config_keys():
+    """Keys the settings form does not edit but must not lose on save."""
+    raw = _raw_config()
+    return {key: raw[key] for key in ("notes_seen", LEGACY_DOWNLOADER_KEY) if key in raw}
 
 
 def get_preview_state_path():

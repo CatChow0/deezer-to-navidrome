@@ -13,15 +13,30 @@ const HELP = `
 
 // The badge says what the account can do: Premium, Free, or Free with the
 // downloads running on a premium account.
-function planBadge(status) {
+export function planBadge(status) {
   const downloads = status.downloads || {};
+  let plan = '<span class="chip">Free account</span>';
   if (status.premium) {
-    return '<span class="chip chip--ok">Premium account</span>';
+    plan = '<span class="chip chip--ok">Premium account</span>';
+  } else if (downloads.has_premium_arl && downloads.premium) {
+    plan = '<span class="chip chip--partial">Free account · downloads in Premium</span>';
   }
-  if (downloads.has_premium_arl && downloads.premium) {
-    return '<span class="chip chip--partial">Free account · downloads in Premium</span>';
+  return `${plan} ${countryBadge(status.country)}`;
+}
+
+function countryName(code) {
+  try {
+    return new Intl.DisplayNames(['en'], { type: 'region' }).of(code) || code;
+  } catch (_) {
+    return code;
   }
-  return '<span class="chip">Free account</span>';
+}
+
+// Deezer serves the catalogue of the account's subscription country: what can
+// be downloaded, and in which version, depends on it.
+function countryBadge(code) {
+  if (!code) return '';
+  return `<span class="chip chip--info" title="Deezer serves the catalogue of this account's country (${escapeHtml(code)})">${escapeHtml(countryName(code))}</span>`;
 }
 
 const FORMAT_LABEL = { FLAC: 'FLAC', MP3_320: 'MP3 320', MP3_128: 'MP3 128' };
@@ -33,7 +48,8 @@ function downloadNote(status) {
     return `<p class="muted">The downloads use this account, in ${escapeHtml(format || 'the best quality it allows')}.</p>`;
   }
   if (downloads.has_premium_arl && downloads.premium) {
-    return `<p class="muted">The downloads use your second, premium account, in ${escapeHtml(format || 'the best quality it allows')}.</p>`;
+    const other = downloads.country && downloads.country !== status.country ? `, with the catalogue of ${escapeHtml(countryName(downloads.country))}` : '';
+    return `<p class="muted">The downloads use your second, premium account, in ${escapeHtml(format || 'the best quality it allows')}${other}.</p>`;
   }
   return '<p class="muted">A free account only downloads MP3_128. Add a premium account below to get FLAC.</p>';
 }

@@ -61,6 +61,7 @@ def _artist_releases(artist, since):
                     "cover": album.get("cover_medium") or "",
                     "release_date": released,
                     "record_type": album.get("record_type") or "album",
+                    "explicit": bool(album.get("explicit_lyrics")),
                 })
         index += len(data)
         if not data or index >= int(page.get("total") or 0) or "next" not in page:

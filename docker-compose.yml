@@ -1,5 +1,3 @@
-version: "3.8"
-
 services:
   deezer-to-navidrome:
     image: catchow/deezer-to-navidrome:latest
@@ -17,7 +15,6 @@ services:
       - "8080:8080"
 
     environment:
-      SECRET_KEY: "change-this-to-a-random-string"
       DATA_DIR: "/data"
 
       # Music library paths (comma-separated)
@@ -45,21 +42,31 @@ services:
       # threads run on separate cores. Set to your Docker CPU count. Default: 4.
       MATCH_WORKERS: "4"
 
+      # Downloads from Deezer running at the same time. Deezer throttles the
+      # requests, so a low number is safer. Default: 4.
+      # DOWNLOAD_WORKERS: "4"
+
       # Optional: the sign-in account (else the first visit asks you to create it),
       # and the API token CatBoard uses (else create one in Settings).
       # APP_USERNAME: "admin"
       # APP_PASSWORD: "a-long-password"
       # API_TOKEN: "a-long-random-token"
 
-      # Optional: session cookie (arl) of the Deezer account used for your mixes
-      # and the release feed. You can also paste it in Settings instead.
+      # Optional: session cookie (arl) of the Deezer account used for the
+      # downloads, your mixes and the release feed. You can also paste it in
+      # Settings instead. A free account downloads MP3 128 kbps: add the arl of
+      # a premium account for FLAC (used only for the downloads).
       # DEEZER_ARL: ""
+      # DEEZER_ARL_PREMIUM: ""
+
+      # Optional: session signing key (else a random one is kept in /data).
+      # SECRET_KEY: ""
 
     volumes:
       # Persistent data (config, cache, covers)
       - ./data:/data
 
-      # Music library directories
+      # Music library directories. deezer-dl must be writable: downloads go there.
       - /path/on/host/deezer-dl:/music/deezer-dl
       - /path/on/host/library:/music/library
 

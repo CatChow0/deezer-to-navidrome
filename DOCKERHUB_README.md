@@ -1,9 +1,9 @@
 # Deezer to Navidrome
 
-**Convert Deezer playlists to Navidrome-compatible `.m3u8` playlists by matching them against your local music library.**
+**Turn your Deezer playlists into Navidrome `.m3u8` playlists, match them against your local library, and download what is missing straight from Deezer.**
 
-[![Version](https://img.shields.io/badge/version-1.10.1-blue)](https://hub.docker.com/r/catchow/deezer-to-navidrome)
-[![Python 3.11](https://img.shields.io/badge/python-3.11-blue)](https://www.python.org/)
+[![Version](https://img.shields.io/badge/version-1.11.0-blue)](https://hub.docker.com/r/catchow/deezer-to-navidrome)
+[![Python 3](https://img.shields.io/badge/python-3-blue)](https://www.python.org/)
 [![Flask](https://img.shields.io/badge/flask-web%20app-brightgreen)](https://flask.palletsprojects.com/)
 [![GitHub](https://img.shields.io/badge/GitHub-source%20%26%20full%20docs-black)](https://github.com/CatChow0/deezer-to-navidrome)
 
@@ -13,21 +13,21 @@
 
 ## What it does
 
-- Fetches your Deezer playlists and matches each track against your local music files
-- Generates `.m3u8` playlists that Navidrome auto-imports
-- Downloads missing tracks via an optional [Deezer Downloader](https://github.com/kmille/deezer-downloader) integration
-- **Auto-scan playlists** on configurable intervals with optional auto-download
-- **Library Check** — see which tracks/albums/artists you already own while browsing Deezer
-- Detects and manages library duplicates (remix, live, remaster, etc.)
-- Fast matching engine: inverted title index + `rapidfuzz` (C++ GIL-releasing) + multi-threaded
+- Matches each track of your Deezer playlists and mixes (Flow, "made for you") against your local files
+- Generates `.m3u8` playlists that Navidrome imports
+- **Downloads missing tracks directly from Deezer** — tracks, albums or whole discographies, decrypted and tagged by the app itself
+- **Automation** — scan playlists on a schedule and download what is missing
+- **Release feed** — new albums, EPs and singles of your favorite Deezer artists, with what you already own
+- **Library check** — see which tracks, albums and artists you own while browsing Deezer
+- **Manual matching** — fix a wrong match by picking the file yourself
+- Finds library duplicates (remix, live, remaster…) and quarantines or deletes them
+- Sign-in, API token, and a webhook for [CatBoard](https://github.com/CatChow0/catboard)
 
 ---
 
 ## Quick Start
 
 ```yaml
-version: "3.8"
-
 services:
   deezer-to-navidrome:
     image: catchow/deezer-to-navidrome:latest
@@ -38,153 +38,133 @@ services:
     ports:
       - "8080:8080"
     environment:
-      SECRET_KEY: "change-this-to-a-random-string"
       DATA_DIR: "/data"
       SCAN_DIRS: "/music/deezer-dl,/music/library"
       PLAYLISTS_BASE_DIR: "/music/playlists"
       HOST_TO_NAVIDROME_ROOT: "/music/deezer-dl:/deezer-dl,/music/library:/music"
-      # DEEZER_DL_DIR: "/music/deezer-dl"   # optional
       LIBRARY_WORKERS_PER_DIR: "2"   # 2=HDD  4=RAID  8=SSD
       MATCH_WORKERS: "4"             # set to your Docker CPU count
+      # DEEZER_ARL: ""               # or paste it in Settings
     volumes:
       - ./data:/data
-      - /path/on/host/deezer-dl:/music/deezer-dl
+      - /path/on/host/deezer-dl:/music/deezer-dl   # downloads land here (writable)
       - /path/on/host/library:/music/library
       - /path/on/host/playlists:/music/playlists
 ```
 
 ```bash
 docker compose up -d
-# Open http://localhost:8080
+# Open http://localhost:8080, create your account, then connect Deezer in Settings
 ```
+
+---
+
+## Downloads
+
+Downloads use the `arl` cookie of a Deezer account (**Settings → Deezer account**, or `DEEZER_ARL`).
+
+| Account | Badge | Format |
+|---|---|---|
+| Premium (HiFi) | `Premium` | FLAC |
+| Premium, high quality only | `Premium` | MP3 320 kbps |
+| Free | `Free` | MP3 128 kbps |
+| Free + premium ARL for downloads | `Free · downloads in Premium` | FLAC |
+
+With a free account, Settings offers a second field for a **premium** ARL used only for downloads; your mixes and release feed keep the first account.
+
+Files go to the downloads folder: the music folder named `deezer-dl` by default, or `DEEZER_DL_DIR`. Albums go in `albums/Artist - Album/`, single tracks in `songs/`. **Settings → Downloads** shows the folder actually used and warns if it is missing or read-only.
+
+Deezer serves the catalogue of the account's country (shown in Settings). The version downloaded is exactly the one you clicked: explicit tracks and albums are marked **E**, and the app never replaces an explicit track with its censored version.
+
+Each download shows its progress on its button (*Queued* → `42%` or `3/14` → *Downloaded*) and in the **Activity** cell. A partly failed album can be retried; files already saved are kept.
+
+**Upgrading from a version before 1.10?** The separate `kmille2/deezer-downloader` container is no longer needed: remove it and `DEEZER_DL_BASE_URL`, and mount the `deezer-dl` folder (writable) in this container. The app opens a *What's new* window on the first visit that checks this for you; the **Help** button reopens it.
+
+> The decryption and tagging code is adapted from [deezer-downloader](https://github.com/kmille/deezer-downloader) by kmille, under the MIT licence (see LICENSE in the source repository).
 
 ---
 
 ## Environment Variables
 
-> These are read **once on first start** to generate `config.json`. After that, use the **Config** page in the UI — no container restart needed.
+> Folder and performance variables are read **on first start** to create `config.json`; then use **Settings** (no restart needed). Credentials are read on every start.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `SECRET_KEY` | random, kept in `secrets.json` | Flask session key. |
-| `APP_USERNAME` / `APP_PASSWORD` | — | The sign-in account. Without them, the first visit asks you to create it. |
-| `API_TOKEN` | — | Token other apps (CatBoard) send as `Authorization: Bearer`; else create one in Settings. |
-| `DISABLE_AUTH` | `false` | `true` turns sign-in off (a reverse proxy already asks for a login). |
-| `COOKIE_SECURE` | `false` | `true` makes the session cookie HTTPS-only. |
-| `DATA_DIR` | `/data` | Persistent directory for config, cache, covers. **Must be a volume.** |
-| `SCAN_DIRS` | — | Comma-separated music directories to scan. |
-| `PLAYLISTS_BASE_DIR` | — | Where `.m3u8` files are written. |
-| `HOST_TO_NAVIDROME_ROOT` | — | Path mappings `container_path:navidrome_path` (comma-separated). |
-| `DEEZER_DL_DIR` | — | Optional: where the downloads are written. |
-| `LIBRARY_WORKERS_PER_DIR` | `2` | Threads per scan directory. `2`=HDD · `4`=RAID · `8`=SSD/NVMe |
-| `MATCH_WORKERS` | `4` | Parallel matching threads. Set to your CPU count. |
+| `DATA_DIR` | `/data` | Config, index, secrets. **Must be a volume.** |
+| `SCAN_DIRS` | `/music/deezer-dl,/music/library` | Music folders to index, comma-separated |
+| `PLAYLISTS_BASE_DIR` | `/music/playlists` | Where `.m3u8` files are written |
+| `HOST_TO_NAVIDROME_ROOT` | `/music/deezer-dl:/deezer-dl,/music/library:/music` | Path mappings `app_path:navidrome_path` |
+| `DEEZER_DL_DIR` | empty | Downloads folder; empty = the `deezer-dl` music folder |
+| `LIBRARY_WORKERS_PER_DIR` | `2` | Scan threads per folder. `2`=HDD · `4`=RAID · `8`=SSD/NVMe |
+| `MATCH_WORKERS` | `4` | Matching threads. Set to your CPU count |
+| `DOWNLOAD_WORKERS` | `4` | Downloads at the same time |
+| `DEEZER_ARL` | — | Deezer account cookie (downloads, mixes, release feed) |
+| `DEEZER_ARL_PREMIUM` | — | Premium account cookie, used only for downloads |
+| `SECRET_KEY` | random, kept in `secrets.json` | Session key |
+| `APP_USERNAME` / `APP_PASSWORD` | — | The sign-in account; else the first visit asks you to create it |
+| `API_TOKEN` | — | Token for other apps (CatBoard); else create one in Settings |
+| `DISABLE_AUTH` | `false` | `true` turns sign-in off (a reverse proxy already asks for a login) |
+| `COOKIE_SECURE` | `false` | `true` makes the session cookie HTTPS-only |
 
 ### Path Mapping (`HOST_TO_NAVIDROME_ROOT`)
 
-The app and Navidrome see the same files under different paths. Map them so generated M3U8s use paths Navidrome understands.
+The app and Navidrome see the same files under different paths. Map them so generated M3U8s use paths Navidrome understands — including the downloads folder.
 
 ```
 HOST_TO_NAVIDROME_ROOT=/music/deezer-dl:/deezer-dl,/music/library:/music
 
-App sees:       /music/deezer-dl/Artist/Song.mp3
-M3U8 contains:  /deezer-dl/Artist/Song.mp3   ← what Navidrome sees
+App sees:       /music/deezer-dl/songs/Artist - Song.mp3
+M3U8 contains:  /deezer-dl/songs/Artist - Song.mp3   ← what Navidrome sees
 ```
 
 ---
 
 ## Volumes
 
-| Container path | Purpose | Must be persistent? |
-|----------------|---------|---------------------|
-| `/data` | Config, cache, covers, dedup choices | ✅ Yes |
-| `/music/*` | Your music library (read-only is fine) | — |
-| `/music/playlists` | Generated M3U8 output | ✅ Yes (shared with Navidrome) |
+| Container path | Purpose | Notes |
+|----------------|---------|-------|
+| `/data` | Config, index, secrets, dedup choices | ✅ Persistent and private (holds your Deezer cookies) |
+| `/music/deezer-dl` | Downloads | ✅ Writable, shared with Navidrome |
+| `/music/*` | Your music library | Read-only is fine unless you delete duplicates |
+| `/music/playlists` | Generated M3U8 output | ✅ Writable, shared with Navidrome |
 
 ---
 
 ## Typical Workflow
 
-1. **Config** → verify scan dirs and path mappings
-2. **Full rebuild** → scan library and build cache (~seconds to minutes depending on size)
-3. **Add playlist** → paste Deezer URL or playlist ID
-4. **Full Scan** → match tracks; generates `.m3u8` + `report.json` + `missing.txt`
-5. *(Optional)* **Enable Automation** → auto-scan and auto-download on a schedule per playlist
-6. *(Optional)* Download missing tracks, run **Incremental cache refresh**, then **Quick Scan**
-7. Navidrome auto-imports the `.m3u8` file
-
-### Automation
-
-Each playlist can be configured to auto-scan and optionally auto-download:
-- Set interval in minutes/hours/days
-- Visual badges on playlist cards ("Auto Scan", "Auto DL")
-- Next scan countdown displayed
+1. **Settings** → check music folders, Navidrome paths and the downloads folder; connect your Deezer account
+2. **Rebuild from scratch** → build the library index
+3. **Add a playlist** (URL or ID) or **Choose mixes**
+4. **Full scan** → match tracks; writes `.m3u8` + `report.json` + `missing.txt`
+5. **Download missing** → then **Refresh library** and **Quick scan**
+6. *(Optional)* **Automation** → scan on a schedule and download what is missing
+7. Navidrome imports the `.m3u8` file
 
 ### Scan modes
 
 | Button | Behaviour |
 |--------|-----------|
-| **Quick Scan** | Reuses cached matches; only re-matches unmatched/new tracks. Fast for mostly-matched playlists. |
-| **Full Scan** | Re-matches every track from scratch. Use after library changes or for first-time conversion. |
-
-### Library Check
-
-When searching Deezer, ownership indicators show:
-- **Tracks:** Green "Owned" badge if in library
-- **Albums:** Yellow (partial) or green (complete) badge with `owned/total tracks`
-- **Artists:** Yellow (partial) or green (complete) badge with `owned/total albums`
+| **Quick scan** | Keeps tracks already in your library; only re-checks missing and unchecked ones |
+| **Full scan** | Matches every track again. Use after reorganizing your library |
 
 ---
 
 ## Matching Engine
 
-Each Deezer track is scored against library candidates using five factors:
+1. **Artist first** — the Deezer main artist must match one of the file's artists (≥ 0.85; collaborations split, leading "The" ignored)
+2. **Title** — similarity ≥ 0.90, or ≥ 0.80 when durations are within 3 s
+3. **Ranking** — title 60 %, artist 25 %, album 5 %, plus duration (up to +0.10) and version flags (+0.05 same, −0.15 conflict such as live vs studio; remaster-only differences ignored)
 
-| Factor | Weight / bonus |
-|--------|---------------|
-| Title similarity | 62% |
-| Artist similarity | 25% |
-| Album similarity | 8% |
-| Duration proximity | up to +0.10 / -0.08 |
-| Version flag match | +0.08 exact match / -0.18 conflict |
-
-**Version flags** are detected from raw tag values including parenthetical content (e.g. `"Song (Live Version)"` → `live`, `"Track [Radio Edit]"` → `radio_edit`):
-
-| Flag | Keywords |
-|------|---------|
-| `remix` | remix, rmx |
-| `live` | live |
-| `instrumental` | instrumental, instr |
-| `remaster` | remaster, remastered |
-| `radio_edit` | radio edit, radio mix, radio version |
-| `extended` | extended, extended mix, extended version |
-| `edit` | club edit, single edit, album edit, special edit |
-| `session` | session, garage session, studio session |
-| `original` | original, original version, original mix |
-| `acapella` | acapella, a cappella |
-| `demo` | demo |
-| `alt` | alternate, alt version, alternative |
-| `bonus` | bonus, bonus track |
-
-> A version conflict (e.g. Deezer track is a remix but library file is the original) applies a **-0.18** score penalty, ensuring the correct variant wins when both are available.
+Similarities use `rapidfuzz` (C++, GIL-releasing), so matching threads run in parallel. A match fixed by hand is kept by later scans.
 
 ---
 
 ## Deduplication
 
-- Scans library cache and groups files by artist + album + title + version flags
-- Ranks each group by quality score (codec > file size > tag completeness)
-- Lets you mark which files to **keep**, then quarantine or permanently delete the rest
-- Decisions are **persistent** — saved in `dedup_choices.json` and remembered across restarts
-
----
-
-## Performance Tips
-
-- Set `cpus` in `docker-compose.yml` to your actual core count — Docker may throttle to 1 core by default
-- Set `MATCH_WORKERS` to your CPU count for parallel matching
-- Set `LIBRARY_WORKERS_PER_DIR` based on storage type (`2` HDD · `8` SSD)
-- Use **Quick Scan** for playlists that are already mostly matched
-- Use **Incremental cache refresh** instead of full rebuild after adding new files
+- Groups files by artist + album + title + version flags
+- Ranks each group by quality (codec > file size > tag completeness)
+- You check the files to **keep**, then quarantine or delete the rest
+- Decisions are **persistent** in `dedup_choices.json`
 
 ---
 
@@ -192,22 +172,26 @@ Each Deezer track is scored against library candidates using five factors:
 
 | File | Purpose |
 |------|---------|
-| `config.json` | App configuration including automation settings |
-| `music_library_cache.json` | Indexed library metadata |
-| `playlist_preview_state.json` | Per-playlist match cache (enables Quick Scan) |
-| `dedup_report.json` | Latest dedup analysis |
-| `dedup_choices.json` | **Persistent** user dedup decisions |
-| `covers/` | Cached playlist artwork |
+| `config.json` | App configuration |
+| `secrets.json` | Password hash, API token, Deezer cookies, webhook URL |
+| `music_library_cache.json` | Library index |
+| `deezer_playlist_ids.json` | Playlists, mixes and their automation settings |
+| `playlist_preview_state.json` | Per-playlist match results (enables Quick scan) |
+| `releases.json` / `release_prefs.json` | Release feed / muted artists |
+| `dedup_report.json` / `dedup_choices.json` | Latest duplicate analysis / persistent decisions |
+| `covers/` | Playlist artwork |
 | `dedup_quarantine/` | Quarantined duplicate files |
 
 ## Key API Endpoints
 
 | Endpoint | Description |
 |----------|-------------|
-| `/playlist/<id>/automation` | Get/set automation settings for a playlist |
-| `/automation/status` | Scheduler status for all playlists |
-| `/search/library-check` | Check if items exist in local library (API token accepted) |
-| `/api/releases` | Release feed of the favorite Deezer artists (API token accepted) |
+| `POST /deezer-dl/download/start` | Queue a track, album or discography download |
+| `GET /deezer-dl/queue` | Download queue state |
+| `POST /playlist/<id>/automation` | Save a playlist's automation settings |
+| `GET /api/scheduler/status` | Next automatic scan of each playlist |
+| `POST /search/library-check` | Which items exist in the local library (API token accepted) |
+| `GET /api/releases` | Release feed of the favorite Deezer artists (API token accepted) |
 
 ## CatBoard
 
