@@ -81,18 +81,19 @@ def _run_playlist(pl, cfg):
         return
 
     if pl.get("auto_download_after_scan"):
-        base_url = (cfg.get("deezer_dl_base_url") or "").rstrip("/")
-        if base_url:
+        from core import deezer_dl
+
+        if deezer_dl.download_arl():
             try:
-                n = submit_missing_downloads(pid, base_url)
+                n = submit_missing_downloads(pid)
                 if n:
-                    summary += f", {n} sent to Deezer Downloader"
-                    logger.info(f"[auto-scan] Submitted {n} download(s) for playlist {pid}")
+                    summary += f", {n} queued for download"
+                    logger.info(f"[auto-scan] Queued {n} download(s) for playlist {pid}")
             except Exception as e:
                 summary += ", download request failed"
                 logger.error(f"[auto-scan] Download submit failed for {pid}: {e}")
         else:
-            logger.warning("[auto-scan] auto_download_after_scan enabled but deezer_dl_base_url is not set")
+            logger.warning("[auto-scan] auto_download_after_scan enabled but no Deezer account is connected")
 
     push_task_event(task_id, f"Done: {summary}", stage="done", progress=100, done=True)
 

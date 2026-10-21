@@ -13,8 +13,41 @@ account_bp = Blueprint("account", __name__)
 
 def _status():
     if not load_secret("deezer_arl"):
-        return {"connected": False, "name": "", "error": None, "from_env": False}
-    return {**account_status(), "from_env": secret_from_env("deezer_arl")}
+        return {
+            "connected": False,
+            "name": "",
+            "error": None,
+            "from_env": False,
+            "premium": False,
+            "downloads": _download_status(),
+        }
+    return {**account_status(), "from_env": secret_from_env("deezer_arl"), "downloads": _download_status()}
+
+
+def _download_status():
+    """What the account used for the downloads can do.
+
+    The downloads use their own ARL when there is one: a free account only
+    gets MP3_128, a premium one gets FLAC."""
+    from core import deezer_dl
+
+    premium_arl = load_secret("deezer_arl_premium")
+    if premium_arl:
+        info = deezer_dl.account_info()
+        return {
+            "has_premium_arl": True,
+            "premium": bool(info.get("premium")),
+            "format": info.get("format"),
+            "error": info.get("error"),
+        }
+    # No second account: the downloads use the main one.
+    info = deezer_dl.account_info()
+    return {
+        "has_premium_arl": False,
+        "premium": bool(info.get("premium")),
+        "format": info.get("format"),
+        "error": info.get("error"),
+    }
 
 
 @account_bp.get("/api/deezer/account")
@@ -39,6 +72,45 @@ def connect_account_route():
 def disconnect_account_route():
     save_secret("deezer_arl", None)
     forget_session()
+    return jsonify({"ok": True, **_status()})
+
+
+@account_bp.post("/api/deezer/premium-account")
+def connect_premium_route():
+    """Connects the second account, used for the downloads when the first one
+    is free. It must be a premium account: a free one only gets MP3_128."""
+    arl = str((request.get_json(silent=True) or {}).get("arl") or "").strip()
+    if not arl:
+        return jsonify({"ok": False, "error": "Paste the ARL value first"}), 400
+
+    from core.deezer_account import DeezerAccountError, DeezerSession
+
+    try:
+        session = DeezerSession(arl)
+    except DeezerAccountError as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"Could not reach Deezer: {e}"}), 502
+
+    if not session.is_premium():
+        return jsonify({
+            "ok": False,
+            "error": "This account is free. It would only download MP3_128; the downloads need a premium account.",
+        }), 400
+
+    save_secret("deezer_arl_premium", arl)
+    from core import deezer_dl
+
+    deezer_dl.forget_sessions()
+    return jsonify({"ok": True, **_status()})
+
+
+@account_bp.delete("/api/deezer/premium-account")
+def disconnect_premium_route():
+    save_secret("deezer_arl_premium", None)
+    from core import deezer_dl
+
+    deezer_dl.forget_sessions()
     return jsonify({"ok": True, **_status()})
 
 

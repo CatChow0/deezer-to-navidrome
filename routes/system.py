@@ -12,8 +12,6 @@ from flask import (
     send_from_directory,
     url_for,
 )
-import requests
-
 from core.config import (
     COVERS_DIR,
     LIBRARY_CACHE_FILE,
@@ -28,11 +26,12 @@ from core.config import (
     create_task,
     follow_task,
     list_tasks,
-    load_config,
     push_task_event,
     save_config,
 )
 from core.version import get_app_version, get_latest_available_version
+from core import deezer_dl
+from core import download_queue
 from core import scheduler
 from routes.playlists import render_app
 
@@ -119,7 +118,7 @@ def config_view():
         playlist_ids_file = request.form.get("playlist_ids_file", "").strip()
         library_cache_file = request.form.get("library_cache_file", "").strip()
         preview_state_file = request.form.get("preview_state_file", "").strip()
-        deezer_dl_base_url = request.form.get("deezer_dl_base_url", "").strip().rstrip("/")
+        deezer_dl_dir = request.form.get("deezer_dl_dir", "").strip()
 
         mapping_hosts = request.form.getlist("mapping_host[]")
         mapping_navs = request.form.getlist("mapping_navidrome[]")
@@ -134,6 +133,7 @@ def config_view():
         library_workers_per_dir = max(1, int(request.form.get("library_workers_per_dir", "2") or "2"))
         match_workers = max(1, int(request.form.get("match_workers", "4") or "4"))
         release_refresh_hours = max(0, int(request.form.get("release_refresh_hours", "24") or "24"))
+        download_workers = max(1, int(request.form.get("download_workers", "4") or "4"))
 
         cfg = {
             "scan_dirs": scan_dirs,
@@ -142,10 +142,11 @@ def config_view():
             "library_cache_file": library_cache_file or str(LIBRARY_CACHE_FILE),
             "preview_state_file": preview_state_file or str(PREVIEW_STATE_FILE),
             "host_to_navidrome_roots": mappings,
-            "deezer_dl_base_url": deezer_dl_base_url or "https://deezerdl.example.com",
+            "deezer_dl_dir": deezer_dl_dir,
             "library_workers_per_dir": library_workers_per_dir,
             "match_workers": match_workers,
             "release_refresh_hours": release_refresh_hours,
+            "download_workers": download_workers,
         }
         save_config(cfg)
         scheduler.restart()
@@ -223,47 +224,33 @@ def clear_dedup_choices_route():
     return redirect(url_for("system.config_view"))
 
 
+def _finished(task_id, message):
+    """Builds the callback that closes a download task when the queue is done."""
+
+    def done(_task, _result, error):
+        if error:
+            push_task_event(task_id, f"Download failed: {error}", stage="error", done=True, error=True)
+        else:
+            push_task_event(task_id, message, stage="done", progress=100, done=True)
+
+    return done
+
+
 @system_bp.route("/deezer-dl/track/<track_id>", methods=["POST"])
 def deezer_dl_track(track_id):
     if not track_id.isdigit():
         return jsonify({"error": "invalid track id"}), 400
-    cfg = load_config()
-    base_url = (cfg.get("deezer_dl_base_url") or "").rstrip("/")
-    if not base_url:
-        return jsonify({"error": "deezer_dl_base_url not configured"}), 400
+    if not deezer_dl.download_arl():
+        return jsonify({"error": "No Deezer account connected. Add your ARL in Settings."}), 400
 
     task_id = create_task(f"Download track {track_id}", kind="download", visible=False)
 
     def run():
         try:
-            push_task_event(task_id, message=f"Sending DL request for track {track_id}…", stage="dl", progress=0)
-            payload = {
-                "type": "track",
-                # Deezer Downloader rejects a string ID ("music_id must be a integer").
-                "music_id": int(track_id),
-                "add_to_playlist": False,
-                "create_zip": False,
-            }
-            resp = requests.post(f"{base_url}/download", json=payload, timeout=60)
-            if resp.status_code != 200:
-                push_task_event(
-                    task_id,
-                    message=f"Error {resp.status_code}: {resp.text[:200]}",
-                    stage="dl",
-                    done=True,
-                    error=True,
-                )
-                return
-            data = resp.json()
-            push_task_event(
-                task_id,
-                message=f"Download started: {data.get('file') or data.get('message') or 'OK'}",
-                stage="dl",
-                progress=100,
-                done=True,
-            )
+            push_task_event(task_id, message=f"Downloading track {track_id}…", stage="dl", progress=0)
+            download_queue.enqueue_download("track", track_id, on_done=_finished(task_id, f"Downloaded track {track_id}"))
         except Exception as e:
-            push_task_event(task_id, message=f"Exception: {e}", stage="dl", done=True, error=True)
+            push_task_event(task_id, message=f"Download failed: {e}", stage="error", done=True, error=True)
 
     threading.Thread(target=run, daemon=True).start()
     return jsonify({"task_id": task_id})
@@ -271,16 +258,11 @@ def deezer_dl_track(track_id):
 
 @system_bp.get("/deezer-dl/queue")
 def deezer_dl_queue():
-    cfg = load_config()
-    base_url = (cfg.get("deezer_dl_base_url") or "").rstrip("/")
-    if not base_url:
-        return jsonify({"error": "deezer_dl_base_url not configured"}), 400
-    try:
-        resp = requests.get(f"{base_url}/queue", timeout=30)
-        resp.raise_for_status()
-    except Exception as e:
-        return jsonify({"error": f"Error calling /queue: {e}"}), 502
-    return jsonify(resp.json())
+    """The downloads in progress and the ones already done.
+
+    Same shape as the queue of the separate downloader, so the pages reading
+    it did not have to change."""
+    return jsonify(download_queue.queue_snapshot())
 
 
 @system_bp.post("/deezer-dl/download/start")
@@ -288,35 +270,20 @@ def deezer_dl_download_start():
     data = request.get_json(silent=True) or {}
     download_type = str(data.get("type") or "").strip().lower()
     music_id = str(data.get("music_id") or "").strip()
-    if download_type not in {"track", "album", "artist"}:
+    if download_type not in {"track", "album"}:
         return jsonify({"error": "invalid type"}), 400
     if not music_id.isdigit():
         return jsonify({"error": "invalid music_id"}), 400
-
-    cfg = load_config()
-    base_url = (cfg.get("deezer_dl_base_url") or "").rstrip("/")
-    if not base_url:
-        return jsonify({"error": "deezer_dl_base_url not configured"}), 400
+    if not deezer_dl.download_arl():
+        return jsonify({"error": "No Deezer account connected. Add your ARL in Settings."}), 400
 
     task_id = create_task(f"Download {download_type} {music_id}", kind="download", visible=False)
 
     def runner():
         try:
             push_task_event(task_id, f"Starting download {download_type} {music_id}", stage="download", progress=0)
-            payload = {
-                "type": download_type,
-                "music_id": int(music_id),
-                "add_to_playlist": False,
-                "create_zip": False,
-            }
-            resp = requests.post(f"{base_url}/download", json=payload, timeout=60)
-            resp.raise_for_status()
-            push_task_event(
-                task_id,
-                f"Download started for {download_type} {music_id}",
-                stage="done",
-                progress=100,
-                done=True,
+            download_queue.enqueue_download(
+                download_type, music_id, on_done=_finished(task_id, f"Downloaded {download_type} {music_id}")
             )
         except Exception as e:
             push_task_event(task_id, f"Download error: {e}", stage="error", done=True, error=True)

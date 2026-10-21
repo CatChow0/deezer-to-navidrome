@@ -1,5 +1,6 @@
 Flask
 requests
 mutagen
+pycryptodome
 gunicorn
 rapidfuzz

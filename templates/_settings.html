@@ -56,13 +56,13 @@
     <div class="bento">
       <section class="cell span-6" aria-labelledby="dl-title">
         <div class="cell-head">
-          <h2 class="cell-title" id="dl-title">Deezer Downloader</h2>
+          <h2 class="cell-title" id="dl-title">Downloads</h2>
         </div>
         <div class="cell-body">
           <label class="form-field">
-            <span>Server address</span>
-            <input type="text" name="deezer_dl_base_url" value="{{ config.deezer_dl_base_url or '' }}" placeholder="https://dzr-dl.your-domain.com">
-            <small>Downloads are sent to this Deezer Downloader instance.</small>
+            <span>Folder for the downloads</span>
+            <input class="mono" type="text" name="deezer_dl_dir" value="{{ config.deezer_dl_dir or '' }}" placeholder="/music/deezer-dl">
+            <small>Albums go in a sub-folder, single tracks in <code>songs/</code>. Empty means the <code>deezer-dl</code> folder of your music folders.</small>
           </label>
         </div>
       </section>
@@ -82,6 +82,15 @@
               {% endfor %}
             </select>
             <small>Each folder gets its own pool. More than 2 on a spinning disk causes seeks and slows the scan down.</small>
+          </label>
+          <label class="form-field">
+            <span>Download threads</span>
+            <select name="download_workers">
+              {% for n in [1, 2, 4, 6, 8] %}
+              <option value="{{ n }}" {% if (config.download_workers | default(4) | int) == n %}selected{% endif %}>{{ n }}</option>
+              {% endfor %}
+            </select>
+            <small>How many tracks are fetched from Deezer at the same time. Deezer throttles the requests, so a low number is safer.</small>
           </label>
           <label class="form-field">
             <span>Playlist matching threads</span>
@@ -156,7 +165,7 @@
       <div class="cell-head">
         <div>
           <h2 class="cell-title" id="account-title">Deezer account</h2>
-          <p class="cell-sub">Used for your mixes and the release feed of your favorite artists. Independent from the account Deezer Downloader uses.</p>
+          <p class="cell-sub">Used for your mixes and the release feed of your favorite artists, and for the downloads unless you add a premium account below.</p>
         </div>
       </div>
       <div class="cell-body" data-account>

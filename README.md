@@ -426,8 +426,8 @@ services:
       # Format: /container/path:/navidrome/path
       HOST_TO_NAVIDROME_ROOT: "/music/library:/music,/music/other-library:/other-navidrome-library"
 
-      # Optional: Deezer Downloader service URL
-      DEEZER_DL_BASE_URL: "https://deezer-downloader.example.com"
+      # Optional: where the downloads are written
+      # DEEZER_DL_DIR: "/music/deezer-dl"
 
       # Threads per source directory during library scan.
       # Each SCAN_DIR gets its own isolated thread pool of this size.
@@ -533,15 +533,16 @@ HOST_TO_NAVIDROME_ROOT=/music/deezer-dl:/deezer-dl,/music/library:/music
 
 **Important:** Both the app and Navidrome must see the same music files under their respective mapped paths.
 
-#### `DEEZER_DL_BASE_URL`
+#### `DEEZER_DL_DIR`
 
-Base URL of the Deezer Downloader service (optional).
+Folder where the downloads are written (optional).
 
 ```env
-DEEZER_DL_BASE_URL=https://deezer-downloader.example.com
+DEEZER_DL_DIR=/music/deezer-dl
 ```
 
-If not configured, download buttons are hidden.
+Empty means the `deezer-dl` folder of your music folders. Albums go in a
+sub-folder named after the album, single tracks in `songs/`.
 
 #### `DATA_DIR`
 
@@ -879,20 +880,20 @@ docker exec deezer-to-navidrome ls -la /music
 
 ### Downloads not working
 
-**Issue:** Download buttons missing or downloads fail
+**Issue:** the downloads fail
 **Causes:**
-1. `DEEZER_DL_BASE_URL` not configured
-2. Downloader service unreachable
-3. Network connectivity issue
+1. no Deezer account connected (the ARL is what gives access to the files)
+2. the account is free: it only downloads MP3_128
+3. the track is not available in your country any more
+4. network connectivity issue
 
 **Fix:**
-```bash
-# Test downloader service
-curl https://deezer-downloader.example.com/health
-
-# Update config if URL changed
-# Go to /config and update DEEZER_DL_BASE_URL
-```
+- Go to **Settings → Deezer account** and check the badge: `Premium`, `Free`,
+  or `Free · downloads in Premium`.
+- A free account only gets MP3_128. Add a premium account in the same panel
+  to get FLAC.
+- The downloads are listed in the **Activity** cell, with the reason of each
+  failure.
 
 ### Library cache taking too long
 

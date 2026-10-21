@@ -10,24 +10,23 @@ from core.config import (
     push_task_row_update,
     get_preview_state,
 )
+from core import deezer_dl
+from core import download_queue
+from core.download_queue import enqueue_download
 from core.deezer import (
     playlist_title,
     apply_manual_match,
     build_playlist_preview,
     cache_cover,
     convert_playlist,
-    extract_queue_state,
-    extract_track_id_from_queue_item,
     fetch_deezer_playlist_info,
     load_playlists,
     mark_preview_rows_downloaded,
-    parse_queue_items,
     save_playlists,
 )
 from core.utils import extract_playlist_id
 from core import scheduler
 
-import requests
 import time
 
 playlists_bp = Blueprint("playlists", __name__)
@@ -193,10 +192,8 @@ def download_missing_start(playlist_id: str):
     if not missing_rows:
         return jsonify({"error": "No missing tracks to download"}), 400
 
-    cfg = load_config()
-    base_url = (cfg.get("deezer_dl_base_url") or "").rstrip("/")
-    if not base_url:
-        return jsonify({"error": "deezer_dl_base_url not configured"}), 400
+    if not deezer_dl.download_arl():
+        return jsonify({"error": "No Deezer account connected. Add your ARL in Settings."}), 400
 
     task_id = create_task(f"Download missing: {playlist_title(playlist_id)}", kind="download-missing", playlist_id=playlist_id)
 
@@ -206,97 +203,52 @@ def download_missing_start(playlist_id: str):
         _log_dl(f"missing track ids: {sorted(pending_ids)}")
         success_ids = set()
         failed_ids = set()
+        lock = threading.Lock()
+
+        def on_track_done(_task, _result, error):
+            track_id = str(_task.music_id)
+            with lock:
+                if error:
+                    failed_ids.add(track_id)
+                else:
+                    success_ids.add(track_id)
+                done = len(success_ids) + len(failed_ids)
+            if not error:
+                for row in mark_preview_rows_downloaded(playlist_id, {track_id}):
+                    push_task_row_update(task_id, row)
+            push_task_event(
+                task_id,
+                f"Downloaded {len(success_ids)}/{total}" + (f", {len(failed_ids)} failed" if failed_ids else ""),
+                stage="download_missing",
+                progress=round(done / total * 100),
+            )
 
         try:
             push_task_event(task_id, "Starting download of missing tracks", stage="download_missing", progress=0)
 
             for row in missing_rows:
                 track_id = str(row["track_id"]).strip()
-                _log_dl(f"launch download track_id={track_id}")
+                if not track_id.isdigit():
+                    failed_ids.add(track_id)
+                    pending_ids.discard(track_id)
+                    continue
+                _log_dl(f"queue download track_id={track_id}")
                 try:
-                    resp = requests.post(
-                        f"{base_url}/download",
-                        json={
-                            "type": "track",
-                            "music_id": int(track_id),
-                            "add_to_playlist": False,
-                            "create_zip": False,
-                        },
-                        timeout=60,
-                    )
-                    resp.raise_for_status()
-                    _log_dl(f"download request sent track_id={track_id} status={resp.status_code}")
-                except Exception:
+                    enqueue_download("track", track_id, on_done=on_track_done)
+                except Exception as e:
+                    # The queue should not refuse a download, but if it does the
+                    # track must not be silently forgotten.
+                    _log_dl(f"could not queue track_id={track_id}: {e}")
                     failed_ids.add(track_id)
                     pending_ids.discard(track_id)
 
-            idle_loops = 0
-            max_idle_loops = 120
-
-            while pending_ids and idle_loops < max_idle_loops:
-                time.sleep(3)
-                try:
-                    queue_resp = requests.get(f"{base_url}/queue", timeout=30)
-                    queue_resp.raise_for_status()
-                    queue_items = parse_queue_items(queue_resp.json())
-                except Exception:
-                    idle_loops += 1
-                    push_task_event(
-                        task_id,
-                        f"Checking queue… {len(success_ids)}/{total} downloaded",
-                        stage="download_missing",
-                        progress=round(((len(success_ids) + len(failed_ids)) / total) * 100),
-                    )
-                    continue
-
-                completed_now = set()
-                failed_now = set()
-
-                for item in queue_items:
-                    tid = extract_track_id_from_queue_item(item)
-                    state = extract_queue_state(item)
-                    result = item.get("result")
-                    _log_dl(f"queue item raw_track_id={tid} state={state} result={result} pending={sorted(pending_ids)}")
-
-                    if not tid:
-                        continue
-                    tid = str(tid).strip()
-                    if tid not in pending_ids:
-                        continue
-
-                    if state == "mission accomplished":
-                        completed_now.add(tid)
-                        _log_dl(f"TRACK DONE tid={tid}")
-                    elif state == "failed":
-                        failed_now.add(tid)
-
-                if completed_now:
-                    success_ids.update(completed_now)
-                    pending_ids.difference_update(completed_now)
-                    changed_rows = mark_preview_rows_downloaded(playlist_id, completed_now)
-                    for row in changed_rows:
-                        push_task_row_update(task_id, row)
-                    push_task_event(
-                        task_id,
-                        f"Downloaded {len(success_ids)}/{total}",
-                        stage="download_missing",
-                        progress=round(((len(success_ids) + len(failed_ids)) / total) * 100),
-                    )
-
-                if failed_now:
-                    failed_ids.update(failed_now)
-                    pending_ids.difference_update(failed_now)
-                    push_task_event(
-                        task_id,
-                        f"Failed downloads: {len(failed_ids)}",
-                        stage="download_missing",
-                        progress=round(((len(success_ids) + len(failed_ids)) / total) * 100),
-                    )
-
-                if not completed_now and not failed_now:
-                    idle_loops += 1
-                else:
-                    idle_loops = 0
+            # The queue runs the downloads in the background; wait for them all.
+            deadline = time.time() + 3600
+            while pending_ids and time.time() < deadline:
+                time.sleep(2)
+                with lock:
+                    finished = success_ids | failed_ids
+                pending_ids -= finished
 
             if pending_ids:
                 failed_ids.update(pending_ids)

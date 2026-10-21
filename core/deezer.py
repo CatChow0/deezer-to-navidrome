@@ -1,5 +1,3 @@
-import ast
-import html
 import json
 import os
 import re
@@ -17,7 +15,6 @@ from core.config import (
     get_preview_state,
     load_config,
     modify_preview_state,
-    update_preview_state,
 )
 from core.library import load_library_cache, rebuild_library_cache_full_with_progress
 from core.normalization import extract_version_flags, normalize_text
@@ -567,83 +564,32 @@ def convert_playlist(playlist_id: str, progress_cb=None, quick: bool = False):
     }
 
 
-def parse_queue_items(payload):
-    if isinstance(payload, list):
-        return payload
-    if isinstance(payload, dict):
-        for key in ("queue", "items", "data"):
-            value = payload.get(key)
-            if isinstance(value, list):
-                return value
-    return []
-
-
-def extract_track_id_from_queue_item(item):
-    args = item.get("args")
-
-    if isinstance(args, dict):
-        for key in ("track_id", "music_id", "id", "trackId", "musicId"):
-            value = args.get(key)
-            if value is not None and str(value).strip():
-                return str(value).strip()
-
-    if isinstance(args, str):
-        raw = html.unescape(args)
-        try:
-            parsed = ast.literal_eval(raw)
-            if isinstance(parsed, dict):
-                for key in ("track_id", "music_id", "id", "trackId", "musicId"):
-                    value = parsed.get(key)
-                    if value is not None and str(value).strip():
-                        return str(value).strip()
-        except Exception:
-            pass
-
-        m = re.search(r"track_id['\"]?\s*[:=]\s*(\d+)", raw, re.IGNORECASE)
-        if m:
-            return m.group(1)
-
-    for key in ("track_id", "music_id", "trackId", "musicId"):
-        value = item.get(key)
-        if value is not None and str(value).strip():
-            return str(value).strip()
-
-    return None
-
-
-def extract_queue_state(item):
-    for key in ("state", "status"):
-        value = item.get(key)
-        if value is not None:
-            return str(value).strip().lower()
-    return ""
-
-
 def mark_preview_rows_downloaded(playlist_id, downloaded_ids):
+    """Marks the tracks as downloaded.
+
+    The read and the write are done in one locked step: several downloads can
+    finish at the same time, and they must not overwrite each other."""
     if not downloaded_ids:
         return []
 
-    state = get_preview_state(playlist_id)
-    if not state or not isinstance(state.get("rows"), list):
-        return []
-
     changed_rows = []
-    changed = False
 
-    for row in state["rows"]:
-        tid = str(row.get("track_id") or "").strip()
-        if not tid or tid not in downloaded_ids:
-            continue
-        if row.get("downloaded") is True:
-            continue
-        row["downloaded"] = True
-        changed = True
-        changed_rows.append(dict(row))
+    def change(state):
+        if not state or not isinstance(state.get("rows"), list):
+            return state
+        for row in state["rows"]:
+            tid = str(row.get("track_id") or "").strip()
+            if not tid or tid not in downloaded_ids:
+                continue
+            if row.get("downloaded") is True:
+                continue
+            row["downloaded"] = True
+            changed_rows.append(dict(row))
+        if changed_rows:
+            state["updated_at"] = int(time.time())
+        return state
 
-    if changed:
-        state["updated_at"] = int(time.time())
-        update_preview_state(playlist_id, state)
-
+    modify_preview_state(playlist_id, change)
     return changed_rows
 
 
@@ -794,12 +740,14 @@ def fetch_deezer_artist_details(artist_id: str):
     }
 
 
-def submit_missing_downloads(playlist_id: str, base_url: str) -> int:
-    """Fire download requests for all unmatched tracks in a playlist.
+def submit_missing_downloads(playlist_id: str) -> int:
+    """Queue the download of every unmatched track of a playlist.
 
-    Does not wait for completion. Returns the number of requests sent.
+    Does not wait for completion. Returns the number of tracks queued.
     Used by the auto-scan scheduler.
     """
+    from core.download_queue import enqueue_download
+
     preview = get_preview_state(str(playlist_id))
     if not preview or not isinstance(preview.get("rows"), list):
         return 0
@@ -814,17 +762,10 @@ def submit_missing_downloads(playlist_id: str, base_url: str) -> int:
     submitted = 0
     for row in missing_rows:
         track_id = str(row["track_id"]).strip()
+        if not track_id.isdigit():
+            continue
         try:
-            requests.post(
-                f"{base_url}/download",
-                json={
-                    "type": "track",
-                    "music_id": int(track_id),
-                    "add_to_playlist": False,
-                    "create_zip": False,
-                },
-                timeout=10,
-            )
+            enqueue_download("track", track_id)
             submitted += 1
         except Exception:
             pass

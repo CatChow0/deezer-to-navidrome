@@ -2,8 +2,11 @@
 artists, the "made for you" mixes and Flow.
 
 Deezer's private gateway (gw-light) is undocumented and may change. Every call
-goes through `_gw`, which logs in lazily and refreshes the API token once when
-Deezer rejects it.
+goes through `DeezerSession.gw`, which logs in lazily and refreshes the API
+token once when Deezer rejects it.
+
+`DeezerSession` is also what the downloader uses: it needs the same login
+(CSRF token) plus the license token that grants the right to fetch a file.
 """
 import threading
 import time
@@ -28,39 +31,96 @@ class DeezerAccountError(RuntimeError):
     pass
 
 
-class _Session:
-    def __init__(self):
-        self.lock = threading.Lock()
+class DeezerSession:
+    """One Deezer session: an ARL, its CSRF token, its license token and the
+    sound quality that account is entitled to."""
+
+    def __init__(self, arl=None):
+        self.lock = threading.RLock()
         self.arl = None
         self.http = None
         self.token = None
         self.user = None
+        self.license_token = None
+        self.quality = {}
+        if arl:
+            self.login(arl)
 
-    def reset(self):
-        self.arl = self.http = self.token = self.user = None
+    # ── Session ────────────────────────────────────────────────────────────────
+
+    def login(self, arl):
+        arl = (arl or "").strip()
+        if not arl:
+            raise DeezerAccountError("No Deezer account connected. Add your ARL in Settings.")
+        http = requests.Session()
+        http.headers["User-Agent"] = USER_AGENT
+        http.cookies.set("arl", arl, domain=".deezer.com")
+        resp = http.post(
+            GW_URL,
+            params={"method": "deezer.getUserData", "input": "3", "api_version": "1.0", "api_token": "null"},
+            json={},
+            timeout=30,
+        ).json()
+        results = resp.get("results") or {}
+        user = results.get("USER") or {}
+        if not user.get("USER_ID") or str(user["USER_ID"]) == "0":
+            raise DeezerAccountError(
+                "Deezer did not accept this ARL. It may have expired: copy a fresh one from your browser."
+            )
+        options = user.get("OPTIONS") or {}
+        self.arl = arl
+        self.http = http
+        self.token = results.get("checkForm")
+        self.user = {"id": str(user["USER_ID"]), "name": user.get("BLOG_NAME") or ""}
+        self.license_token = options.get("license_token")
+        self.quality = options.get("web_sound_quality") or {}
+
+    def reset(self, keep_arl=False):
+        """Forgets the session. The ARL is kept when the session is only being
+        renewed, so the next call can log in again."""
+        if not keep_arl:
+            self.arl = None
+        self.http = self.token = self.user = None
+        self.license_token = None
+        self.quality = {}
+
+    def is_premium(self):
+        """True when the account may fetch lossless or high quality files."""
+        return bool(self.quality.get("lossless") or self.quality.get("high"))
+
+    def sound_format(self):
+        """The format this account is entitled to, as Deezer names it."""
+        if self.quality.get("lossless"):
+            return "FLAC"
+        if self.quality.get("high"):
+            return "MP3_320"
+        return "MP3_128"
+
+    # ── Gateway ────────────────────────────────────────────────────────────────
+
+    def gw(self, method, body=None, retry=True):
+        """Calls the private gateway and returns its `results`."""
+        with self.lock:
+            if self.http is None:
+                self.login(self.arl)
+            resp = self.http.post(
+                GW_URL,
+                params={"method": method, "input": "3", "api_version": "1.0", "api_token": self.token},
+                json=body or {},
+                timeout=30,
+            ).json()
+            error = resp.get("error")
+            if error and retry and ("VALID_TOKEN_REQUIRED" in str(error) or "NEED_API_AUTH_REQUIRED" in str(error)):
+                # The token is stale: log in again and try once more.
+                self.reset(keep_arl=True)
+            elif error:
+                raise DeezerAccountError(f"Deezer refused {method}: {error}")
+            else:
+                return resp.get("results")
+        return self.gw(method, body, retry=False)
 
 
-_session = _Session()
-
-
-def _login(arl):
-    http = requests.Session()
-    http.headers["User-Agent"] = USER_AGENT
-    http.cookies.set("arl", arl, domain=".deezer.com")
-    resp = http.post(
-        GW_URL,
-        params={"method": "deezer.getUserData", "input": "3", "api_version": "1.0", "api_token": "null"},
-        json={},
-        timeout=30,
-    ).json()
-    results = resp.get("results") or {}
-    user = results.get("USER") or {}
-    if not user.get("USER_ID") or str(user["USER_ID"]) == "0":
-        raise DeezerAccountError("Deezer did not accept this ARL. It may have expired: copy a fresh one from your browser.")
-    _session.arl = arl
-    _session.http = http
-    _session.token = results.get("checkForm")
-    _session.user = {"id": str(user["USER_ID"]), "name": user.get("BLOG_NAME") or ""}
+_session = DeezerSession()
 
 
 def _ensure(arl=None):
@@ -68,26 +128,13 @@ def _ensure(arl=None):
     if not arl:
         raise DeezerAccountError("No Deezer account connected. Add your ARL in Settings.")
     if _session.arl != arl or _session.http is None:
-        _login(arl)
+        _session.login(arl)
 
 
 def _gw(method, body=None, retry=True):
     with _session.lock:
         _ensure()
-        resp = _session.http.post(
-            GW_URL,
-            params={"method": method, "input": "3", "api_version": "1.0", "api_token": _session.token},
-            json=body or {},
-            timeout=30,
-        ).json()
-        error = resp.get("error")
-        if error and retry and ("VALID_TOKEN_REQUIRED" in str(error) or "NEED_API_AUTH_REQUIRED" in str(error)):
-            _session.reset()
-        elif error:
-            raise DeezerAccountError(f"Deezer refused {method}: {error}")
-        else:
-            return resp.get("results")
-    return _gw(method, body, retry=False)
+        return _session.gw(method, body, retry)
 
 
 def account_status(arl=None):
@@ -97,11 +144,17 @@ def account_status(arl=None):
             if arl:
                 _session.reset()
             _ensure(arl)
-            return {"connected": True, "name": _session.user["name"], "user_id": _session.user["id"], "error": None}
+            return {
+                "connected": True,
+                "name": _session.user["name"],
+                "user_id": _session.user["id"],
+                "premium": _session.is_premium(),
+                "error": None,
+            }
     except DeezerAccountError as e:
-        return {"connected": False, "name": "", "error": str(e)}
+        return {"connected": False, "name": "", "premium": False, "error": str(e)}
     except Exception as e:
-        return {"connected": False, "name": "", "error": f"Could not reach Deezer: {e}"}
+        return {"connected": False, "name": "", "premium": False, "error": f"Could not reach Deezer: {e}"}
 
 
 def forget_session():

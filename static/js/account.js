@@ -1,4 +1,6 @@
-// Settings: connecting the Deezer account whose ARL powers mixes and the release feed.
+// Settings: the Deezer accounts. The first one powers the mixes and the
+// release feed; a second one can be added for the downloads when the first
+// is free (a free account only gets MP3_128).
 
 import { escapeHtml, fetchJSON, toast } from './core.js';
 
@@ -9,13 +11,68 @@ const HELP = `
   </details>
 `;
 
+// The badge says what the account can do: Premium, Free, or Free with the
+// downloads running on a premium account.
+function planBadge(status) {
+  const downloads = status.downloads || {};
+  if (status.premium) {
+    return '<span class="chip chip--ok">Premium account</span>';
+  }
+  if (downloads.has_premium_arl && downloads.premium) {
+    return '<span class="chip chip--partial">Free account · downloads in Premium</span>';
+  }
+  return '<span class="chip">Free account</span>';
+}
+
+const FORMAT_LABEL = { FLAC: 'FLAC', MP3_320: 'MP3 320', MP3_128: 'MP3 128' };
+
+function downloadNote(status) {
+  const downloads = status.downloads || {};
+  const format = FORMAT_LABEL[downloads.format] || downloads.format;
+  if (status.premium) {
+    return `<p class="muted">The downloads use this account, in ${escapeHtml(format || 'the best quality it allows')}.</p>`;
+  }
+  if (downloads.has_premium_arl && downloads.premium) {
+    return `<p class="muted">The downloads use your second, premium account, in ${escapeHtml(format || 'the best quality it allows')}.</p>`;
+  }
+  return '<p class="muted">A free account only downloads MP3_128. Add a premium account below to get FLAC.</p>';
+}
+
+function premiumForm(status) {
+  const downloads = status.downloads || {};
+  if (status.premium) return '';
+
+  if (downloads.has_premium_arl) {
+    return `
+      <div class="account-form">
+        <p class="account-state"><span class="dot dot--ok"></span>A premium account is connected for the downloads.</p>
+        <button type="button" class="btn btn--danger btn--sm" data-premium-disconnect>Remove it</button>
+      </div>
+    `;
+  }
+
+  return `
+    <form class="account-form" data-premium-form>
+      <label class="form-field">
+        <span>ARL of a premium account</span>
+        <input type="password" name="arl" autocomplete="off" spellcheck="false" placeholder="Paste the arl cookie value" required>
+        <small>Only used for the downloads, so your mixes keep using the first account.</small>
+      </label>
+      <button type="submit" class="btn btn--sm">Use it for the downloads</button>
+    </form>
+  `;
+}
+
 function render(host, status) {
   if (status.connected) {
     host.innerHTML = `
       <p class="account-state"><span class="dot dot--ok"></span>Connected as <strong>${escapeHtml(status.name || 'your account')}</strong></p>
+      <p class="account-badges">${planBadge(status)}</p>
+      ${downloadNote(status)}
       ${status.from_env
         ? '<p class="muted">Set by the DEEZER_ARL environment variable. Change it there to use another account.</p>'
         : '<button type="button" class="btn btn--danger btn--sm" data-account-disconnect>Disconnect</button>'}
+      ${premiumForm(status)}
     `;
     return;
   }
@@ -40,27 +97,36 @@ export async function initAccount() {
   render(host, data || { connected: false, error: 'Could not read the account status' });
 
   host.addEventListener('submit', async event => {
-    const form = event.target.closest('[data-account-form]');
+    const form = event.target.closest('[data-account-form], [data-premium-form]');
     if (!form) return;
     event.preventDefault();
+    const premium = form.matches('[data-premium-form]');
     const button = form.querySelector('button');
     button.disabled = true;
     button.textContent = 'Checking…';
-    const result = await fetchJSON('/api/deezer/account', { json: { arl: form.elements.arl.value.trim() } });
+    const url = premium ? '/api/deezer/premium-account' : '/api/deezer/account';
+    const result = await fetchJSON(url, { json: { arl: form.elements.arl.value.trim() } });
     if (result.data?.ok) {
-      toast(`Connected as ${result.data.name || 'your Deezer account'}`, { tone: 'ok' });
+      toast(premium ? 'Premium account connected for the downloads' : `Connected as ${result.data.name || 'your Deezer account'}`, { tone: 'ok' });
       render(host, result.data);
     } else {
       toast(result.data?.error || 'Deezer did not accept this ARL', { tone: 'error' });
       button.disabled = false;
-      button.textContent = 'Connect';
+      button.textContent = premium ? 'Use it for the downloads' : 'Connect';
     }
   });
 
   host.addEventListener('click', async event => {
-    if (!event.target.closest('[data-account-disconnect]')) return;
-    const { data: status } = await fetchJSON('/api/deezer/account', { method: 'DELETE' });
-    toast('Deezer account disconnected');
-    render(host, status || { connected: false });
+    if (event.target.closest('[data-account-disconnect]')) {
+      const { data: status } = await fetchJSON('/api/deezer/account', { method: 'DELETE' });
+      toast('Deezer account disconnected');
+      render(host, status || { connected: false });
+      return;
+    }
+    if (event.target.closest('[data-premium-disconnect]')) {
+      const { data: status } = await fetchJSON('/api/deezer/premium-account', { method: 'DELETE' });
+      toast('The premium account was removed');
+      render(host, status || { connected: false });
+    }
   });
 }

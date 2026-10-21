@@ -56,10 +56,12 @@ DEFAULT_CONFIG = {
             {"host": "/music/library", "navidrome": "/music"},
         ],
     ),
-    "deezer_dl_base_url": os.environ.get("DEEZER_DL_BASE_URL", "https://deezerdl.example.com").strip()
+    "deezer_dl_dir": os.environ.get("DEEZER_DL_DIR", "").strip()
     or "https://deezerdl.example.com",
     "library_workers_per_dir": int(os.environ.get("LIBRARY_WORKERS_PER_DIR", "2") or "2"),
     "match_workers": int(os.environ.get("MATCH_WORKERS", "4") or "4"),
+    # Threads downloading from Deezer at the same time.
+    "download_workers": int(os.environ.get("DOWNLOAD_WORKERS", "4") or "4"),
     # Hours between automatic refreshes of the release feed; 0 = manual only.
     "release_refresh_hours": 24,
 }

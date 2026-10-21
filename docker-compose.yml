@@ -30,8 +30,9 @@ services:
       # Format: /container/path:/navidrome/path
       HOST_TO_NAVIDROME_ROOT: "/music/deezer-dl:/deezer-dl,/music/library:/music"
 
-      # Optional: Deezer Downloader service URL
-      DEEZER_DL_BASE_URL: "https://deezer-downloader.example.com"
+      # Optional: where the downloads are written (default: the deezer-dl
+      # folder of the music folders)
+      # DEEZER_DL_DIR: "/music/deezer-dl"
 
       # Threads per source directory during library scan.
       # Each SCAN_DIR gets its own isolated thread pool of this size.

@@ -43,7 +43,7 @@ services:
       SCAN_DIRS: "/music/deezer-dl,/music/library"
       PLAYLISTS_BASE_DIR: "/music/playlists"
       HOST_TO_NAVIDROME_ROOT: "/music/deezer-dl:/deezer-dl,/music/library:/music"
-      DEEZER_DL_BASE_URL: "https://deezer-downloader.example.com"   # optional
+      # DEEZER_DL_DIR: "/music/deezer-dl"   # optional
       LIBRARY_WORKERS_PER_DIR: "2"   # 2=HDD  4=RAID  8=SSD
       MATCH_WORKERS: "4"             # set to your Docker CPU count
     volumes:
@@ -75,7 +75,7 @@ docker compose up -d
 | `SCAN_DIRS` | — | Comma-separated music directories to scan. |
 | `PLAYLISTS_BASE_DIR` | — | Where `.m3u8` files are written. |
 | `HOST_TO_NAVIDROME_ROOT` | — | Path mappings `container_path:navidrome_path` (comma-separated). |
-| `DEEZER_DL_BASE_URL` | — | Optional: base URL of Deezer Downloader service. |
+| `DEEZER_DL_DIR` | — | Optional: where the downloads are written. |
 | `LIBRARY_WORKERS_PER_DIR` | `2` | Threads per scan directory. `2`=HDD · `4`=RAID · `8`=SSD/NVMe |
 | `MATCH_WORKERS` | `4` | Parallel matching threads. Set to your CPU count. |
 
