@@ -22,7 +22,7 @@ from mutagen.id3 import APIC, TALB, TDRC, TIT2, TPE1, TPE2, TPOS, TRCK, PictureT
 from mutagen.mp3 import MP3
 
 from core.config import load_secret
-from core.deezer_account import USER_AGENT, DeezerAccountError, DeezerSession
+from core.deezer_account import API_URL, USER_AGENT, DeezerAccountError, DeezerSession
 
 MEDIA_URL = "https://media.deezer.com/v1/get_url"
 COVER_URL = "https://e-cdns-images.dzcdn.net/images/cover/{md5}/1200x1200.jpg"
@@ -194,20 +194,42 @@ def _write_tags(path, song, is_flac):
 
 # ── Files ─────────────────────────────────────────────────────────────────────
 
+def configured_download_dir(cfg=None):
+    """The folder set in Settings, or "" when none is set.
+
+    The setting replaced the address of the separate downloader: a URL left
+    there (an old value, or a browser restoring the form) is not a folder."""
+    from core.config import load_config
+
+    value = ((cfg or load_config()).get("deezer_dl_dir") or "").strip()
+    return "" if "://" in value else value
+
+
 def download_dir():
     """Where the downloaded files go: the same layout as before."""
     from core.config import load_config
 
     cfg = load_config()
-    configured = (cfg.get("deezer_dl_dir") or "").strip()
+    configured = configured_download_dir(cfg)
     if configured:
         return Path(configured)
     # /music/deezer-dl is the default; it is one of the scanned folders.
-    scan_dirs = cfg.get("scan_dirs") or []
-    for folder in scan_dirs:
+    for folder in cfg.get("scan_dirs") or []:
         if Path(folder).name == "deezer-dl":
             return Path(folder)
     return Path("/music/deezer-dl")
+
+
+def download_dir_status():
+    """The folder the downloads go to, and whether they can be written there."""
+    folder = download_dir()
+    exists = folder.is_dir()
+    return {
+        "path": str(folder),
+        "configured": configured_download_dir(),
+        "exists": exists,
+        "writable": exists and os.access(folder, os.W_OK),
+    }
 
 
 # ── Downloading ────────────────────────────────────────────────────────────────
@@ -235,13 +257,13 @@ def _media_url(track_token, sound_format):
     return sources[0]["url"]
 
 
-def download_song(song, target, is_album=False):
+def download_song(song, target, on_bytes=None):
     """Downloads one track to `target` and writes its tags.
 
-    `target` is the file path; its folder must exist. Returns the path."""
+    `on_bytes(received, total)` follows the transfer; `total` is 0 when Deezer
+    does not say the size. Returns the path."""
     s = session()
     sound_format = s.sound_format()
-    extension = "flac" if sound_format == "FLAC" else "mp3"
     track_token = song.get("TRACK_TOKEN")
     if not track_token:
         raise DeezerDownloadError("Deezer did not give a download token for this track")
@@ -249,7 +271,14 @@ def download_song(song, target, is_album=False):
     url = _media_url(track_token, sound_format)
     resp = s.http.get(url, stream=True, timeout=120)
     resp.raise_for_status()
-    payload = _decrypt(resp.content, _cipher_key(song["SNG_ID"]))
+    total = int(resp.headers.get("Content-Length") or 0)
+    chunks, received = [], 0
+    for chunk in resp.iter_content(64 * 1024):
+        chunks.append(chunk)
+        received += len(chunk)
+        if on_bytes:
+            on_bytes(received, total)
+    payload = _decrypt(b"".join(chunks), _cipher_key(song["SNG_ID"]))
 
     target.parent.mkdir(parents=True, exist_ok=True)
     temporary = target.with_suffix(target.suffix + ".part")
@@ -302,24 +331,38 @@ def fetch_playlist(playlist_id):
     return songs
 
 
-def download_track(track_id, base_dir=None):
-    """Downloads one track into the songs folder."""
+def song_label(song):
+    return f"{song.get('ART_NAME') or 'Unknown artist'} - {song.get('SNG_TITLE') or 'Unknown title'}"
+
+
+def download_track(track_id, base_dir=None, on_start=None, on_bytes=None):
+    """Downloads one track into the songs folder.
+
+    `on_start(song, already_there)` is called once the track is known.
+    Returns the path."""
     song = fetch_track(track_id)
     extension = "flac" if session().sound_format() == "FLAC" else "mp3"
     base = Path(base_dir) if base_dir else download_dir() / "songs"
     target = base / track_filename(song, extension)
-    if target.exists():
+    already = target.exists()
+    if on_start:
+        on_start(song, already)
+    if already:
         _log(f"Already there: {target.name}")
         return target
-    return download_song(song, target)
+    return download_song(song, target, on_bytes=on_bytes)
 
 
-def download_album(album_id, base_dir=None, on_track=None):
+def download_album(album_id, base_dir=None, on_track=None, on_start=None):
     """Downloads every track of an album into its own folder.
 
-    `on_track` is called with (song, path_or_None, error) for each track, so the
-    caller can follow the progress and collect the tracks that failed."""
+    `on_start(songs)` is called once the track list is known; `on_track` with
+    (song, path_or_None, error) after each track, so the caller can follow the
+    progress and collect the tracks that failed. Tracks already on disk are
+    kept, so downloading an album again only fetches what is missing."""
     songs = fetch_album(album_id)
+    if on_start:
+        on_start(songs)
     extension = "flac" if session().sound_format() == "FLAC" else "mp3"
     root = Path(base_dir) if base_dir else download_dir() / "albums"
     folder = root / album_folder(songs[0])
@@ -331,10 +374,9 @@ def download_album(album_id, base_dir=None, on_track=None):
         try:
             if target.exists():
                 _log(f"Already there: {target.name}")
-                downloaded.append(target)
             else:
                 download_song(song, target)
-                downloaded.append(target)
+            downloaded.append(target)
             if on_track:
                 on_track(song, target, None)
         except Exception as e:
@@ -342,3 +384,19 @@ def download_album(album_id, base_dir=None, on_track=None):
             if on_track:
                 on_track(song, None, e)
     return downloaded
+
+
+def artist_albums(artist_id):
+    """[{id, title}] of every release of an artist, from the public API."""
+    albums, index = [], 0
+    while True:
+        page = requests.get(
+            f"{API_URL}/artist/{artist_id}/albums", params={"limit": 100, "index": index}, timeout=30
+        ).json()
+        if "error" in page:
+            raise DeezerDownloadError(f"Deezer has no release for artist {artist_id}")
+        data = page.get("data") or []
+        albums += [{"id": str(a["id"]), "title": a.get("title") or ""} for a in data]
+        index += len(data)
+        if not data or index >= int(page.get("total") or 0):
+            return albums

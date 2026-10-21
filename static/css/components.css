@@ -158,16 +158,46 @@ select option {
 }
 
 /* Download button states, shared by search and playlists */
+.dl-btn {
+  min-width: 6.5em;
+  font-variant-numeric: tabular-nums;
+}
+
 .dl-btn[data-state="busy"] {
   opacity: 0.7;
   cursor: progress;
 }
 
+.dl-btn:disabled[data-state] {
+  opacity: 1;
+}
+
 .dl-btn[data-state="queued"] {
+  border-color: var(--info-line);
+  color: var(--info);
+  cursor: default;
+}
+
+/* The button fills up as the download goes (--p is set by downloads.js). */
+.dl-btn[data-state="active"] {
+  border-color: var(--info-line);
+  color: var(--text);
+  cursor: progress;
+  background: linear-gradient(90deg, var(--info-bg) var(--p, 0%), rgba(255, 255, 255, 0.03) var(--p, 0%));
+  transition: background var(--t-mid) linear;
+}
+
+.dl-btn[data-state="done"] {
   background: var(--ok-bg);
   border-color: var(--ok-line);
   color: var(--ok);
   cursor: default;
+}
+
+.dl-btn[data-state="partial"] {
+  background: var(--partial-bg);
+  border-color: var(--partial-line);
+  color: var(--partial);
 }
 
 .dl-btn[data-state="error"] {

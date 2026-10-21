@@ -132,13 +132,15 @@ function follow(summary, ui, handlers = {}) {
         each('onEvent', payload);
       },
       onDone(payload) {
-        entry.ui.finish({ error: !!payload.error });
+        entry.ui.finish({ error: !!payload.error, message: payload.message });
         if (payload.error) toast(`${entry.summary.title} failed`, { tone: 'error' });
+        each('onDone', payload);
         resolve({ error: !!payload.error });
       },
       onError() {
         entry.ui.log('Lost connection to the task stream.');
         entry.ui.finish({ error: true, message: 'Connection lost' });
+        each('onError');
         resolve({ error: true });
       },
     });
@@ -167,6 +169,13 @@ export async function runServerTask(title, url, { json, playlistId = null, ...ha
     return follow(existing.summary, null, handlers);
   }
   return follow({ id: data.task_id, title, playlist_id: playlistId }, ui, handlers);
+}
+
+// Follows a task the server already started (its Activity row appears at
+// once instead of at the next sync). Handlers: onStatus, onRow, onDone, onError.
+export function watchTask(id, title, handlers = {}, { playlistId = null } = {}) {
+  const existing = followed.get(id);
+  return follow(existing ? existing.summary : { id, title, playlist_id: playlistId }, null, handlers);
 }
 
 // Picks up running tasks this page did not start.

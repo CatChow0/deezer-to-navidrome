@@ -27,6 +27,8 @@ from core.config import (
     follow_task,
     list_tasks,
     push_task_event,
+    push_task_payload,
+    push_task_row_update,
     save_config,
 )
 from core.version import get_app_version, get_latest_available_version
@@ -119,6 +121,9 @@ def config_view():
         library_cache_file = request.form.get("library_cache_file", "").strip()
         preview_state_file = request.form.get("preview_state_file", "").strip()
         deezer_dl_dir = request.form.get("deezer_dl_dir", "").strip()
+        if "://" in deezer_dl_dir:
+            # The address of the old separate downloader: not a folder.
+            deezer_dl_dir = ""
 
         mapping_hosts = request.form.getlist("mapping_host[]")
         mapping_navs = request.form.getlist("mapping_navidrome[]")
@@ -224,36 +229,80 @@ def clear_dedup_choices_route():
     return redirect(url_for("system.config_view"))
 
 
-def _finished(task_id, message):
-    """Builds the callback that closes a download task when the queue is done."""
+KIND_NAMES = {"track": "track", "album": "album", "artist": "discography"}
 
-    def done(_task, _result, error):
+
+def _push_download(task_id, stage, message, progress=None, short=None, done=False, error=False, summary=None):
+    payload = {
+        "type": "status",
+        "stage": stage,
+        "message": message,
+        "progress": progress,
+        "short": short,
+        "done": done,
+        "error": error,
+        "timestamp": int(time.time()),
+    }
+    if summary is not None:
+        payload["summary"] = summary
+    push_task_payload(task_id, payload)
+
+
+def _final_message(kind, summary):
+    label = summary.get("label") or ""
+    if kind == "track":
+        if summary.get("already"):
+            return f"Already downloaded: {label}"
+        return f"Downloaded: {label}"
+    saved, total, failed = summary.get("saved", 0), summary.get("total", 0), summary.get("failed") or []
+    if failed:
+        return f"{label}: {saved}/{total} tracks saved, {len(failed)} failed ({', '.join(failed[:3])}{'…' if len(failed) > 3 else ''})"
+    return f"Downloaded: {label} ({saved} track{'s' if saved != 1 else ''})"
+
+
+def _start_download(kind, music_id, label="", playlist_id=None):
+    """Queues a download and follows it in a task visible in Activity."""
+    label = (label or "").strip()[:120] or f"{KIND_NAMES[kind]} {music_id}"
+    task_id = create_task(f"Download: {label}", kind="download", playlist_id=playlist_id)
+    _push_download(task_id, "queued", "Queued", short="Queued")
+
+    def on_progress(stage, message, progress, short):
+        _push_download(task_id, stage, message, progress, short)
+
+    def on_done(_task, summary, error):
         if error:
-            push_task_event(task_id, f"Download failed: {error}", stage="error", done=True, error=True)
-        else:
-            push_task_event(task_id, message, stage="done", progress=100, done=True)
+            _push_download(task_id, "error", f"Download failed: {error}", done=True, error=True)
+            return
+        if playlist_id and kind == "track":
+            # The drawer row shows the track as downloaded right away.
+            from core.deezer import mark_preview_rows_downloaded
 
-    return done
+            for row in mark_preview_rows_downloaded(playlist_id, {str(music_id)}):
+                push_task_row_update(task_id, row)
+        _push_download(
+            task_id, "done", _final_message(kind, summary), 100, done=True, summary=summary,
+        )
+
+    download_queue.enqueue_download(kind, music_id, on_done=on_done, on_progress=on_progress)
+    return task_id
+
+
+def _download_request(kind, music_id):
+    data = request.get_json(silent=True) or {}
+    if kind not in KIND_NAMES:
+        return jsonify({"error": "invalid type"}), 400
+    if not str(music_id).isdigit():
+        return jsonify({"error": "invalid id"}), 400
+    if not deezer_dl.download_arl():
+        return jsonify({"error": "No Deezer account connected. Add your ARL in Settings."}), 400
+    playlist_id = str(data.get("playlist_id") or "").strip() or None
+    task_id = _start_download(kind, str(music_id), str(data.get("label") or ""), playlist_id)
+    return jsonify({"task_id": task_id})
 
 
 @system_bp.route("/deezer-dl/track/<track_id>", methods=["POST"])
 def deezer_dl_track(track_id):
-    if not track_id.isdigit():
-        return jsonify({"error": "invalid track id"}), 400
-    if not deezer_dl.download_arl():
-        return jsonify({"error": "No Deezer account connected. Add your ARL in Settings."}), 400
-
-    task_id = create_task(f"Download track {track_id}", kind="download", visible=False)
-
-    def run():
-        try:
-            push_task_event(task_id, message=f"Downloading track {track_id}…", stage="dl", progress=0)
-            download_queue.enqueue_download("track", track_id, on_done=_finished(task_id, f"Downloaded track {track_id}"))
-        except Exception as e:
-            push_task_event(task_id, message=f"Download failed: {e}", stage="error", done=True, error=True)
-
-    threading.Thread(target=run, daemon=True).start()
-    return jsonify({"task_id": task_id})
+    return _download_request("track", track_id)
 
 
 @system_bp.get("/deezer-dl/queue")
@@ -268,25 +317,5 @@ def deezer_dl_queue():
 @system_bp.post("/deezer-dl/download/start")
 def deezer_dl_download_start():
     data = request.get_json(silent=True) or {}
-    download_type = str(data.get("type") or "").strip().lower()
-    music_id = str(data.get("music_id") or "").strip()
-    if download_type not in {"track", "album"}:
-        return jsonify({"error": "invalid type"}), 400
-    if not music_id.isdigit():
-        return jsonify({"error": "invalid music_id"}), 400
-    if not deezer_dl.download_arl():
-        return jsonify({"error": "No Deezer account connected. Add your ARL in Settings."}), 400
-
-    task_id = create_task(f"Download {download_type} {music_id}", kind="download", visible=False)
-
-    def runner():
-        try:
-            push_task_event(task_id, f"Starting download {download_type} {music_id}", stage="download", progress=0)
-            download_queue.enqueue_download(
-                download_type, music_id, on_done=_finished(task_id, f"Downloaded {download_type} {music_id}")
-            )
-        except Exception as e:
-            push_task_event(task_id, f"Download error: {e}", stage="error", done=True, error=True)
-
-    threading.Thread(target=runner, daemon=True).start()
-    return jsonify({"task_id": task_id})
+    kind = str(data.get("type") or "").strip().lower()
+    return _download_request(kind, str(data.get("music_id") or "").strip())

@@ -223,3 +223,22 @@
   flex-wrap: wrap;
   gap: 8px;
 }
+
+/* Settings: where the downloads go */
+.dl-folder {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+  margin: 12px 0 0;
+  color: var(--text-soft);
+  font-size: var(--step--1);
+}
+
+.dl-folder code {
+  word-break: break-all;
+}
+
+.dl-folder--warn {
+  color: var(--miss);
+}

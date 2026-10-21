@@ -1,54 +1,79 @@
-// Download buttons: send a request to Deezer Downloader and show the outcome
-// on the button itself (Sending… → Queued, or Retry on failure).
+// Download buttons: queue a download and show where it is on the button
+// itself (Queued → 42% or 3/14 → Downloaded), while the Activity cell shows
+// the details. A failed or partly failed download can be started again: the
+// tracks already saved are kept.
 
-import { escapeHtml, fetchJSON, on, streamTask, toast } from './core.js';
+import { escapeHtml, fetchJSON, on, toast } from './core.js';
+import { watchTask } from './activity.js';
 
-function setState(btn, state, label, title) {
+// States that mean "leave it alone, it is running or it is done".
+const LOCKED = new Set(['busy', 'queued', 'active', 'done']);
+
+function setState(btn, state, label, title, progress) {
   btn.dataset.state = state;
   btn.textContent = label;
-  btn.disabled = state === 'busy' || state === 'queued';
+  btn.disabled = LOCKED.has(state);
   if (title) btn.title = title;
+  if (typeof progress === 'number') btn.style.setProperty('--p', `${Math.max(0, Math.min(100, progress))}%`);
+  else btn.style.removeProperty('--p');
 }
 
-export async function queueDownload(btn, { url, json }) {
-  if (btn.dataset.state === 'busy' || btn.dataset.state === 'queued') return;
+// `label` names the download in Activity; `json` carries extra fields such as
+// the playlist the track belongs to.
+export async function queueDownload(btn, { url, json = {}, label = '' }) {
+  if (LOCKED.has(btn.dataset.state)) return;
+  const original = btn.dataset.label || btn.textContent;
+  btn.dataset.label = original;
   setState(btn, 'busy', 'Sending…');
 
-  const { ok, data } = await fetchJSON(url, json !== undefined ? { json } : { method: 'POST' });
+  const { ok, data } = await fetchJSON(url, { json: { ...json, label } });
   if (!ok || !data?.task_id) {
-    const message = data?.error || 'Deezer Downloader did not accept the request';
+    const message = data?.error || 'The download could not be started';
     setState(btn, 'error', 'Retry', message);
     toast(message, { tone: 'error' });
     return;
   }
 
-  let lastMessage = '';
-  streamTask(data.task_id, {
+  watchTask(data.task_id, `Download: ${label || 'track'}`, {
     onStatus(payload) {
-      if (payload.message) lastMessage = payload.message;
+      if (payload.done) return;
+      if (payload.stage === 'queued') {
+        setState(btn, 'queued', 'Queued', payload.message);
+      } else if (payload.stage === 'downloading') {
+        setState(btn, 'active', payload.short || 'Downloading…', payload.message, payload.progress ?? undefined);
+      }
     },
     onDone(payload) {
       if (payload.error) {
-        setState(btn, 'error', 'Retry', lastMessage);
-        toast(lastMessage || 'Download request failed', { tone: 'error' });
+        // Activity already says it failed; the button keeps the reason.
+        setState(btn, 'error', 'Retry', payload.message);
+        return;
+      }
+      const summary = payload.summary || {};
+      const failed = summary.failed || [];
+      if (failed.length) {
+        setState(btn, 'partial', `${summary.saved}/${summary.total} saved`, `${payload.message}\nClick to try the missing tracks again.`);
+        toast(payload.message, { tone: 'error', timeout: 8000 });
       } else {
-        setState(btn, 'queued', 'Queued', 'Sent to Deezer Downloader');
+        setState(btn, 'done', summary.already ? 'Already there' : 'Downloaded', payload.message, 100);
+        toast(payload.message, { tone: 'ok' });
       }
     },
     onError() {
-      setState(btn, 'error', 'Retry', 'Lost connection to the task stream');
+      setState(btn, 'error', 'Retry', 'Lost track of the download. It may still be running: check Activity.');
     },
   });
 }
 
-export function downloadButton({ type, id, label = 'Download', small = true }) {
-  return `<button type="button" class="btn btn--ghost dl-btn${small ? ' btn--sm' : ''}" data-action="download" data-download-type="${escapeHtml(type)}" data-download-id="${escapeHtml(id)}">${escapeHtml(label)}</button>`;
+export function downloadButton({ type, id, label = 'Download', small = true, name = '' }) {
+  return `<button type="button" class="btn btn--ghost dl-btn${small ? ' btn--sm' : ''}" data-action="download" data-download-type="${escapeHtml(type)}" data-download-id="${escapeHtml(id)}" data-download-name="${escapeHtml(name)}">${escapeHtml(label)}</button>`;
 }
 
 export function handleDownloadClick(btn) {
   queueDownload(btn, {
     url: '/deezer-dl/download/start',
     json: { type: btn.dataset.downloadType, music_id: btn.dataset.downloadId },
+    label: btn.dataset.downloadName,
   });
 }
 

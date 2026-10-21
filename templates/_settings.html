@@ -53,7 +53,7 @@
       </div>
     </section>
 
-    <div class="bento">
+    <div class="bento bento--even">
       <section class="cell span-6" aria-labelledby="dl-title">
         <div class="cell-head">
           <h2 class="cell-title" id="dl-title">Downloads</h2>
@@ -61,9 +61,21 @@
         <div class="cell-body">
           <label class="form-field">
             <span>Folder for the downloads</span>
-            <input class="mono" type="text" name="deezer_dl_dir" value="{{ config.deezer_dl_dir or '' }}" placeholder="/music/deezer-dl">
-            <small>Albums go in a sub-folder, single tracks in <code>songs/</code>. Empty means the <code>deezer-dl</code> folder of your music folders.</small>
+            <input class="mono" type="text" name="deezer_dl_dir" value="{{ download_dir.configured }}"
+                   placeholder="{{ download_dir.path }}" autocomplete="off" spellcheck="false"
+                   pattern="^(?!.*://).*$"
+                   title="A folder on this server, such as /music/deezer-dl — not a web address">
+            <small>A folder on this server, not a web address. Albums go in a sub-folder, single tracks in <code>songs/</code>. Leave it empty to use the <code>deezer-dl</code> folder of your music folders.</small>
           </label>
+          <p class="dl-folder{% if not download_dir.writable %} dl-folder--warn{% endif %}">
+            {% if download_dir.writable %}
+            <span class="dot dot--ok"></span>Downloads go to <code>{{ download_dir.path }}</code>
+            {% elif download_dir.exists %}
+            <span class="dot dot--miss"></span><code>{{ download_dir.path }}</code> exists but this app cannot write in it.
+            {% else %}
+            <span class="dot dot--miss"></span><code>{{ download_dir.path }}</code> does not exist. Mount your downloads folder there, or set another folder above.
+            {% endif %}
+          </p>
         </div>
       </section>
 

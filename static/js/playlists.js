@@ -35,7 +35,7 @@ function actionsCell(row) {
     ? ''
     : `<button type="button" class="btn btn--ghost btn--sm" data-action="fix-match" data-number="${escapeHtml(row.number)}" title="Pick the right file, or mark the track as missing">Fix</button>`;
   if (row.matched === true) return fix;
-  if (row.downloaded) return `<span class="dl-mark">Sent to downloader</span> ${fix}`;
+  if (row.downloaded) return `<span class="dl-mark">Downloaded</span> ${fix}`;
   return `<button type="button" class="btn btn--ghost btn--sm dl-btn" data-action="download-track" data-track-id="${escapeHtml(row.track_id)}">Download</button> ${fix}`;
 }
 
@@ -401,7 +401,12 @@ export function initPlaylists(drawerApi) {
   });
 
   on(content, 'click', '[data-action="download-track"]', (_, btn) => {
-    queueDownload(btn, { url: `/deezer-dl/track/${encodeURIComponent(btn.dataset.trackId)}` });
+    const row = rowsByPlaylist.get(openId)?.get(Number(btn.closest('tr')?.dataset.number));
+    queueDownload(btn, {
+      url: `/deezer-dl/track/${encodeURIComponent(btn.dataset.trackId)}`,
+      json: { playlist_id: openId },
+      label: row?.deezer_name || '',
+    });
   });
 
   on(content, 'click', '[data-filter]', (_, btn) => {

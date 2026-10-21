@@ -117,7 +117,7 @@ function renderResult(item) {
       <div class="result-actions">
         ${type === 'track' ? playButton(item.id, `Play a preview of ${item.title}`) : ''}
         ${type === 'album' ? playAlbumButton(item.id) : ''}
-        ${type !== 'album' ? downloadButton({ type: item.download_type || type, id: item.download_id || item.id }) : ''}
+        ${type !== 'album' ? downloadButton({ type: item.download_type || type, id: item.download_id || item.id, name: item.artist ? `${item.artist} - ${item.title}` : item.title }) : ''}
         ${expandable ? `<button type="button" class="btn btn--ghost btn--sm" data-action="open-result" data-type="${escapeHtml(type)}" data-id="${escapeHtml(item.id)}">Open</button>` : ''}
       </div>
     </article>
@@ -168,7 +168,7 @@ function trackTable(tracks) {
               <td class="actions">
                 <span class="chips owned-slot" data-owned-slot="${escapeHtml(track.track_id)}"></span>
                 ${playButton(track.track_id, `Play a preview of ${track.title}`)}
-                ${downloadButton({ type: 'track', id: track.track_id })}
+                ${downloadButton({ type: 'track', id: track.track_id, name: `${track.artist || ''} - ${track.title}` })}
               </td>
             </tr>
           `).join('')}
@@ -206,7 +206,7 @@ export async function openAlbum(albumId) {
         <p class="detail-sub">${escapeHtml(album.artist)}, ${tracks.length} tracks${albumMinutes(tracks)}</p>
         <div class="chips detail-chips" data-owned-summary></div>
         <div class="detail-actions">
-          ${downloadButton({ type: 'album', id: album.id, label: 'Download album', small: false }).replace('btn btn--ghost', 'btn')}
+          ${downloadButton({ type: 'album', id: album.id, label: 'Download album', small: false, name: `${album.artist} - ${album.title}` }).replace('btn btn--ghost', 'btn')}
         </div>
       </div>
     </header>
@@ -234,7 +234,7 @@ async function openArtist(artistId) {
         <p class="detail-sub">${escapeHtml(artist.nb_album || albums.length)} releases on Deezer</p>
         <div class="chips detail-chips" data-artist-summary></div>
         <div class="detail-actions">
-          ${downloadButton({ type: 'artist', id: artist.id, label: 'Download discography', small: false }).replace('btn btn--ghost', 'btn')}
+          ${downloadButton({ type: 'artist', id: artist.id, label: 'Download discography', small: false, name: `${artist.name} (discography)` }).replace('btn btn--ghost', 'btn')}
         </div>
       </div>
     </header>
@@ -297,7 +297,7 @@ async function toggleArtistAlbum(button) {
   panel.innerHTML = `
     <div class="album-inline-head">
       <span>${tracks.length} tracks${albumMinutes(tracks)}</span>
-      ${downloadButton({ type: 'album', id: album.id, label: 'Download album' })}
+      ${downloadButton({ type: 'album', id: album.id, label: 'Download album', name: `${album.artist} - ${album.title}` })}
     </div>
     ${trackTable(tracks)}
   `;

@@ -80,7 +80,7 @@ function releaseRow(release, today) {
         <div class="chips">${ownedChip(release)}</div>
       </div>
       <div class="result-actions">
-        ${upcoming ? '<span class="chip">Not out yet</span>' : `${playAlbumButton(release.id)}${downloadButton({ type: 'album', id: release.id })}`}
+        ${upcoming ? '<span class="chip">Not out yet</span>' : `${playAlbumButton(release.id)}${downloadButton({ type: 'album', id: release.id, name: `${release.artist} - ${release.title}` })}`}
         <button type="button" class="btn btn--ghost btn--sm" data-open-release="${escapeHtml(release.id)}">Open</button>
       </div>
     </article>

@@ -38,7 +38,13 @@ def _log_dl(msg):
 
 def render_app(view):
     """Dashboard and settings live on the same page; `view` picks the one shown first."""
-    return render_template("home.html", playlists=load_playlists(), config=load_config(), view=view)
+    return render_template(
+        "home.html",
+        playlists=load_playlists(),
+        config=load_config(),
+        view=view,
+        download_dir=deezer_dl.download_dir_status(),
+    )
 
 
 @playlists_bp.get("/")
