@@ -18,6 +18,12 @@
       </header>
 
       <div class="help-body" data-help-panel="new">
+        <div class="help-callout help-callout--warn">
+          <strong>Downloads from 1.10.0 to 1.11.0 may be damaged</strong>
+          <p>Those versions decrypted the files wrongly: they play with noise and skips, and Navidrome's web player refuses them. Downloads are correct again. <b>Repair downloads</b> checks every file saved since 1.10.0 against Deezer and replaces only the damaged ones, keeping their tags; then refresh the library.</p>
+          <button type="button" class="btn btn--sm" data-action="repair-downloads">Repair downloads</button>
+        </div>
+
         {% if whats_new.legacy %}
         <div class="help-callout">
           <strong>You no longer need the deezer-downloader container</strong>

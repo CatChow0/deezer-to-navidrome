@@ -48,6 +48,8 @@ export function initHelp(modal) {
   on(modal.el, 'click', '[data-help-tab]', (_, btn) => showTab(modal, btn.dataset.helpTab));
   // The view switch happens behind the window: close it first.
   on(modal.el, 'click', '[data-help-settings]', () => modal.close());
+  // The repair runs in Activity: close the window so it can be followed.
+  on(modal.el, 'click', '[data-action="repair-downloads"]', () => modal.close());
   on(document, 'click', '[data-action="help"]', () => open());
 
   if (auto) open('new');

@@ -671,6 +671,23 @@ tbody[data-filter="unchecked"] tr:not([data-matched="none"]) {
   color: var(--text-soft);
 }
 
+.help-callout + .help-callout {
+  margin-top: 12px;
+}
+
+.help-callout--warn {
+  border-color: var(--partial-line);
+  background: var(--partial-bg);
+}
+
+.help-callout--warn strong {
+  color: var(--partial);
+}
+
+.help-callout .btn {
+  margin-top: 12px;
+}
+
 .help-steps,
 .help-guide {
   display: grid;

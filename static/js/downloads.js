@@ -4,7 +4,7 @@
 // tracks already saved are kept.
 
 import { escapeHtml, fetchJSON, on, toast } from './core.js';
-import { watchTask } from './activity.js';
+import { runServerTask, watchTask } from './activity.js';
 
 // States that mean "leave it alone, it is running or it is done".
 const LOCKED = new Set(['busy', 'queued', 'active', 'done']);
@@ -79,4 +79,9 @@ export function handleDownloadClick(btn) {
 
 export function initDownloads() {
   on(document, 'click', '[data-action="download"]', (_, btn) => handleDownloadClick(btn));
+  on(document, 'click', '[data-action="repair-downloads"]', async (_, btn) => {
+    btn.disabled = true;
+    await runServerTask('Repair downloads', '/deezer-dl/repair/start');
+    btn.disabled = false;
+  });
 }

@@ -18,7 +18,7 @@ from pathlib import Path
 import requests
 from Crypto.Cipher import Blowfish
 from mutagen.flac import FLAC, Picture
-from mutagen.id3 import APIC, TALB, TDRC, TIT2, TPE1, TPE2, TPOS, TRCK, PictureType
+from mutagen.id3 import APIC, TALB, TDRC, TIT2, TPE1, TPE2, TPOS, TRCK, TXXX, PictureType
 from mutagen.mp3 import MP3
 
 from core.config import load_secret
@@ -31,6 +31,10 @@ COVER_URL = "https://e-cdns-images.dzcdn.net/images/cover/{md5}/1200x1200.jpg"
 CIPHER_KEY = b"g4el58wc0zvf9na1"
 CIPHER_IV = a2b_hex("0001020304050607")
 BLOCK_SIZE = 2048
+
+# Tag holding the Deezer id of the track a file was downloaded for (TXXX
+# description in MP3, field name in FLAC), so a file can be traced back.
+DEEZER_ID_TAG = "DEEZER_TRACK_ID"
 
 _session = DeezerSession()
 _session_lock = threading.Lock()
@@ -120,13 +124,17 @@ def _cipher_key(song_id):
 
 
 def _decrypt(data, key):
-    """Deezer encrypts every third block of 2048 bytes; the rest is plain."""
+    """Deezer encrypts every third block of 2048 bytes; the rest is plain.
+
+    Each encrypted block is its own CBC message starting from the IV, so it
+    needs a fresh cipher: reusing one carries the chaining state over and
+    garbles the first 8 bytes of every encrypted block after the first."""
     out = bytearray(data)
-    cipher = Blowfish.new(key.encode(), Blowfish.MODE_CBC, CIPHER_IV)
     for index in range(len(out) // BLOCK_SIZE):
         if index % 3:
             continue
         start = index * BLOCK_SIZE
+        cipher = Blowfish.new(key.encode(), Blowfish.MODE_CBC, CIPHER_IV)
         out[start:start + BLOCK_SIZE] = cipher.decrypt(bytes(out[start:start + BLOCK_SIZE]))
     return bytes(out)
 
@@ -166,6 +174,8 @@ def _write_tags(path, song, is_flac):
             audio["discnumber"] = str(disc_number)
         if released:
             audio["date"] = str(released)[:4]
+        if song.get("SNG_ID"):
+            audio[DEEZER_ID_TAG.lower()] = str(song["SNG_ID"])
         if cover:
             picture = Picture()
             picture.mime = "image/jpeg"
@@ -191,6 +201,8 @@ def _write_tags(path, song, is_flac):
         audio["TPOS"] = TPOS(encoding=3, text=str(disc_number))
     if released:
         audio["TDRC"] = TDRC(encoding=3, text=str(released)[:4])
+    if song.get("SNG_ID"):
+        audio["TXXX:" + DEEZER_ID_TAG] = TXXX(encoding=3, desc=DEEZER_ID_TAG, text=str(song["SNG_ID"]))
     if cover:
         audio["APIC"] = APIC(encoding=3, mime="image/jpeg", type=PictureType.COVER_FRONT, desc="Cover", data=cover)
     audio.save(v2_version=3)

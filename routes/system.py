@@ -312,6 +312,41 @@ def whats_new_seen_route():
     return jsonify({"ok": True})
 
 
+@system_bp.post("/deezer-dl/repair/start")
+def repair_downloads_start():
+    """Finds the files the faulty decryption of 1.10.0 to 1.11.0 broke, and
+    downloads them again."""
+    from core import download_repair
+
+    if not deezer_dl.download_arl():
+        return jsonify({"ok": False, "error": "Connect a Deezer account first: the files are downloaded again"}), 400
+    if download_repair.is_running():
+        return jsonify({"ok": False, "error": "A repair is already running"}), 409
+    task_id = create_task("Repair downloads", kind="download")
+
+    def runner():
+        try:
+            summary = download_repair.repair_downloads(
+                progress=lambda message, percent: push_task_event(task_id, message, stage="repair", progress=percent)
+            )
+        except Exception as e:
+            push_task_event(task_id, f"Repair failed: {e}", stage="error", done=True, error=True)
+            return
+        repaired, unknown, errors = summary["repaired"], summary["unknown"], summary["errors"]
+        parts = [f"{len(repaired)} repaired", f"{summary['fine']} already fine"]
+        if unknown:
+            parts.append(f"{len(unknown)} not found on Deezer")
+        if errors:
+            parts.append(f"{len(errors)} errors")
+        message = f"Checked {summary['checked']} files: {', '.join(parts)}"
+        if repaired:
+            message += ". Refresh the library so Navidrome reads them again"
+        push_task_event(task_id, message, stage="done", progress=100, done=True, error=bool(errors) and not repaired)
+
+    threading.Thread(target=runner, daemon=True).start()
+    return jsonify({"task_id": task_id})
+
+
 @system_bp.route("/deezer-dl/track/<track_id>", methods=["POST"])
 def deezer_dl_track(track_id):
     return _download_request("track", track_id)

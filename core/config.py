@@ -43,9 +43,11 @@ def env_host_to_navidrome_roots(name: str, default=None):
 
 
 # The release notes shown once in the Help window. A new install starts with
-# them read; an install upgraded from before the built-in downloader still has
-# the old downloader address in its config.json, which is how it is spotted.
-WHATS_NEW_ID = "1.11"
+# them read; any older install sees them once (it has another notes_seen, or
+# none before 1.11). An install upgraded from before the built-in downloader
+# still has the old downloader address in its config.json: the notes then also
+# explain how to drop the old container.
+WHATS_NEW_ID = "1.11.1"
 LEGACY_DOWNLOADER_KEY = "deezer_dl_base_url"
 
 DEFAULT_CONFIG = {
@@ -257,7 +259,7 @@ def whats_new_state():
     return {
         "id": WHATS_NEW_ID,
         "legacy": legacy,
-        "show": legacy or raw.get("notes_seen", WHATS_NEW_ID) != WHATS_NEW_ID,
+        "show": legacy or raw.get("notes_seen") != WHATS_NEW_ID,
     }
 
 

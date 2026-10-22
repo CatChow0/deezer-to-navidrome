@@ -2,7 +2,7 @@
 
 **Turn your Deezer playlists into Navidrome `.m3u8` playlists, match them against your local library, and download what is missing straight from Deezer.**
 
-[![Version](https://img.shields.io/badge/version-1.11.0-blue)](https://hub.docker.com/r/catchow/deezer-to-navidrome)
+[![Version](https://img.shields.io/badge/version-1.11.1-blue)](https://hub.docker.com/r/catchow/deezer-to-navidrome)
 [![Python 3](https://img.shields.io/badge/python-3-blue)](https://www.python.org/)
 [![Flask](https://img.shields.io/badge/flask-web%20app-brightgreen)](https://flask.palletsprojects.com/)
 [![GitHub](https://img.shields.io/badge/GitHub-source%20%26%20full%20docs-black)](https://github.com/CatChow0/deezer-to-navidrome)
@@ -77,6 +77,8 @@ Files go to the downloads folder: the music folder named `deezer-dl` by default,
 Deezer serves the catalogue of the account's country (shown in Settings). The version downloaded is exactly the one you clicked: explicit tracks and albums are marked **E**, and the app never replaces an explicit track with its censored version.
 
 Each download shows its progress on its button (*Queued* → `42%` or `3/14` → *Downloaded*) and in the **Activity** cell. A partly failed album can be retried; files already saved are kept.
+
+**Downloaded with 1.10.0 to 1.11.0?** Those versions saved damaged files (noise, skips, refused by Navidrome's web player). Run **Settings → Downloads → Repair downloads**: it replaces only the damaged files, keeping their tags.
 
 **Upgrading from a version before 1.10?** The separate `kmille2/deezer-downloader` container is no longer needed: remove it and `DEEZER_DL_BASE_URL`, and mount the `deezer-dl` folder (writable) in this container. The app opens a *What's new* window on the first visit that checks this for you; the **Help** button reopens it.
 
