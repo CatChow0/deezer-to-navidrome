@@ -2,7 +2,7 @@
 
 **A self-hosted web app that turns your Deezer playlists into Navidrome `.m3u8` playlists, matches them against your local library, and downloads what is missing straight from Deezer.**
 
-[![Docker Image Version](https://img.shields.io/badge/version-1.11.1-blue)](https://hub.docker.com/r/catchow/deezer-to-navidrome)
+[![Docker Image Version](https://img.shields.io/badge/version-1.11.2-blue)](https://hub.docker.com/r/catchow/deezer-to-navidrome)
 [![Python 3](https://img.shields.io/badge/python-3-blue)](https://www.python.org/)
 [![Flask](https://img.shields.io/badge/flask-web%20app-brightgreen)](https://flask.palletsprojects.com/)
 
@@ -738,7 +738,7 @@ All routes need a signed-in session, except `/health` and the three routes the A
 
 ### Downloaded files play with noise, skip, or do not play in Navidrome
 
-Versions 1.10.0 to 1.11.0 decrypted the downloads wrongly (8 wrong bytes every 6 KB). Update, then run **Settings → Downloads → Repair downloads**: it checks every file of the downloads folder saved since 1.10.0, downloads it again, and replaces it only if it is byte for byte what the faulty versions produced, keeping its tags. Files it cannot identify on Deezer, and files that are fine (from another downloader, for instance), are left as they are. Then run **Refresh library**.
+Versions 1.10.0 to 1.11.0 decrypted the downloads wrongly (8 wrong bytes every 6 KB). Update, then run **Settings → Library index → Repair downloads**: it checks every file of the downloads folder saved since 1.10.0, downloads it again, and replaces it only if it is byte for byte what the faulty versions produced, keeping its tags. Files it cannot identify on Deezer, and files that are fine (from another downloader, for instance), are left as they are. Then run **Refresh library**.
 
 New downloads also carry the Deezer id of the track in a `DEEZER_TRACK_ID` tag.
 

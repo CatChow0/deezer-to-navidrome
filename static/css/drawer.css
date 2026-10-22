@@ -853,3 +853,39 @@ tbody[data-filter="unchecked"] tr:not([data-matched="none"]) {
     padding: 12px 18px;
   }
 }
+
+.help-todo {
+  display: grid;
+  gap: 4px;
+  margin: 8px 0 0;
+  padding-left: 1.1em;
+  color: var(--text-soft);
+}
+
+.help-compose {
+  display: grid;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.help-compose figure {
+  margin: 0;
+  min-width: 0;
+}
+
+.help-compose figcaption {
+  margin-bottom: 6px;
+  color: var(--muted);
+  font-size: var(--step--1);
+  font-weight: 600;
+}
+
+.help-compose .help-code {
+  margin: 0;
+}
+
+.help-step .help-note {
+  color: var(--muted);
+  font-size: var(--step--1);
+}
+

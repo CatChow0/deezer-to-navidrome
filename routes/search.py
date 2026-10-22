@@ -1,9 +1,10 @@
 import time
+from concurrent.futures import ThreadPoolExecutor
 
 import requests
 from flask import Blueprint, jsonify, request
 
-from core.deezer import fetch_deezer_album_details, fetch_deezer_artist_details, search_deezer
+from core.deezer import fetch_deezer_album_details, fetch_deezer_album_tracks, fetch_deezer_artist_details, search_deezer
 from core.library import library_snapshot
 from core.matching import clean_title, find_best_match
 from core.normalization import extract_version_flags, normalize_album_strict, normalize_text
@@ -46,9 +47,11 @@ def search_artist_detail_route(artist_id):
 def check_library_route():
     """Which search results are already in the library.
 
-    Body: {"items": [{"key", "type": track|album|artist, "title", "artist", "album", "duration"}]}
-    Tracks use the same matcher as playlist scans; albums count the distinct
-    titles owned from that artist's album; artists count owned albums.
+    Body: {"items": [{"key", "type": track|album|artist, "id", "title", "artist", "album", "duration"}]}
+    Tracks use the same matcher as playlist scans. An album with a Deezer id
+    has each of its tracks checked the same way, so the count matches the album
+    view ({"owned_count", "total"}); without an id, it counts the distinct
+    titles owned from that artist's album. Artists count owned albums.
     """
     items = (request.get_json(silent=True) or {}).get("items") or []
     snap = library_snapshot()
@@ -63,24 +66,48 @@ def check_library_route():
     def album_of(entry):
         return normalize_album_strict(entry.get("tag_album") or "") or entry.get("album_dir_norm") or ""
 
+    def owned(title, artist, album, duration):
+        if not title:
+            return False
+        track = {
+            "title": title,
+            "artist": artist,
+            "album": album,
+            "duration": duration,
+            "norm_title": normalize_text(title),
+            "norm_artist": normalize_text(artist),
+            "norm_album": normalize_text(album),
+            "version_flags": extract_version_flags(title, artist),
+        }
+        return bool(find_best_match(track, library, index))
+
+    items = items[:100]
+    album_ids = {str(i.get("id")) for i in items if i.get("type") == "album" and str(i.get("id") or "").isdigit()}
+
+    def tracks_of(album_id):
+        try:
+            return album_id, fetch_deezer_album_tracks(album_id)
+        except Exception:
+            return album_id, None
+
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        album_tracks = dict(pool.map(tracks_of, album_ids))
+
     results = {}
-    for item in items[:100]:
+    for item in items:
         key = str(item.get("key") or "")
         kind = item.get("type")
         if kind == "track":
-            title, artist, album = item.get("title") or "", item.get("artist") or "", item.get("album") or ""
-            track = {
-                "title": title,
-                "artist": artist,
-                "album": album,
-                "duration": item.get("duration"),
-                "norm_title": normalize_text(title),
-                "norm_artist": normalize_text(artist),
-                "norm_album": normalize_text(album),
-                "version_flags": extract_version_flags(title, artist),
-            }
-            match = find_best_match(track, library, index) if title else None
-            results[key] = {"owned": bool(match)}
+            owned_track = owned(item.get("title") or "", item.get("artist") or "", item.get("album") or "", item.get("duration"))
+            results[key] = {"owned": owned_track}
+        elif kind == "album" and album_tracks.get(str(item.get("id"))) is not None:
+            tracks = album_tracks[str(item.get("id"))]
+            count = sum(
+                owned(t.get("title") or "", (t.get("artist") or {}).get("name") or item.get("artist") or "",
+                      item.get("title") or "", t.get("duration"))
+                for t in tracks
+            )
+            results[key] = {"owned_count": count, "total": len(tracks)}
         elif kind == "album":
             wanted = normalize_album_strict(item.get("title") or "")
             titles = set()

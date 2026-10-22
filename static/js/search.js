@@ -8,6 +8,9 @@ import { playAlbumButton, playButton } from './player.js';
 let drawer = null;
 let currentType = 'track';
 let currentResults = [];
+// Bumped by every search and by Clear, so a search still in flight cannot
+// bring its results back once something newer happened.
+let searchRun = 0;
 
 const ownedChip = (label = 'In library', title = 'Already in your library') =>
   `<span class="chip chip--ok" title="${escapeHtml(title)}">${escapeHtml(label)}</span>`;
@@ -17,6 +20,13 @@ function countChip(owned, total, unit) {
   const full = total > 0 && owned >= total;
   const label = total > 0 ? `${owned}/${total} ${unit} owned` : `${owned} ${unit} owned`;
   return `<span class="chip ${full ? 'chip--ok' : 'chip--partial'}">${escapeHtml(label)}</span>`;
+}
+
+// An album gets the same "In library" chip as a track once every track of it
+// is there; otherwise how many of its tracks are.
+export function albumChip(owned, total) {
+  if (total > 0 && owned >= total) return ownedChip('In library', total === 1 ? 'Its track is in your library' : `All ${total} tracks are in your library`);
+  return countChip(owned, total, 'tracks');
 }
 
 function formatDuration(seconds) {
@@ -45,7 +55,7 @@ function checkItem(type, item) {
   if (type === 'track') {
     return { key: item.id, type, title: item.title, artist: item.artist, album: item.album, duration: item.duration };
   }
-  if (type === 'album') return { key: item.id, type, title: item.title, artist: item.artist || item.subtitle };
+  if (type === 'album') return { key: item.id, id: item.id, type, title: item.title, artist: item.artist || item.subtitle };
   return { key: item.id, type, title: item.title };
 }
 
@@ -63,7 +73,7 @@ async function updateResultBadges() {
     if (type === 'track') {
       if (info.owned) slot.innerHTML = ownedChip();
     } else if (type === 'album') {
-      slot.innerHTML = countChip(info.owned_count || 0, item.track_count || 0, 'tracks');
+      slot.innerHTML = albumChip(info.owned_count || 0, info.total ?? item.track_count ?? 0);
     } else {
       slot.innerHTML = countChip(info.albums_owned || 0, item.nb_album || 0, 'albums');
     }
@@ -85,17 +95,17 @@ async function markOwnedTracks(tracks, album, root) {
   }
 
   const summary = root.querySelector('[data-owned-summary]');
-  if (summary) summary.innerHTML = countChip(owned, tracks.length, 'tracks');
+  if (summary) summary.innerHTML = albumChip(owned, tracks.length);
 }
 
 async function markOwnedAlbums(albums, artistName, root) {
-  const results = await libraryCheck(albums.map(a => ({ key: a.id, type: 'album', title: a.title, artist: artistName })));
+  const results = await libraryCheck(albums.map(a => ({ key: a.id, id: a.id, type: 'album', title: a.title, artist: artistName })));
   if (!results) return;
 
   for (const album of albums) {
     const info = results[album.id];
     const slot = root.querySelector(`[data-album-chip="${CSS.escape(String(album.id))}"]`);
-    if (info && slot) slot.innerHTML = countChip(info.owned_count || 0, album.track_count || 0, 'tracks');
+    if (info && slot) slot.innerHTML = albumChip(info.owned_count || 0, info.total ?? album.track_count ?? 0);
   }
 }
 
@@ -124,16 +134,34 @@ function renderResult(item) {
   `;
 }
 
+function showClear(visible) {
+  const button = document.querySelector('[data-action="clear-search"]');
+  if (button) button.hidden = !visible;
+}
+
+// Back to the empty search: no query, no results, no status.
+function clearSearch() {
+  searchRun++;
+  currentResults = [];
+  document.getElementById('search-results').innerHTML = '';
+  document.getElementById('search-status').textContent = '';
+  const input = document.querySelector('#search-form [name="q"]');
+  if (input) input.value = '';
+  showClear(false);
+}
+
 async function runSearch(query) {
   const status = document.getElementById('search-status');
   const list = document.getElementById('search-results');
   status.textContent = 'Searching Deezer…';
   list.innerHTML = '';
   currentResults = [];
+  showClear(true);
 
   const type = currentType;
+  const run = ++searchRun;
   const { data } = await fetchJSON(`/search?q=${encodeURIComponent(query)}&type=${encodeURIComponent(type)}`);
-  if (type !== currentType) return;
+  if (run !== searchRun || type !== currentType) return;
 
   if (!data?.ok) {
     status.textContent = data?.error || 'Search failed. Check that the server can reach Deezer.';
@@ -315,6 +343,22 @@ export function initSearch(drawerApi) {
     event.preventDefault();
     const query = form.elements.q.value.trim();
     if (query) runSearch(query);
+  });
+
+  on(form, 'click', '[data-action="clear-search"]', () => {
+    clearSearch();
+    form.elements.q.focus();
+  });
+
+  // Escape, or emptying the field (the browser's own ✕ included), clears too.
+  form.elements.q.addEventListener('keydown', event => {
+    if (event.key === 'Escape' && (form.elements.q.value || currentResults.length)) {
+      event.preventDefault();
+      clearSearch();
+    }
+  });
+  form.elements.q.addEventListener('input', () => {
+    if (!form.elements.q.value) clearSearch();
   });
 
   on(form, 'click', '[data-search-type]', (_, btn) => {

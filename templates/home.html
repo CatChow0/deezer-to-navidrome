@@ -25,7 +25,10 @@
               <button type="button" data-search-type="album" aria-pressed="false">Albums</button>
               <button type="button" data-search-type="artist" aria-pressed="false">Artists</button>
             </div>
-            <span class="search-status" id="search-status" aria-live="polite"></span>
+            <span class="search-meta">
+              <span class="search-status" id="search-status" aria-live="polite"></span>
+              <button type="button" class="btn btn--ghost btn--sm" data-action="clear-search" hidden>Clear</button>
+            </span>
           </div>
         </form>
         <div class="results" id="search-results" data-play-queue></div>

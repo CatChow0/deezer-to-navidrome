@@ -1,6 +1,7 @@
 import json
 import os
 import re
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
@@ -663,6 +664,54 @@ def search_deezer(query: str, search_type: str, limit: int = 25):
     return results
 
 
+# Deezer's public API allows about 50 requests per 5 seconds: the album track
+# lists fetched for the ownership chips are spaced out, and kept for a while
+# since a released album does not change.
+_API_GAP = 0.12
+_api_gate = threading.Lock()
+_api_last = [0.0]
+_ALBUM_TRACKS_TTL = 6 * 3600
+_album_tracks = {}
+
+
+def _public_api(path, params=None):
+    for attempt in range(3):
+        with _api_gate:
+            wait = _api_last[0] + _API_GAP - time.time()
+            if wait > 0:
+                time.sleep(wait)
+            _api_last[0] = time.time()
+        data = requests.get(f"https://api.deezer.com{path}", params=params, timeout=30).json()
+        error = data.get("error") if isinstance(data, dict) else None
+        if error and error.get("code") == 4 and attempt < 2:
+            time.sleep(1.5)  # quota exceeded: wait for the window to pass
+            continue
+        if error:
+            raise RuntimeError(str(error))
+        return data
+
+
+def fetch_deezer_album_tracks(album_id: str):
+    """Every track of an album. /album/{id} lists at most 25 of them, so the
+    paginated /album/{id}/tracks is used instead."""
+    album_id = str(album_id)
+    cached = _album_tracks.get(album_id)
+    if cached and time.time() - cached[0] < _ALBUM_TRACKS_TTL:
+        return cached[1]
+    tracks, index = [], 0
+    while True:
+        page = _public_api(f"/album/{album_id}/tracks", {"limit": 100, "index": index})
+        data = page.get("data") or []
+        tracks += data
+        index += len(data)
+        if not data or index >= int(page.get("total") or 0):
+            break
+    if len(_album_tracks) > 2000:
+        _album_tracks.clear()
+    _album_tracks[album_id] = (time.time(), tracks)
+    return tracks
+
+
 def fetch_deezer_album_details(album_id: str):
     resp = requests.get(f"https://api.deezer.com/album/{album_id}", timeout=30)
     resp.raise_for_status()
@@ -671,7 +720,7 @@ def fetch_deezer_album_details(album_id: str):
         raise RuntimeError(str(data["error"]))
 
     tracks = []
-    for idx, t in enumerate((data.get("tracks") or {}).get("data", []), start=1):
+    for idx, t in enumerate(fetch_deezer_album_tracks(album_id), start=1):
         tracks.append(
             {
                 "position": idx,

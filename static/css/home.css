@@ -32,6 +32,13 @@
   margin-top: 12px;
 }
 
+.search-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: auto;
+}
+
 .search-status {
   color: var(--muted);
   font-size: var(--step--1);

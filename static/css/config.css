@@ -242,17 +242,3 @@
 .dl-folder--warn {
   color: var(--miss);
 }
-
-.dl-repair {
-  display: grid;
-  gap: 8px;
-  justify-items: start;
-  margin-top: 16px;
-  padding-top: 16px;
-  border-top: 1px solid var(--line);
-}
-
-.dl-repair small {
-  color: var(--muted);
-  font-size: var(--step--1);
-}

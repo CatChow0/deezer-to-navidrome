@@ -30,17 +30,22 @@ function parseDate(iso) {
   return new Date(y, (m || 1) - 1, d || 1);
 }
 
+// owned[id] = { count, total }: total comes from the album's full track list
+// when the server could read it, else from the feed.
 function ownership(release) {
-  const count = owned[release.id];
-  if (count === undefined) return null;
-  if (!count) return 'none';
-  return release.nb_tracks && count >= release.nb_tracks ? 'full' : 'partial';
+  const info = owned[release.id];
+  if (info === undefined) return null;
+  if (!info.count) return 'none';
+  return info.total && info.count >= info.total ? 'full' : 'partial';
 }
 
 function ownedChip(release) {
   const state = ownership(release);
   if (state === 'full') return '<span class="chip chip--ok">In library</span>';
-  if (state === 'partial') return `<span class="chip chip--partial">${owned[release.id]}/${release.nb_tracks || '?'} tracks owned</span>`;
+  if (state === 'partial') {
+    const info = owned[release.id];
+    return `<span class="chip chip--partial">${info.count}/${info.total || '?'} tracks owned</span>`;
+  }
   return '';
 }
 
@@ -191,8 +196,11 @@ async function checkOwnership() {
   const releases = feed?.releases || [];
   for (let i = 0; i < releases.length; i += 100) {
     const batch = releases.slice(i, i + 100);
-    const results = await libraryCheck(batch.map(r => ({ key: r.id, type: 'album', title: r.title, artist: r.artist })));
-    for (const release of batch) owned[release.id] = results?.[release.id]?.owned_count ?? 0;
+    const results = await libraryCheck(batch.map(r => ({ key: r.id, id: r.id, type: 'album', title: r.title, artist: r.artist })));
+    for (const release of batch) {
+      const info = results?.[release.id];
+      owned[release.id] = { count: info?.owned_count ?? 0, total: info?.total ?? release.nb_tracks ?? 0 };
+    }
     render();
   }
 }

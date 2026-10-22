@@ -20,7 +20,7 @@
       <div class="help-body" data-help-panel="new">
         <div class="help-callout help-callout--warn">
           <strong>Downloads from 1.10.0 to 1.11.0 may be damaged</strong>
-          <p>Those versions decrypted the files wrongly: they play with noise and skips, and Navidrome's web player refuses them. Downloads are correct again. <b>Repair downloads</b> checks every file saved since 1.10.0 against Deezer and replaces only the damaged ones, keeping their tags; then refresh the library.</p>
+          <p>Those versions decrypted the files wrongly: they play with noise and skips, and Navidrome's web player refuses them. Downloads are correct again. <b>Repair downloads</b> checks every file saved since 1.10.0 against Deezer and replaces only the damaged ones, keeping their tags; then refresh the library. The button is also in <b>Settings → Library index</b>.</p>
           <button type="button" class="btn btn--sm" data-action="repair-downloads">Repair downloads</button>
         </div>
 
@@ -56,18 +56,47 @@
           <li class="help-step">
             <span class="help-step-state"><span class="help-step-num">3</span></span>
             <div>
-              <strong>{% if whats_new.legacy %}Clean up your docker-compose.yml{% else %}Your docker-compose.yml{% endif %}</strong>
-              <p>Only this app's container is needed. The old download server address (<code>DEEZER_DL_BASE_URL</code>) is no longer read, and its field is gone from Settings.</p>
-<pre class="help-code"><span class="help-del">- deezer-downloader:</span>
-<span class="help-del">-   image: kmille2/deezer-downloader</span>
-<span class="help-del">-   …</span>
+              {% if whats_new.legacy %}
+              <strong>Remove the download server from your docker-compose.yml</strong>
+              <p>Your setup ran two containers: <code>deezer-downloader</code> (kmille2's image) did the downloads, and this app sent them to it through <code>DEEZER_DL_BASE_URL</code>. This app now downloads by itself, so:</p>
+              <ul class="help-todo">
+                <li>delete the whole <code>deezer-downloader</code> service, with its own volumes and settings;</li>
+                <li>in <code>deezer-to-navidrome</code>, delete <code>DEEZER_DL_BASE_URL</code>: it is no longer read;</li>
+                <li>mount your downloads folder in <code>deezer-to-navidrome</code>, writable (step 2).</li>
+              </ul>
+              <div class="help-compose">
+                <figure>
+                  <figcaption>Before: two containers</figcaption>
+<pre class="help-code">services:
+<span class="help-del">  deezer-downloader:
+    image: kmille2/deezer-downloader
+    volumes:
+      - …   # its settings and download folder</span>
+
   deezer-to-navidrome:
     image: catchow/deezer-to-navidrome:latest
     environment:
-<span class="help-del">-     DEEZER_DL_BASE_URL: "http://deezer-downloader:5000"</span>
-<span class="help-add">+     # DEEZER_ARL: ""   # optional, or paste it in Settings</span>
+<span class="help-del">      DEEZER_DL_BASE_URL: "http://…"</span>
     volumes:
-<span class="help-add">+     - /path/on/host/deezer-dl:/music/deezer-dl   # writable</span></pre>
+      - /path/on/host/library:/music/library</pre>
+                </figure>
+                <figure>
+                  <figcaption>After: this app only</figcaption>
+<pre class="help-code">services:
+  deezer-to-navidrome:
+    image: catchow/deezer-to-navidrome:latest
+    environment:
+<span class="help-add">      # DEEZER_ARL: ""   # optional, or Settings</span>
+    volumes:
+      - /path/on/host/library:/music/library
+<span class="help-add">      - /path/on/host/deezer-dl:/music/deezer-dl</span></pre>
+                </figure>
+              </div>
+              <p class="help-note">Lines in red go away, lines in green are new. Keep the rest of your file as it is.</p>
+              {% else %}
+              <strong>No download server to run</strong>
+              <p>Downloads happen inside this container: no other service is needed. Just keep the downloads folder mounted, writable (step 2).</p>
+              {% endif %}
             </div>
           </li>
         </ol>
