@@ -36,24 +36,33 @@
     </section>
 
     <section class="cell" aria-labelledby="playlists-title">
-      <div class="cell-head">
+      <div class="cell-head cell-head--top">
         <div>
           <h2 class="cell-title" id="playlists-title">Playlists</h2>
           <p class="cell-sub">Open a playlist to match it against your library and fetch what is missing.</p>
         </div>
-        <form method="post" action="{{ url_for('playlists.add_playlist') }}" class="add-form" id="add-playlist-form">
-          <input type="text" name="playlist_input" placeholder="Deezer playlist link or ID" aria-label="Deezer playlist link or ID" required>
-          <button type="submit" class="btn btn--ghost">Add</button>
-        </form>
+        <div class="add-forms">
+          <form method="post" action="{{ url_for('playlists.add_playlist') }}" class="add-form" id="add-playlist-form">
+            <input type="text" name="playlist_input" placeholder="Deezer or Spotify playlist link" aria-label="Deezer or Spotify playlist link, or a Deezer playlist ID" required>
+            <button type="submit" class="btn btn--ghost">Add</button>
+          </form>
+          <form method="post" action="{{ url_for('playlists.import_csv_playlist') }}" enctype="multipart/form-data" class="import-form" id="import-csv-form">
+            <label class="btn btn--ghost btn--sm">
+              <input type="file" name="csv_file" accept=".csv,text/csv" class="sr-only" required>
+              Import CSV
+            </label>
+            <span class="import-hint">From <a href="https://exportify.app" target="_blank" rel="noopener">Exportify</a>, TuneMyMusic or Soundiiz: any size, private playlists too.</span>
+          </form>
+        </div>
       </div>
       <div class="cell-body">
-        {% set regular = playlists | selectattr('kind', 'equalto', 'playlist') | list %}
+        {% set regular = playlists | rejectattr('kind', 'equalto', 'mix') | list %}
         {% if regular %}
         <div class="tiles">
           {% for playlist in regular %}{{ tile(playlist) }}{% endfor %}
         </div>
         {% else %}
-        <p class="empty">No playlists yet. Paste a Deezer playlist link above to start tracking it.</p>
+        <p class="empty">No playlists yet. Paste a Deezer or Spotify playlist link above, or import a CSV.</p>
         {% endif %}
       </div>
     </section>

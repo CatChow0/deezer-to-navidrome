@@ -13,6 +13,10 @@ SECRETS_FILE = DATA_DIR / "secrets.json"
 PLAYLIST_IDS_FILE = DATA_DIR / "deezer_playlist_ids.json"
 LIBRARY_CACHE_FILE = DATA_DIR / "music_library_cache.json"
 PREVIEW_STATE_FILE = DATA_DIR / "playlist_preview_state.json"
+# Playlists imported from other platforms: their source tracks and the Deezer
+# track picked for each one. Kept apart from the preview state, which every
+# scan rewrites, because the picks are slow to rebuild.
+CROSSPLATFORM_FILE = DATA_DIR / "crossplatform.json"
 DEDUP_REPORT_FILE = DATA_DIR / "dedup_report.json"
 DEDUP_QUARANTINE_DIR = DATA_DIR / "dedup_quarantine"
 DEDUP_CHOICES_FILE = DATA_DIR / "dedup_choices.json"
@@ -326,6 +330,35 @@ def get_preview_state(playlist_id):
     return state.get(str(playlist_id))
 
 
+_crossplatform_lock = threading.RLock()
+
+
+def _load_crossplatform():
+    try:
+        return json.loads(CROSSPLATFORM_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def get_crossplatform_state(playlist_id):
+    return _load_crossplatform().get(str(playlist_id))
+
+
+def modify_crossplatform_state(playlist_id, change):
+    """Read-modify-write of one imported playlist under a lock; `change(old) -> new`.
+    A new value of None removes the playlist."""
+    with _crossplatform_lock:
+        ensure_dirs()
+        state = _load_crossplatform()
+        new = change(state.get(str(playlist_id)))
+        if new is None:
+            state.pop(str(playlist_id), None)
+        else:
+            state[str(playlist_id)] = new
+        CROSSPLATFORM_FILE.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+        return new
+
+
 def delete_playlist_cache(playlist_id: str):
     cover_path = COVERS_DIR / f"{playlist_id}.jpg"
     try:
@@ -340,6 +373,8 @@ def delete_playlist_cache(playlist_id: str):
         save_preview_state(state)
     except Exception:
         pass
+    if get_crossplatform_state(playlist_id) is not None:
+        modify_crossplatform_state(playlist_id, lambda old: None)
 
 
 def get_paths_from_config():
@@ -405,3 +440,8 @@ def clear_playlists_and_covers():
     except Exception:
         pass
     clear_preview_state_file()
+    try:
+        if CROSSPLATFORM_FILE.exists():
+            CROSSPLATFORM_FILE.unlink()
+    except Exception:
+        pass

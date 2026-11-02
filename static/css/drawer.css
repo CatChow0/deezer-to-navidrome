@@ -552,8 +552,69 @@ tr[data-matched="true"] .track-match {
 /* Track filter: hides rows that do not match the chosen state */
 tbody[data-filter="missing"] tr:not([data-matched="false"]),
 tbody[data-filter="found"] tr:not([data-matched="true"]),
-tbody[data-filter="unchecked"] tr:not([data-matched="none"]) {
+tbody[data-filter="unchecked"] tr:not([data-matched="none"]),
+tbody[data-filter="review"] tr:not([data-review="true"]) {
   display: none;
+}
+
+/* Imported playlists: the name the other platform uses, and the Deezer match */
+.xp-source {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: var(--step--1);
+}
+
+.track-name .chip {
+  margin-left: 6px;
+  vertical-align: 1px;
+}
+
+.xp-summary {
+  max-width: 520px;
+  margin-top: 10px;
+}
+
+.xp-legend {
+  margin-top: 0;
+}
+
+.xp-dot--review {
+  background: var(--partial);
+}
+
+.xp-note {
+  margin: 8px 0 0;
+  color: var(--partial);
+  font-size: var(--step--1);
+}
+
+.xp-note a,
+.detail-kind a {
+  color: inherit;
+}
+
+.xp-panel-title {
+  margin: 0;
+  color: var(--text-soft);
+  font-size: var(--step--1);
+}
+
+.xp-result {
+  justify-content: flex-start;
+}
+
+.xp-result > div {
+  flex: 1;
+}
+
+.xp-cover {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  object-fit: cover;
+  background: var(--glass-raised);
 }
 
 /* Manual match panel, opened under a track row */

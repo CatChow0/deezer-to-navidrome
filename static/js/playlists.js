@@ -1,7 +1,7 @@
 // Playlists: tiles in the dashboard, and the detail drawer with match
 // breakdown, scans, downloads, automation and the track table.
 
-import { armed, escapeHtml, fetchJSON, on, toast } from './core.js';
+import { armed, escapeHtml, explicitMark, fetchJSON, on, toast } from './core.js';
 import { onTaskRow, runServerTask } from './activity.js';
 import { queueDownload } from './downloads.js';
 import { playButton } from './player.js';
@@ -12,6 +12,8 @@ let openId = null;
 
 // playlistId → Map(number → row), kept as the source of truth for the table.
 const rowsByPlaylist = new Map();
+// playlistId → summary of a playlist imported from another platform (source, truncated…).
+const xpByPlaylist = new Map();
 
 const tileOf = id => document.querySelector(`.tile[data-playlist-id="${CSS.escape(id)}"]`);
 
@@ -29,29 +31,162 @@ const STATUS = {
   none: { dot: '', label: 'Not checked' },
 };
 
+// Imported tracks without a Deezer track have an ID such as "src:sp:…":
+// nothing to play or download for them.
+const isDeezerId = id => /^\d+$/.test(String(id ?? ''));
+
+// Imported tracks whose Deezer match is worth a look: unsure, or none at all.
+function needsReview(row) {
+  if (!row.xp) return false;
+  return row.xp.status === 'uncertain' || (!row.xp.on_deezer && row.xp.status !== 'pending');
+}
+
+function xpChip(row) {
+  const { status, on_deezer: onDeezer } = row.xp;
+  if (status === 'pending') return ' <span class="chip">Finding on Deezer…</span>';
+  if (!onDeezer) {
+    const how = status === 'manual' ? 'Marked by hand' : 'No close enough track on Deezer';
+    return ` <span class="chip chip--miss" title="${how}">Not on Deezer</span>`;
+  }
+  if (status === 'uncertain') return ' <span class="chip chip--partial" title="The closest Deezer track, but not a sure match: check it with Find on Deezer">Review</span>';
+  if (status === 'manual') return ' <span class="chip chip--info" title="Deezer track picked by hand, kept by every sync">Picked by hand</span>';
+  return '';
+}
+
+// Letters and digits only: "Dreams (2004 Remaster)" and "Dreams - 2004 Remaster" are the same name.
+const plainName = text => String(text || '').toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g, '');
+
+// The track as the other platform names it, when Deezer names it differently.
+function xpSourceLine(row, playlistId) {
+  const source = `${row.xp.source_artist} - ${row.xp.source_title}`;
+  if (!row.xp.on_deezer || plainName(source) === plainName(row.deezer_name)) return '';
+  const name = xpByPlaylist.get(playlistId)?.source_name || 'Source';
+  return `<span class="xp-source">${escapeHtml(name)}: ${escapeHtml(source)}</span>`;
+}
+
 function actionsCell(row) {
   if (!row.track_id) return '';
+  const find = row.xp
+    ? `<button type="button" class="btn btn--ghost btn--sm" data-action="xp-find" data-number="${escapeHtml(row.number)}" title="Pick the Deezer track of this song by hand">Find on Deezer</button>`
+    : '';
   const fix = row.matched === null || row.matched === undefined
     ? ''
     : `<button type="button" class="btn btn--ghost btn--sm" data-action="fix-match" data-number="${escapeHtml(row.number)}" title="Pick the right file, or mark the track as missing">Fix</button>`;
-  if (row.matched === true) return fix;
-  if (row.downloaded) return `<span class="dl-mark">Downloaded</span> ${fix}`;
-  return `<button type="button" class="btn btn--ghost btn--sm dl-btn" data-action="download-track" data-track-id="${escapeHtml(row.track_id)}">Download</button> ${fix}`;
+  if (row.matched === true || !isDeezerId(row.track_id)) return `${find} ${fix}`;
+  if (row.downloaded) return `<span class="dl-mark">Downloaded</span> ${find} ${fix}`;
+  return `<button type="button" class="btn btn--ghost btn--sm dl-btn" data-action="download-track" data-track-id="${escapeHtml(row.track_id)}">Download</button> ${find} ${fix}`;
 }
 
 function rowHtml(row) {
   const state = matchState(row);
   const status = STATUS[state];
   const manual = row.manual ? ' <span class="chip chip--info" title="Set by hand, kept by every scan">Manual</span>' : '';
+  const name = row.xp ? `${escapeHtml(row.deezer_name)}${xpChip(row)}${xpSourceLine(row, openId)}` : escapeHtml(row.deezer_name);
   return `
-    <tr data-number="${escapeHtml(row.number)}" data-matched="${state}" data-track-id="${escapeHtml(row.track_id ?? '')}">
+    <tr data-number="${escapeHtml(row.number)}" data-matched="${state}" data-review="${needsReview(row)}" data-track-id="${escapeHtml(row.track_id ?? '')}">
       <td class="num">${escapeHtml(row.number)}</td>
-      <td class="track-name">${escapeHtml(row.deezer_name)}</td>
+      <td class="track-name">${name}</td>
       <td class="track-match">${row.matched === true ? escapeHtml(row.source_name || '') : ''}${manual}</td>
       <td><span class="track-status"><span class="dot ${status.dot}"></span>${status.label}</span></td>
-      <td class="actions">${row.track_id ? playButton(row.track_id, `Play a preview of ${row.deezer_name}`) : ''} ${actionsCell(row)}</td>
+      <td class="actions">${isDeezerId(row.track_id) ? playButton(row.track_id, `Play a preview of ${row.deezer_name}`) : ''} ${actionsCell(row)}</td>
     </tr>
   `;
+}
+
+// ── Finding the Deezer track of an imported song by hand ──────────────────────
+
+function formatSeconds(seconds) {
+  if (!seconds) return '';
+  return `${Math.floor(seconds / 60)}:${String(Math.round(seconds % 60)).padStart(2, '0')}`;
+}
+
+function xpResultsHtml(results, row) {
+  if (!results.length) return '<p class="muted">Nothing on Deezer looks like this. Try other words.</p>';
+  return results.map(item => {
+    const current = String(item.id) === String(row.track_id);
+    const meta = [item.artist, item.album, formatSeconds(item.duration)].filter(Boolean).join(', ');
+    return `
+      <div class="fix-result xp-result">
+        ${item.cover ? `<img class="xp-cover" src="${escapeHtml(item.cover)}" alt="" loading="lazy">` : '<span class="xp-cover"></span>'}
+        <div>
+          <strong>${escapeHtml(item.title)}${explicitMark(item)}</strong>
+          <span class="muted">${escapeHtml(meta)}</span>
+        </div>
+        ${playButton(item.id, `Play a preview of ${item.artist} - ${item.title}`)}
+        <button type="button" class="btn btn--ghost btn--sm" data-action="xp-use" data-deezer-id="${escapeHtml(item.id)}" ${current ? 'disabled' : ''}>${current ? 'In use' : 'Use this track'}</button>
+      </div>
+    `;
+  }).join('');
+}
+
+async function searchDeezerCandidates(panel, query, row) {
+  const list = panel.querySelector('[data-xp-results]');
+  list.innerHTML = '<p class="muted">Searching Deezer…</p>';
+  const { data } = await fetchJSON(`/search?q=${encodeURIComponent(query)}&type=track`);
+  if (!data?.ok) {
+    list.innerHTML = `<p class="muted">${escapeHtml(data?.error || 'The search failed.')}</p>`;
+    return;
+  }
+  list.innerHTML = xpResultsHtml(data.results || [], row);
+}
+
+function openXpPanel(number) {
+  const row = rowsByPlaylist.get(openId)?.get(Number(number));
+  const tr = drawer.content.querySelector(`[data-tracks] tr[data-number="${number}"]`);
+  if (!row?.xp || !tr) return;
+
+  const alreadyOpen = tr.nextElementSibling?.classList.contains('xp-row');
+  closeFixPanels();
+  if (alreadyOpen) return;
+
+  const { source_artist: artist, source_title: title, source_duration: duration, status, on_deezer: onDeezer } = row.xp;
+  const query = [String(artist || '').split(',')[0], title].filter(Boolean).join(' ');
+  const length = duration ? `, ${formatSeconds(duration)}` : '';
+  tr.insertAdjacentHTML('afterend', `
+    <tr class="fix-row xp-row" data-matched="${matchState(row)}" data-review="${needsReview(row)}" data-fix-number="${escapeHtml(row.number)}">
+      <td colspan="5">
+        <div class="fix-panel">
+          <p class="xp-panel-title">Deezer track for <strong>${escapeHtml(artist)} - ${escapeHtml(title)}</strong>${escapeHtml(length)}</p>
+          <form class="fix-search" data-xp-search>
+            <input type="search" name="q" value="${escapeHtml(query)}" aria-label="Search Deezer">
+            <button type="submit" class="btn btn--ghost btn--sm">Search</button>
+          </form>
+          <div class="fix-results" data-xp-results data-play-queue></div>
+          <div class="fix-actions">
+            ${onDeezer || status !== 'manual' ? '<button type="button" class="btn btn--ghost btn--sm" data-action="xp-none">Not on Deezer</button>' : ''}
+            ${status === 'manual' ? '<button type="button" class="btn btn--ghost btn--sm" data-action="xp-auto">Back to automatic matching</button>' : ''}
+            <button type="button" class="btn btn--ghost btn--sm" data-action="fix-close">Cancel</button>
+          </div>
+        </div>
+      </td>
+    </tr>
+  `);
+  const panel = tr.nextElementSibling;
+  panel.querySelector('input').focus();
+  searchDeezerCandidates(panel, query, row);
+}
+
+async function saveXpPick(button, deezerId) {
+  const panel = button.closest('.fix-row');
+  const number = Number(panel.dataset.fixNumber);
+  const playlistId = openId;
+  const row = rowsByPlaylist.get(playlistId)?.get(number);
+  if (!row?.xp) return;
+
+  button.disabled = true;
+  const { data } = await fetchJSON(`/playlist/${playlistId}/source-match`, { json: { key: row.xp.key, deezer_id: deezerId } });
+  button.disabled = false;
+  if (!data?.ok) {
+    toast(data?.error || 'The Deezer track was not saved', { tone: 'error' });
+    return;
+  }
+  if (data.xp) xpByPlaylist.set(playlistId, data.xp);
+  closeFixPanels();
+  applyRowUpdate(playlistId, data.row);
+  const message = deezerId === null ? 'Marked as not on Deezer'
+    : deezerId === 'auto' ? 'Back to the automatic Deezer match'
+      : 'Deezer track saved and playlist file updated';
+  toast(message, { tone: 'ok' });
 }
 
 // ── Fixing a match by hand ────────────────────────────────────────────────────
@@ -175,6 +310,15 @@ const FILTER_EMPTY = {
   missing: 'Nothing is missing from your library.',
   found: 'None of these tracks are in your library yet.',
   unchecked: 'Every track has been checked.',
+  review: 'Nothing to review: every track has a sure Deezer match.',
+};
+
+// The attribute a row needs to stay visible under each filter.
+const FILTER_ATTR = {
+  missing: 'data-matched="false"',
+  found: 'data-matched="true"',
+  unchecked: 'data-matched="none"',
+  review: 'data-review="true"',
 };
 
 // Shows a message when the active filter hides every row.
@@ -182,10 +326,37 @@ function syncFilterEmpty(tbody) {
   tbody.querySelector('.filter-empty')?.remove();
   const filter = tbody.dataset.filter;
   if (!FILTER_EMPTY[filter]) return;
-  const state = { missing: 'false', found: 'true', unchecked: 'none' }[filter];
-  if (tbody.querySelector(`tr[data-matched="${state}"]`)) return;
+  const attr = FILTER_ATTR[filter];
+  if (tbody.querySelector(`tr[data-number][${attr}]`)) return;
   if (!tbody.querySelector('tr[data-number]')) return;
-  tbody.insertAdjacentHTML('beforeend', `<tr class="filter-empty" data-matched="${state}"><td colspan="5" class="empty">${FILTER_EMPTY[filter]}</td></tr>`);
+  tbody.insertAdjacentHTML('beforeend', `<tr class="filter-empty" ${attr}><td colspan="5" class="empty">${FILTER_EMPTY[filter]}</td></tr>`);
+}
+
+// Imported playlists: how many tracks were found on Deezer, and what to check.
+function renderXpSummary(playlistId) {
+  const host = drawer.content.querySelector('[data-xp-summary]');
+  const info = xpByPlaylist.get(playlistId);
+  if (!host || openId !== playlistId || !info) return;
+  const c = { found: 0, review: 0, missing: 0, pending: 0 };
+  for (const row of rowsByPlaylist.get(playlistId)?.values() || []) {
+    if (!row.xp) continue;
+    if (row.xp.status === 'pending') c.pending++;
+    else if (!row.xp.on_deezer) c.missing++;
+    else if (row.xp.status === 'uncertain') c.review++;
+    else c.found++;
+  }
+  const truncated = info.truncated
+    ? `<p class="xp-note">${escapeHtml(info.source_name)} only shows the first 100 tracks of a public playlist. Import an <a href="https://exportify.app" target="_blank" rel="noopener">Exportify</a> CSV of it to get them all.</p>`
+    : '';
+  host.innerHTML = `
+    <div class="breakdown-legend xp-legend">
+      <span><b>${c.found + c.review}</b> found on Deezer</span>
+      ${c.review ? `<span><span class="dot xp-dot--review"></span><b>${c.review}</b> to review</span>` : ''}
+      ${c.missing ? `<span><span class="dot dot--miss"></span><b>${c.missing}</b> not on Deezer</span>` : ''}
+      ${c.pending ? `<span><span class="dot"></span><b>${c.pending}</b> being found…</span>` : ''}
+    </div>
+    ${truncated}
+  `;
 }
 
 function renderRows(playlistId) {
@@ -209,6 +380,7 @@ function applyRowUpdate(playlistId, row) {
   const tbody = drawer.content.querySelector('[data-tracks]');
   if (tbody) syncFilterEmpty(tbody);
   renderBreakdown(playlistId);
+  renderXpSummary(playlistId);
 }
 
 // Marks rows whose download finished in Deezer Downloader's queue.
@@ -249,8 +421,10 @@ async function loadPreview(playlistId) {
   const rows = new Map();
   for (const row of data.playlist.rows || []) rows.set(Number(row.number), { ...row, number: Number(row.number) });
   rowsByPlaylist.set(playlistId, rows);
+  if (data.playlist.xp) xpByPlaylist.set(playlistId, data.playlist.xp);
   renderRows(playlistId);
   renderBreakdown(playlistId);
+  renderXpSummary(playlistId);
   refreshDownloadStateFromQueue(playlistId);
 }
 
@@ -261,15 +435,24 @@ function drawerHtml(tile) {
   const title = tile.dataset.title;
   const cover = tile.dataset.cover;
   const settings = settingsFromTile(tile);
+  const imported = tile.dataset.kind === 'xp';
+  let kindLine = `Deezer playlist ${escapeHtml(id)}`;
+  if (tile.dataset.kind === 'mix') kindLine = 'Mix made for you by Deezer, refreshed at each scan';
+  if (imported) {
+    kindLine = tile.dataset.source === 'spotify'
+      ? `Spotify playlist matched to Deezer, synced at each scan. <a href="https://open.spotify.com/playlist/${escapeHtml(id.replace(/^xp-spotify-/, ''))}" target="_blank" rel="noopener">Open on Spotify</a>`
+      : 'CSV import matched to Deezer';
+  }
 
   return `
     <header class="detail-head">
       ${cover ? `<img class="detail-cover" src="${escapeHtml(cover)}" alt="">` : '<div class="detail-cover"></div>'}
       <div>
-        <p class="detail-kind">${tile.dataset.kind === 'mix' ? 'Mix made for you by Deezer, refreshed at each scan' : `Deezer playlist ${escapeHtml(id)}`}</p>
+        <p class="detail-kind">${kindLine}</p>
         <h2 class="detail-title">${escapeHtml(title)}</h2>
         <div class="chips detail-chips" data-drawer-chips>${automationChips(id, settings)}</div>
         <div class="breakdown" data-breakdown></div>
+        ${imported ? '<div class="xp-summary" data-xp-summary></div>' : ''}
         <div class="detail-actions">
           <button type="button" class="btn" data-action="scan" data-mode="quick" title="Re-match only tracks that are missing or not checked yet">Quick scan</button>
           <button type="button" class="btn btn--ghost" data-action="scan" data-mode="full" title="Re-match every track from scratch">Full scan</button>
@@ -293,6 +476,7 @@ function drawerHtml(tile) {
         <button type="button" data-filter="missing" aria-pressed="false">Missing</button>
         <button type="button" data-filter="found" aria-pressed="false">In library</button>
         <button type="button" data-filter="unchecked" aria-pressed="false">Not checked</button>
+        ${imported ? '<button type="button" data-filter="review" aria-pressed="false">To review</button>' : ''}
       </div>
       <div class="table-wrap" data-play-queue>
         <table class="table">
@@ -347,6 +531,7 @@ function openPlaylist(playlistId) {
   if (rowsByPlaylist.has(playlistId)) {
     renderRows(playlistId);
     renderBreakdown(playlistId);
+    renderXpSummary(playlistId);
   }
   loadPreview(playlistId);
 }
@@ -400,6 +585,19 @@ export function initPlaylists(drawerApi) {
     searchFixCandidates(form.closest('.fix-row'), form.elements.q.value.trim());
   });
 
+  on(content, 'click', '[data-action="xp-find"]', (_, btn) => openXpPanel(btn.dataset.number));
+  on(content, 'click', '[data-action="xp-use"]', (_, btn) => saveXpPick(btn, btn.dataset.deezerId));
+  on(content, 'click', '[data-action="xp-none"]', (_, btn) => saveXpPick(btn, null));
+  on(content, 'click', '[data-action="xp-auto"]', (_, btn) => saveXpPick(btn, 'auto'));
+  content.addEventListener('submit', event => {
+    const form = event.target.closest('[data-xp-search]');
+    if (!form) return;
+    event.preventDefault();
+    const panel = form.closest('.fix-row');
+    const row = rowsByPlaylist.get(openId)?.get(Number(panel.dataset.fixNumber));
+    if (row) searchDeezerCandidates(panel, form.elements.q.value.trim(), row);
+  });
+
   on(content, 'click', '[data-action="download-track"]', (_, btn) => {
     const row = rowsByPlaylist.get(openId)?.get(Number(btn.closest('tr')?.dataset.number));
     queueDownload(btn, {
@@ -429,4 +627,21 @@ export function initPlaylists(drawerApi) {
     btn.disabled = true;
     btn.textContent = 'Adding…';
   });
+
+  // Choosing the file is enough: no second button to press.
+  const importForm = document.getElementById('import-csv-form');
+  importForm?.querySelector('input[type="file"]').addEventListener('change', event => {
+    if (!event.target.files.length) return;
+    const label = importForm.querySelector('label');
+    label.lastChild.textContent = ' Importing…';
+    label.classList.add('is-busy');
+    importForm.submit();
+  });
+
+  // An import or a link added lands on its drawer: /?playlist=<id>.
+  const wanted = new URLSearchParams(location.search).get('playlist');
+  if (wanted && tileOf(wanted)) {
+    openPlaylist(wanted);
+    history.replaceState(history.state, '', location.pathname);
+  }
 }

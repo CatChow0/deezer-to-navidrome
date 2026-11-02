@@ -2,7 +2,7 @@
 
 **Turn your Deezer playlists into Navidrome `.m3u8` playlists, match them against your local library, and download what is missing straight from Deezer.**
 
-[![Version](https://img.shields.io/badge/version-1.11.2-blue)](https://hub.docker.com/r/catchow/deezer-to-navidrome)
+[![Version](https://img.shields.io/badge/version-1.12.0-blue)](https://hub.docker.com/r/catchow/deezer-to-navidrome)
 [![Python 3](https://img.shields.io/badge/python-3-blue)](https://www.python.org/)
 [![Flask](https://img.shields.io/badge/flask-web%20app-brightgreen)](https://flask.palletsprojects.com/)
 [![GitHub](https://img.shields.io/badge/GitHub-source%20%26%20full%20docs-black)](https://github.com/CatChow0/deezer-to-navidrome)
@@ -14,6 +14,7 @@
 ## What it does
 
 - Matches each track of your Deezer playlists and mixes (Flow, "made for you") against your local files
+- **Imports Spotify playlists** (public link, or a CSV export from Exportify) and matches each track to Deezer, with **Find on Deezer** to pick one by hand
 - Generates `.m3u8` playlists that Navidrome imports
 - **Downloads missing tracks directly from Deezer** — tracks, albums or whole discographies, decrypted and tagged by the app itself
 - **Automation** — scan playlists on a schedule and download what is missing
@@ -83,6 +84,15 @@ Each download shows its progress on its button (*Queued* → `42%` or `3/14` →
 **Upgrading from a version before 1.10?** The separate `kmille2/deezer-downloader` container is no longer needed: remove it and `DEEZER_DL_BASE_URL`, and mount the `deezer-dl` folder (writable) in this container. The app opens a *What's new* window on the first visit that checks this for you; the **Help** button reopens it.
 
 > The decryption and tagging code is adapted from [deezer-downloader](https://github.com/kmille/deezer-downloader) by kmille, under the MIT licence (see LICENSE in the source repository).
+
+---
+
+## Playlists from other platforms
+
+- **Spotify link**: paste it in **Playlists → Add**. Read from Spotify's public embed page: public playlists, first 100 tracks.
+- **CSV**: **Playlists → Import CSV** with an Exportify, TuneMyMusic or Soundiiz export: any size, private playlists too, and the ISRC gives exact matches.
+- Tracks are matched by ISRC, else by search (artist, title, duration, version, explicit flag). Unsure ones are flagged **Review**; **Find on Deezer** picks the right one by hand.
+- Then it is a playlist like the others: previews, **Download missing**, scans, `.m3u8`, and automation (a Spotify playlist is synced again at each scan).
 
 ---
 

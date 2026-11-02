@@ -2,7 +2,7 @@
 
 **A self-hosted web app that turns your Deezer playlists into Navidrome `.m3u8` playlists, matches them against your local library, and downloads what is missing straight from Deezer.**
 
-[![Docker Image Version](https://img.shields.io/badge/version-1.11.2-blue)](https://hub.docker.com/r/catchow/deezer-to-navidrome)
+[![Docker Image Version](https://img.shields.io/badge/version-1.12.0-blue)](https://hub.docker.com/r/catchow/deezer-to-navidrome)
 [![Python 3](https://img.shields.io/badge/python-3-blue)](https://www.python.org/)
 [![Flask](https://img.shields.io/badge/flask-web%20app-brightgreen)](https://flask.palletsprojects.com/)
 
@@ -12,6 +12,7 @@
 - [Features](#features)
 - [Architecture](#architecture)
 - [Downloads](#downloads)
+- [Playlists from other platforms](#other-platforms)
 - [Cache System](#cache-system)
 - [Deduplication System](#deduplication-system)
 - [Installation](#installation)
@@ -33,6 +34,7 @@
 Deezer-To-Navidrome bridges Deezer and self-hosted music servers like [Navidrome](https://www.navidrome.org/). It lets you:
 
 - **Import Deezer playlists** by ID or URL, and follow the mixes Deezer makes for you (Flow, "made for you")
+- **Import playlists from Spotify** (link or CSV export), matched to Deezer tracks
 - **Index your local library** and keep that index up to date
 - **Match tracks** against your files, and fix a wrong match by hand
 - **Download missing tracks** directly from Deezer, with nothing else to install
@@ -61,6 +63,7 @@ The **Help** button in the topbar opens a short guide and the notes of the curre
 
 ### Playlists
 - **Deezer playlist import** - Add playlists by ID or URL
+- **Spotify and CSV import** - Paste a Spotify link or import a CSV; each track is matched to Deezer, with **Find on Deezer** to pick it by hand
 - **Mixes** - Follow your Flow and the "made for you" mixes, or add the playlists Deezer recommends
 - **Match breakdown** - Each track is shown as *In library*, *Missing* or *Not checked*, with filters
 - **Quick scan / Full scan** - Re-check only what is missing, or everything
@@ -227,6 +230,48 @@ Files are tagged with artist, title, album, track and disc number, date and the 
 
 ---
 
+<a id ="other-platforms"></a>
+## 🔀 Playlists from other platforms
+
+A playlist from Spotify, or any app that exports CSV, can be imported. Each of its tracks is matched to a Deezer track; from then on it works like a Deezer playlist: previews, **Download missing**, scans against your library, the `.m3u8` and automation.
+
+### Importing
+
+| From | How | Limits |
+|---|---|---|
+| **Spotify link** | Paste an `open.spotify.com/playlist/…` link in **Playlists → Add** | Public playlists only, **first 100 tracks** |
+| **CSV file** | **Playlists → Import CSV**, with a file from [Exportify](https://exportify.app), TuneMyMusic or Soundiiz | None: any size, private playlists too |
+
+The Spotify link is read from Spotify's public embed page, with no account or API key. Since February 2026 Spotify's API only gives the tracks of a playlist to its owner, through a developer app and a Premium account, so the app does not use it. The embed page lists 100 tracks at most: for a longer playlist the drawer says so and suggests a CSV export. A CSV export usually carries the **ISRC** of each track, which gives an exact match.
+
+CSV columns are found by name (`Track Name`/`Title`, `Artist Name(s)`/`Artist`, `Album`, `Duration (ms)` or `3:43`, `ISRC`, `Explicit`, `Playlist name`), with commas, semicolons or tabs.
+
+### How tracks are matched to Deezer
+
+1. **By ISRC** when the source gives it: exact.
+2. **Else by search**, scoring each Deezer result on artist, title, duration, version (a remix, a live or a radio edit is another recording), album, and the explicit flag. An explicit track is never traded for its censored version silently.
+
+Each track then shows its status in the drawer:
+
+| Status | Meaning |
+|---|---|
+| (none) | Found on Deezer with a sure match |
+| **Review** | The closest Deezer track, used, but worth a check (for example only the clean version exists on Deezer) |
+| **Not on Deezer** | Nothing close enough was found |
+| **Picked by hand** | Chosen with **Find on Deezer**, kept by every later sync |
+
+The **To review** filter lists the tracks to check. **Find on Deezer** on a row searches Deezer (pre-filled with the source artist and title), with a preview of each result: **Use this track**, **Not on Deezer**, or **Back to automatic matching**. A file chosen by hand with **Fix** stays chosen when the Deezer track changes.
+
+### Syncing
+
+- A **Quick scan** reads the Spotify playlist again and matches the tracks added since; **Full scan** also matches again every track not picked by hand.
+- With **Automation** on, new tracks of the Spotify playlist are matched and can be downloaded on schedule.
+- A CSV import is a snapshot: import the file again to update it.
+
+> Spotify's embed page is not an API: if Spotify changes it, reading a link stops working until the app is updated, and the error says so. CSV imports are not affected.
+
+---
+
 <a id ="cache-system"></a>
 ## 📦 Cache System
 
@@ -237,6 +282,7 @@ Files are tagged with artist, title, album, track and disc number, date and the 
 | `music_library_cache.json` | Library index | Until a full rebuild |
 | `deezer_playlist_ids.json` | Saved playlists and mixes, with their automation settings | Until deleted |
 | `playlist_preview_state.json` | Per-playlist match results, including manual matches | Until the playlist is deleted |
+| `crossplatform.json` | Imported playlists: their source tracks and the Deezer track picked for each | Until the playlist is deleted |
 | `releases.json` | Release feed | Until the next refresh |
 | `release_prefs.json` | Muted artists of the release feed | Survives restarts |
 | `dedup_report.json` | Latest duplicate analysis | Until a new scan |
@@ -604,7 +650,7 @@ Open **Settings**, check the music folders and the Navidrome paths, make sure th
 
 #### 3. Add playlists
 
-On the Dashboard, paste a Deezer playlist URL or ID in **Playlists**. With a connected account, **Mixes → Choose mixes** lets you follow your Flow and "made for you" mixes.
+On the Dashboard, paste a Deezer playlist URL or ID in **Playlists**, a Spotify playlist link, or import a CSV (see [Playlists from other platforms](#other-platforms)). With a connected account, **Mixes → Choose mixes** lets you follow your Flow and "made for you" mixes.
 
 #### 4. Scan
 
@@ -668,7 +714,9 @@ All routes need a signed-in session, except `/health` and the three routes the A
 |----------|--------|---------|
 | `/` | GET | Dashboard |
 | `/releases` | GET | Releases view |
-| `/playlist/add` | POST | Add a Deezer playlist |
+| `/playlist/add` | POST | Add a Deezer playlist, or a Spotify playlist by its link |
+| `/playlist/import-csv` | POST | Import a CSV export (multipart `csv_file`) |
+| `/playlist/<id>/source-match` | POST | Imported playlists: `{"key", "deezer_id"}` picks a Deezer track, `null` marks it not on Deezer, `"auto"` goes back |
 | `/playlist/<id>/delete` | POST | Remove a playlist |
 | `/playlist/<id>/preview` | GET | Match results |
 | `/playlist/<id>/convert` | POST | Scan and write the M3U8 (blocking) |
@@ -860,6 +908,8 @@ core/
 ├── matching.py         # Matching a Deezer track against the library
 ├── normalization.py    # Text normalization, version flags, quality score
 ├── deezer.py           # Deezer public API, playlists, M3U8 generation
+├── crossplatform.py    # Imported playlists: matching to Deezer, picks by hand
+├── xp_sources.py       # Reading a Spotify link or a CSV export
 ├── deezer_account.py   # Deezer session (ARL): mixes, favorites, account status
 ├── deezer_dl.py        # Downloading: links, decryption, tags, file layout
 ├── download_queue.py   # Download queue and its worker threads

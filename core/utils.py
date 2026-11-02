@@ -21,10 +21,12 @@ def sanitize_filename(name: str) -> str:
 
 
 def extract_playlist_id(text: str):
+    """The ID of a Deezer playlist link (or a bare ID). Anchored on deezer.com:
+    a Spotify link such as /playlist/37i9… must not give playlist 37."""
     text = (text or "").strip()
     if text.isdigit():
         return text
-    m = re.search(r"/playlist/(\d+)", text)
+    m = re.search(r"deezer\.com/(?:[^/\s]+/)*playlist/(\d+)(?![A-Za-z0-9])", text)
     return m.group(1) if m else None
 
 

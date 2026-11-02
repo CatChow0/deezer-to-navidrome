@@ -37,12 +37,34 @@ def parse_mix_id(playlist_id: str):
     return (m.group(1), m.group(2)) if m else None
 
 
+def parse_xp_id(playlist_id: str):
+    """("spotify"|"csv", source id) for a playlist imported from another platform."""
+    from core.crossplatform import parse_xp_id as parse
+
+    return parse(playlist_id)
+
+
 def _valid_playlist_id(pid: str) -> bool:
-    return pid.isdigit() or parse_mix_id(pid) is not None
+    return pid.isdigit() or parse_mix_id(pid) is not None or parse_xp_id(pid) is not None
 
 
 def _playlist_sort_key(p):
-    return (1, p["title"].lower(), 0) if parse_mix_id(p["id"]) else (0, "", int(p["id"]))
+    # Deezer playlists by ID, then imported ones and mixes by title.
+    if pid_is_number(p["id"]):
+        return (0, 0, "", int(p["id"]))
+    return (1 if parse_mix_id(p["id"]) else 0, 1, p["title"].lower(), 0)
+
+
+def pid_is_number(pid) -> bool:
+    return str(pid).isdigit()
+
+
+def playlist_kind(pid: str) -> str:
+    if parse_mix_id(pid):
+        return "mix"
+    if parse_xp_id(pid):
+        return "xp"
+    return "playlist"
 
 
 def fetch_deezer_playlist_info(playlist_id: str):
@@ -102,6 +124,8 @@ def save_playlists(playlists):
             entry["auto_scan_interval_minutes"] = max(1, int(item.get("auto_scan_interval_minutes") or 1))
         if "auto_download_after_scan" in item:
             entry["auto_download_after_scan"] = bool(item["auto_download_after_scan"])
+        if item.get("source"):
+            entry["source"] = str(item["source"])
         cleaned.append(entry)
         seen.add(pid)
 
@@ -142,7 +166,8 @@ def load_playlists():
                     title = title or "Unknown title"
             playlists.append({
                 "id": pid,
-                "kind": "mix" if parse_mix_id(pid) else "playlist",
+                "kind": playlist_kind(pid),
+                "source": str(item.get("source") or (parse_xp_id(pid) or ("", ""))[0]),
                 "title": title or "Mix",
                 "picture": picture,
                 "auto_scan_enabled": bool(item.get("auto_scan_enabled", False)),
@@ -186,7 +211,19 @@ def playlist_title(playlist_id: str) -> str:
     return str(playlist_id)
 
 
-def fetch_deezer_playlist_tracks(playlist_id: str):
+def fetch_deezer_playlist_tracks(playlist_id: str, refresh=False, full=False, progress=None):
+    """(title, tracks) of a playlist. For a playlist imported from another
+    platform, `refresh` reads the source again and matches the new tracks to
+    Deezer (`full`: every track not picked by hand); without it the saved
+    picks are used, with no network call. `progress(done, total, track)`
+    follows that matching."""
+    if parse_xp_id(playlist_id):
+        from core import crossplatform
+
+        if refresh:
+            crossplatform.resync(playlist_id, full=full, progress=progress)
+        return playlist_title(playlist_id), crossplatform.xp_tracks(playlist_id)
+
     mix = parse_mix_id(playlist_id)
     if mix:
         from core.deezer_account import mix_tracks
@@ -279,29 +316,9 @@ def build_playlist_preview(playlist_id: str):
             legacy = by_number.get(track["position"])
             if legacy and not legacy.get("track_id"):
                 old = legacy
-        row = {
-            "number": track["position"],
-            "track_id": track.get("track_id"),
-            "deezer_name": _deezer_name(track),
-            "deezer_artist": track["artist"],
-            "deezer_title": track["title"],
-            "deezer_album": track["album"],
-            "matched": None,
-            "source_name": "",
-            "manual": False,
-            "downloaded": False,
-        }
-        if old:
-            row.update({
-                "matched": old.get("matched"),
-                "source_name": old.get("source_name", "") if old.get("matched") else "",
-                "local_path": old.get("local_path"),
-                "manual": bool(old.get("manual")),
-                "downloaded": bool(old.get("downloaded")),
-            })
-        rows.append(row)
+        rows.append(_preview_row(track, old))
 
-    return {
+    preview = {
         "playlist_id": playlist_id,
         "playlist_title": playlist_title,
         "rows": rows,
@@ -309,6 +326,39 @@ def build_playlist_preview(playlist_id: str):
         "unmatched_count": sum(1 for r in rows if r["matched"] is False),
         "unchecked_count": sum(1 for r in rows if r["matched"] is None),
     }
+    if parse_xp_id(playlist_id):
+        from core import crossplatform
+
+        preview["xp"] = crossplatform.summary(playlist_id)
+    return preview
+
+
+def _preview_row(track, old=None):
+    """Row of a track that this scan has not matched (yet): the result of the
+    last scan when there is one, else "not checked"."""
+    row = {
+        "number": track["position"],
+        "track_id": track.get("track_id"),
+        "deezer_name": _deezer_name(track),
+        "deezer_artist": track["artist"],
+        "deezer_title": track["title"],
+        "deezer_album": track["album"],
+        "matched": None,
+        "source_name": "",
+        "manual": False,
+        "downloaded": False,
+    }
+    if track.get("xp"):
+        row["xp"] = track["xp"]
+    if old:
+        row.update({
+            "matched": old.get("matched"),
+            "source_name": old.get("source_name", "") if old.get("matched") else "",
+            "local_path": old.get("local_path"),
+            "manual": bool(old.get("manual")),
+            "downloaded": bool(old.get("downloaded")),
+        })
+    return row
 
 
 def _get_match_workers() -> int:
@@ -349,6 +399,8 @@ def _row(track, entry=None, *, score=None, manual=False):
         "manual": manual,
         "downloaded": False,
     }
+    if track.get("xp"):
+        row["xp"] = track["xp"]
     if entry is None:
         row.update({"convert": "❌", "matched": False, "source_name": "", "local_path": None})
     else:
@@ -457,6 +509,40 @@ def apply_manual_match(playlist_id: str, track_id: str, mode: str, path: str | N
     return updated
 
 
+def rematch_track(playlist_id: str, track: dict):
+    """Matches one track against the library again, after its Deezer track
+    changed, and saves its row. A file chosen by hand ("Fix") still wins.
+    Returns the row; a playlist never scanned only gets the preview row."""
+    from core.library import library_snapshot
+
+    if not (get_preview_state(playlist_id) or {}).get("rows"):
+        return _preview_row(track)
+
+    snap = library_snapshot()
+    updated = {}
+
+    def change(state):
+        state = dict(state or {})
+        override = (state.get("overrides") or {}).get(str(track["track_id"]))
+        if override is not None and override.get("path") is None:
+            row = _row(track, None, manual=True)
+        elif override is not None and override.get("path") in snap["by_path"]:
+            row = _row(track, snap["by_path"][override["path"]], manual=True)
+        else:
+            best = find_best_match(track, snap["library"], snap["index"])
+            row = _row(track, best["entry"], score=best["score"]) if best else _row(track, None)
+        rows = [r for r in state.get("rows") or [] if int(r.get("number", 0)) != track["position"]]
+        rows.append(row)
+        rows.sort(key=lambda r: int(r["number"]))
+        updated.update(row)
+        state.update({"rows": rows, "updated_at": int(time.time())})
+        return state
+
+    state = modify_preview_state(playlist_id, change)
+    write_playlist_outputs(playlist_id, state.get("playlist_title") or playlist_title(playlist_id), state["rows"])
+    return updated
+
+
 def convert_playlist(playlist_id: str, progress_cb=None, quick: bool = False):
     def emit(message=None, progress=None, stage=None, row_update=None):
         if progress_cb:
@@ -464,8 +550,25 @@ def convert_playlist(playlist_id: str, progress_cb=None, quick: bool = False):
 
     _, _, library_cache_file, _ = get_paths_from_config()
 
-    emit("Fetching Deezer playlist info", stage="deezer")
-    playlist_title, deezer_tracks = fetch_deezer_playlist_tracks(playlist_id)
+    saved = get_preview_state(playlist_id) or {}
+    saved_by_track = {str(r.get("track_id")): r for r in saved.get("rows", []) if r.get("track_id")}
+
+    def on_source_match(done, total, track):
+        # Imported playlists: each track appears as soon as its Deezer pick is known.
+        emit(
+            f"Finding on Deezer {done}/{total}: {track['xp']['source_artist']} - {track['xp']['source_title']}",
+            stage="deezer",
+            progress=round(done / total * 100),
+            row_update=_preview_row(track, saved_by_track.get(str(track["track_id"]))),
+        )
+
+    if parse_xp_id(playlist_id):
+        emit("Reading the source playlist", stage="deezer")
+    else:
+        emit("Fetching Deezer playlist info", stage="deezer")
+    playlist_title, deezer_tracks = fetch_deezer_playlist_tracks(
+        playlist_id, refresh=True, full=not quick, progress=on_source_match
+    )
 
     library = load_library_cache(library_cache_file)
     if not library:
@@ -478,6 +581,7 @@ def convert_playlist(playlist_id: str, progress_cb=None, quick: bool = False):
         library = load_library_cache(library_cache_file)
     by_path = {e["path"]: e for e in library}
 
+    # Read again: matching an imported playlist may have moved manual choices.
     saved = get_preview_state(playlist_id) or {}
     saved_by_track = {str(r.get("track_id")): r for r in saved.get("rows", []) if r.get("track_id")}
     overrides = saved.get("overrides") or {}

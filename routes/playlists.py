@@ -23,9 +23,12 @@ from core.deezer import (
     fetch_deezer_playlist_info,
     load_playlists,
     mark_preview_rows_downloaded,
+    rematch_track,
     save_playlists,
 )
+from core import crossplatform
 from core.utils import extract_playlist_id
+from core.xp_sources import MAX_CSV_BYTES, SourceError, spotify_playlist_id
 from core import scheduler
 
 import time
@@ -59,9 +62,27 @@ def releases_view():
     return render_app("releases")
 
 
+def _open_playlist(playlist_id):
+    """The dashboard with this playlist's drawer open."""
+    return redirect(url_for("playlists.home", playlist=playlist_id))
+
+
 @playlists_bp.post("/playlist/add")
 def add_playlist():
     value = request.form.get("playlist_input", "")
+    if spotify_playlist_id(value):
+        try:
+            pid, added = crossplatform.add_spotify(value)
+        except SourceError as e:
+            flash(str(e))
+            return redirect(url_for("playlists.home"))
+        if not added:
+            flash("Playlist already saved")
+            return _open_playlist(pid)
+        _start_scan(pid, quick=True, title=f"Finding on Deezer: {playlist_title(pid)}")
+        flash("Spotify playlist added: its tracks are being found on Deezer")
+        return _open_playlist(pid)
+
     pid = extract_playlist_id(value)
     if not pid:
         flash("Invalid ID or URL")
@@ -78,6 +99,44 @@ def add_playlist():
     cache_cover(info)
     flash("Playlist added")
     return redirect(url_for("playlists.home"))
+
+
+@playlists_bp.post("/playlist/import-csv")
+def import_csv_playlist():
+    upload = request.files.get("csv_file")
+    if upload is None or not upload.filename:
+        flash("Choose a CSV file to import")
+        return redirect(url_for("playlists.home"))
+    try:
+        pid = crossplatform.add_csv(upload.filename, upload.read(MAX_CSV_BYTES + 1))
+    except SourceError as e:
+        flash(str(e))
+        return redirect(url_for("playlists.home"))
+    _start_scan(pid, quick=True, title=f"Finding on Deezer: {playlist_title(pid)}")
+    flash("Playlist imported: its tracks are being found on Deezer")
+    return _open_playlist(pid)
+
+
+@playlists_bp.post("/playlist/<playlist_id>/source-match")
+def source_match_route(playlist_id):
+    """"Find on Deezer": picks the Deezer track of one imported track by hand."""
+    if not crossplatform.parse_xp_id(playlist_id):
+        return jsonify({"ok": False, "error": "Only imported playlists have source tracks"}), 400
+    data = request.get_json(silent=True) or {}
+    key = str(data.get("key") or "")
+    choice = data.get("deezer_id")
+    if choice not in (None, "auto") and not str(choice).isdigit():
+        return jsonify({"ok": False, "error": "Invalid Deezer track"}), 400
+    try:
+        track = crossplatform.set_pick(playlist_id, key, None if choice is None else str(choice))
+        row = rematch_track(playlist_id, track)
+    except LookupError as e:
+        return jsonify({"ok": False, "error": str(e)}), 404
+    except ValueError as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"Deezer did not answer: {e}"}), 502
+    return jsonify({"ok": True, "row": row, "xp": crossplatform.summary(playlist_id)})
 
 
 @playlists_bp.post("/playlist/<playlist_id>/delete")
@@ -104,10 +163,13 @@ def convert_playlist_route(playlist_id):
 @playlists_bp.post("/playlist/<playlist_id>/convert/start")
 def convert_playlist_start(playlist_id):
     data = request.get_json(silent=True) or {}
-    quick = data.get("mode") == "quick"
+    return jsonify({"task_id": _start_scan(playlist_id, quick=data.get("mode") == "quick")})
 
+
+def _start_scan(playlist_id, quick, title=None):
+    """Runs a scan as a task (Activity follows it) and returns its ID."""
     task_id = create_task(
-        f"{'Quick' if quick else 'Full'} scan: {playlist_title(playlist_id)}",
+        title or f"{'Quick' if quick else 'Full'} scan: {playlist_title(playlist_id)}",
         kind="scan",
         playlist_id=playlist_id,
     )
@@ -134,7 +196,7 @@ def convert_playlist_start(playlist_id):
             push_task_event(task_id, f"Conversion error: {e}", stage="error", done=True, error=True)
 
     threading.Thread(target=runner, daemon=True).start()
-    return jsonify({"task_id": task_id})
+    return task_id
 
 
 @playlists_bp.get("/playlist/<playlist_id>/preview")

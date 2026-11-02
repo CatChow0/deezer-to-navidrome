@@ -137,11 +137,66 @@
 }
 
 /* Playlists */
+/* The title stays at the top when the add forms take several lines */
+.cell-head--top {
+  align-items: flex-start;
+}
+
+.add-forms {
+  display: grid;
+  gap: 6px;
+  flex: 1;
+  max-width: 460px;
+}
+
 .add-form {
   display: flex;
   gap: 8px;
-  flex: 1;
-  max-width: 460px;
+}
+
+.import-form {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+}
+
+.import-form label {
+  cursor: pointer;
+}
+
+.import-form label:focus-within {
+  outline: 2px solid var(--cyan);
+  outline-offset: 2px;
+}
+
+.import-form label.is-busy {
+  opacity: 0.7;
+  pointer-events: none;
+}
+
+.import-hint {
+  color: var(--muted);
+  font-size: var(--step--1);
+}
+
+.import-hint a {
+  color: inherit;
+}
+
+/* Where an imported playlist comes from, over its cover */
+.tile-source {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  padding: 2px 8px;
+  border-radius: var(--r-chip);
+  background: rgba(7, 6, 26, 0.72);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  color: var(--text-soft);
+  font-size: 0.7rem;
+  font-weight: 600;
 }
 
 .tiles {
@@ -221,7 +276,7 @@
 }
 
 @media (max-width: 560px) {
-  .add-form {
+  .add-forms {
     max-width: none;
     flex-basis: 100%;
   }
