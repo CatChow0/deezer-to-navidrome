@@ -62,6 +62,12 @@ services:
       # Optional: session signing key (else a random one is kept in /data).
       # SECRET_KEY: ""
 
+      # Optional: listening stats. Sources for Settings > Listening stats, and the
+      # token Navidrome sends new plays with (else create one in Settings).
+      # STATS_NAVIDROME_DB: "/import/navidrome/navidrome.db"
+      # STATS_MALOJA_DB: "/import/maloja/malojadb.sqlite"
+      # SCROBBLE_TOKEN: ""
+
     volumes:
       # Persistent data (config, cache, covers)
       - ./data:/data
@@ -72,3 +78,7 @@ services:
 
       # Playlist output directory
       - /path/on/host/playlists:/music/playlists
+
+      # Optional: listening history to import into the Stats tab (read-only)
+      # - /path/to/navidrome/data:/import/navidrome:ro
+      # - /path/to/Maloja:/import/maloja:ro

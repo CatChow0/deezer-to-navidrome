@@ -51,7 +51,7 @@ def env_host_to_navidrome_roots(name: str, default=None):
 # none before 1.11). An install upgraded from before the built-in downloader
 # still has the old downloader address in its config.json: the notes then also
 # explain how to drop the old container.
-WHATS_NEW_ID = "1.11.1"
+WHATS_NEW_ID = "1.13.0"
 LEGACY_DOWNLOADER_KEY = "deezer_dl_base_url"
 
 DEFAULT_CONFIG = {

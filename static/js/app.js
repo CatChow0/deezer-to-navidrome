@@ -17,6 +17,7 @@ import { initReleases } from './releases.js';
 import { initPlayer } from './player.js';
 import { initStats } from './stats.js';
 import { initStory } from './stats-story.js';
+import { initStatsSettings } from './stats-settings.js';
 import { initHelp } from './help.js';
 
 initViews();
@@ -38,5 +39,6 @@ initMixes(overlay('mix-picker'));
 initReleases();
 initStats(drawer);
 initStory(overlay('stats-story'));
+initStatsSettings();
 initPlayer();
 initHelp(overlay('help-modal'));

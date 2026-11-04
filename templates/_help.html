@@ -9,8 +9,8 @@
     <div class="overlay-scroll" data-overlay-content>
       <header class="modal-head">
         <p class="help-eyebrow">Version {{ whats_new.id }}</p>
-        <h2 class="detail-title" id="help-title">Downloads are built in</h2>
-        <p class="detail-sub">This app now downloads from Deezer by itself. Here is what changed, and how to use it.</p>
+        <h2 class="detail-title" id="help-title">Your listening stats are built in</h2>
+        <p class="detail-sub">A new Stats tab shows what you listen to, with monthly and yearly recaps. It replaces Wrapped, Maloja and lb-enricher if you ran them.</p>
         <div class="segmented help-tabs" role="group" aria-label="Help sections">
           <button type="button" data-help-tab="new" aria-pressed="true">What's new</button>
           <button type="button" data-help-tab="guide" aria-pressed="false">How to use</button>
@@ -18,6 +18,38 @@
       </header>
 
       <div class="help-body" data-help-panel="new">
+        <h3 class="help-h">Start recording your plays</h3>
+        <ol class="help-steps">
+          <li class="help-step">
+            <span class="help-step-state"><span class="help-step-num">1</span></span>
+            <div>
+              <strong>Import your history (optional)</strong>
+              <p>Mount the folders holding <code>navidrome.db</code> and, if you have it, <code>malojadb.sqlite</code> read-only at <code>/import/navidrome</code> and <code>/import/maloja</code>, then choose <b>Rebuild (merge)</b> in <b>Settings → Listening stats</b> and check the numbers.</p>
+            </div>
+          </li>
+          <li class="help-step">
+            <span class="help-step-state"><span class="help-step-num">2</span></span>
+            <div>
+              <strong>Point Navidrome at this app</strong>
+              <p>Create a token in <b>Settings → Listening stats</b>. Set <code>ND_LISTENBRAINZ_BASEURL=http://deezer-to-navidrome:8080/apis/listenbrainz/1/</code> in Navidrome, restart it, and link ListenBrainz in its personal settings using that token.</p>
+            </div>
+          </li>
+          <li class="help-step">
+            <span class="help-step-state"><span class="help-step-num">3</span></span>
+            <div>
+              <strong>Check that plays arrive</strong>
+              <p>Play a track in Navidrome and find it under <b>Stats → Recent plays</b>. Then run <b>Rebuild (merge)</b> once more to pick up what you played during the switch: Navidrome kept it in its own history.</p>
+            </div>
+          </li>
+          <li class="help-step">
+            <span class="help-step-state"><span class="help-step-num">4</span></span>
+            <div>
+              <strong>Remove what you no longer need</strong>
+              <p>Stop and remove lb-enricher, Maloja and Wrapped. Keep the read-only Navidrome mount: <b>Start clean</b> needs it, and <b>Rebuild (merge)</b> reads Navidrome's new plays through it. The app keeps its own copy of Maloja's database.</p>
+            </div>
+          </li>
+        </ol>
+
         <div class="help-callout help-callout--warn">
           <strong>Downloads from 1.10.0 to 1.11.0 may be damaged</strong>
           <p>Those versions decrypted the files wrongly: they play with noise and skips, and Navidrome's web player refuses them. Downloads are correct again. <b>Repair downloads</b> checks every file saved since 1.10.0 against Deezer and replaces only the damaged ones, keeping their tags; then refresh the library. The button is also in <b>Settings → Library index</b>.</p>
