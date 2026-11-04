@@ -102,7 +102,7 @@ class Batches(unittest.TestCase):
         calls = []
         api = fake_api()
         self.run_batch(lambda path, params=None: (calls.append(path), api(path, params))[1])
-        self.assertEqual(calls, ["/search/track"])
+        self.assertFalse([path for path in calls if path.startswith("/album/")])
 
     def test_most_played_first(self):
         self.track("Rare", plays=1)

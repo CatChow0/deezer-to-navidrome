@@ -50,7 +50,7 @@ function initials(name) {
 
 // A cover, or the name's initials on a color of its own while there is none.
 export function art(image, name) {
-  const picture = image && /^https?:/i.test(image) ? `<img src="${escapeHtml(image)}" alt="" loading="lazy" data-stats-img>` : '';
+  const picture = image && /^\/stats\/cover\//.test(image) ? `<img src="${escapeHtml(image)}" alt="" loading="lazy" data-stats-img>` : '';
   return `<span class="st-art" style="--hue:${hueOf(name)}" aria-hidden="true">${escapeHtml(initials(name))}${picture}</span>`;
 }
 

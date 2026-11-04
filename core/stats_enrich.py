@@ -10,7 +10,7 @@ import threading
 import time
 from contextlib import closing
 
-from core import deezer, stats_db, stats_import
+from core import deezer, stats_covers, stats_db, stats_import
 from core.stats_db import clean_title, name_key, split_artists, title_key
 
 logger = logging.getLogger(__name__)
@@ -84,9 +84,11 @@ def _save(track_id, key, match, genre) -> None:
             " duration_sec = COALESCE(duration_sec, ?),"
             " genre_source = CASE WHEN genre IS NULL AND ? IS NOT NULL THEN 'deezer' ELSE genre_source END,"
             " genre = COALESCE(genre, ?), lookup_at = ? WHERE id = ? AND key = ?",
-            (str(match.get("id") or "") or None, str(album.get("id") or "") or None, album.get("cover_medium"),
+            (str(match.get("id") or "") or None, str(album.get("id") or "") or None, album.get("cover_big") or album.get("cover_medium"),
              match.get("duration"), match.get("duration"), genre, genre, now + RETRY_INCOMPLETE, track_id, key),
         ).rowcount
+        if saved:
+            stats_covers.forget(conn, "track", key)
         if saved and artist.get("name"):
             conn.execute(
                 "UPDATE artists SET deezer_id = COALESCE(deezer_id, ?), picture_url = COALESCE(picture_url, ?) WHERE key = ?",
@@ -116,7 +118,39 @@ def enrich_batch(limit=40) -> int:
             _save(track["id"], track["key"], match, genre)
         else:
             _retry_later(track["id"], track["key"], RETRY_NO_MATCH)
+    _look_up_artists(limit)
     return len(tracks)
+
+
+def _look_up_artists(limit) -> None:
+    """Asks Deezer for each artist's photo by name, once; only the same name counts."""
+    with closing(stats_db.connect()) as conn:
+        artists = conn.execute(
+            "SELECT a.id, a.key, a.name FROM artists a JOIN track_artists ta ON ta.artist_id = a.id"
+            " JOIN plays p ON p.track_id = ta.track_id WHERE a.lookup_at IS NULL OR a.lookup_at <= ?"
+            " GROUP BY a.id ORDER BY COUNT(*) DESC, a.id LIMIT ?",
+            (int(time.time()), limit),
+        ).fetchall()
+    for artist in artists:
+        match, delay = None, RETRY_NO_MATCH
+        try:
+            found = deezer._public_api("/search/artist", {"q": artist["name"], "limit": 10})
+            match = next((i for i in (found or {}).get("data") or [] if name_key(i.get("name") or "") == artist["key"]), None)
+        except Exception as e:
+            logger.info("Deezer lookup failed for %s: %s", artist["name"], e)
+            delay = RETRY_ERROR
+        picture = (match or {}).get("picture_big") or (match or {}).get("picture_medium")
+        with closing(stats_db.connect()) as conn:
+            if picture:
+                conn.execute(
+                    "UPDATE artists SET deezer_id = ?, picture_url = ?, lookup_at = ? WHERE id = ? AND key = ?",
+                    (str(match.get("id") or "") or None, picture, int(time.time()) + RETRY_INCOMPLETE, artist["id"], artist["key"]),
+                )
+                stats_covers.forget(conn, "artist", artist["key"])
+            else:
+                conn.execute("UPDATE artists SET lookup_at = ? WHERE id = ? AND key = ?",
+                             (int(time.time()) + delay, artist["id"], artist["key"]))
+            conn.commit()
 
 
 def progress(conn) -> dict:
@@ -135,6 +169,7 @@ def start_background_batch() -> bool:
     def work():
         try:
             enrich_batch()
+            stats_covers.resolve_batch()
         except Exception as e:
             logger.error("Stats lookups failed: %s", e)
         finally:

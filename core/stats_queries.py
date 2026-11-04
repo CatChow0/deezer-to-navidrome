@@ -11,6 +11,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from core import stats_db
 from core.stats_genres import genre_group
+from core.stats_story import build_story
 
 _SECONDS = "COALESCE(p.duration_sec, t.duration_sec, 0)"
 TOP_SIZE = 10
@@ -132,6 +133,19 @@ def _totals(conn, start, end) -> dict:
             "albums": row["albums"], "tracks": row["tracks"]}
 
 
+def _with_art(conn, kind, rows) -> list:
+    """Points each row at its cached cover, unless it is known to have none.
+    `key` is only needed for this and leaves the row here."""
+    now = int(time.time())
+    known = {row["item_key"]: row for row in conn.execute("SELECT item_key, file, color, retry_at FROM covers WHERE kind = ?", (kind,))}
+    for row in rows:
+        cover = known.get(row.pop("key"))
+        missing = cover is not None and not cover["file"] and (cover["retry_at"] or 0) > now
+        row["image"] = "" if missing else f"/stats/cover/{kind}/{row['id']}"
+        row["color"] = cover["color"] if cover and cover["color"] else ""
+    return rows
+
+
 def _artist_rows(conn, start, end, limit=TOP_SIZE, only_new_since=False) -> list:
     where, args = _where(start, end)
     having = ""
@@ -140,35 +154,35 @@ def _artist_rows(conn, start, end, limit=TOP_SIZE, only_new_since=False) -> list
         args = (*args, start)
     limit_sql = f"LIMIT {int(limit)}" if limit else ""
     rows = conn.execute(
-        f"SELECT a.id, a.name, a.picture_url image, COUNT(*) plays, SUM({_SECONDS}) seconds"
+        f"SELECT a.id, a.key, a.name, COUNT(*) plays, SUM({_SECONDS}) seconds"
         " FROM plays p JOIN tracks t ON t.id = p.track_id"
         " JOIN track_artists ta ON ta.track_id = p.track_id JOIN artists a ON a.id = ta.artist_id"
         f" WHERE {where} GROUP BY a.id {having} ORDER BY plays DESC, a.name {limit_sql}", args,
     ).fetchall()
-    return [{"id": r["id"], "name": r["name"], "plays": r["plays"], "seconds": int(round(r["seconds"])), "image": r["image"] or ""} for r in rows]
+    return _with_art(conn, "artist", [{"id": r["id"], "key": r["key"], "name": r["name"], "plays": r["plays"], "seconds": int(round(r["seconds"]))} for r in rows])
 
 
 def _album_rows(conn, start, end, limit=TOP_SIZE) -> list:
     where, args = _where(start, end)
     limit_sql = f"LIMIT {int(limit)}" if limit else ""
     rows = conn.execute(
-        f"SELECT al.id, al.title, al.album_artist artist, COALESCE(al.cover_url, MAX(t.cover_url)) image, COUNT(*) plays"
+        "SELECT al.id, al.key, al.title, al.album_artist artist, COUNT(*) plays"
         " FROM plays p JOIN tracks t ON t.id = p.track_id JOIN albums al ON al.id = p.album_id"
         f" WHERE {where} GROUP BY al.id ORDER BY plays DESC, al.title {limit_sql}", args,
     ).fetchall()
-    return [{"id": r["id"], "title": r["title"], "artist": r["artist"], "plays": r["plays"], "image": r["image"] or ""} for r in rows]
+    return _with_art(conn, "album", [{"id": r["id"], "key": r["key"], "title": r["title"], "artist": r["artist"], "plays": r["plays"]} for r in rows])
 
 
 def _track_rows(conn, start, end, limit=TOP_SIZE) -> list:
     where, args = _where(start, end)
     limit_sql = f"LIMIT {int(limit)}" if limit else ""
     rows = conn.execute(
-        f"SELECT t.id, t.title, t.artist_display artist, t.cover_url image, t.deezer_track_id, COUNT(*) plays, SUM({_SECONDS}) seconds"
+        f"SELECT t.id, t.key, t.title, t.artist_display artist, t.deezer_track_id, COUNT(*) plays, SUM({_SECONDS}) seconds"
         f" FROM plays p JOIN tracks t ON t.id = p.track_id WHERE {where}"
         f" GROUP BY t.id ORDER BY plays DESC, t.title {limit_sql}", args,
     ).fetchall()
-    return [{"id": r["id"], "title": r["title"], "artist": r["artist"], "plays": r["plays"],
-             "seconds": int(round(r["seconds"])), "image": r["image"] or "", "deezer_track_id": r["deezer_track_id"] or ""} for r in rows]
+    return _with_art(conn, "track", [{"id": r["id"], "key": r["key"], "title": r["title"], "artist": r["artist"], "plays": r["plays"],
+                                      "seconds": int(round(r["seconds"])), "deezer_track_id": r["deezer_track_id"] or ""} for r in rows])
 
 
 def _genres(conn, start, end, total_plays) -> tuple:
@@ -293,6 +307,8 @@ def recap(kind, key, tz) -> dict:
             for row in rows:
                 row["previous_plays"] = counts[kind_name].get(row["id"])
                 row["is_new"] = row["id"] in new_ids[kind_name]
+        previous_bounds = period_bounds(kind, data["previous"]["key"], tz) if data["previous"] else (None, None)
+        data["story"] = build_story(conn, data, start, end, previous_bounds[0], previous_bounds[1], zone)
         return data
 
 
@@ -337,11 +353,11 @@ def entity(kind, entity_id, tz):
     zone = _zone(tz)
     with closing(stats_db.connect()) as conn:
         if kind == "artist":
-            row = conn.execute("SELECT name, '' artist, picture_url image, '' deezer_track_id FROM artists WHERE id = ?", (entity_id,)).fetchone()
+            row = conn.execute("SELECT name, '' artist, '' deezer_track_id FROM artists WHERE id = ?", (entity_id,)).fetchone()
         elif kind == "album":
-            row = conn.execute("SELECT title name, album_artist artist, cover_url image, '' deezer_track_id FROM albums WHERE id = ?", (entity_id,)).fetchone()
+            row = conn.execute("SELECT title name, album_artist artist, '' deezer_track_id FROM albums WHERE id = ?", (entity_id,)).fetchone()
         else:
-            row = conn.execute("SELECT title name, artist_display artist, cover_url image, deezer_track_id FROM tracks WHERE id = ?", (entity_id,)).fetchone()
+            row = conn.execute("SELECT title name, artist_display artist, deezer_track_id FROM tracks WHERE id = ?", (entity_id,)).fetchone()
         if row is None:
             return None
         where = _ENTITY_FILTERS[kind]
@@ -360,7 +376,7 @@ def entity(kind, entity_id, tz):
                 f" WHERE {where} GROUP BY t.id ORDER BY plays DESC, t.title LIMIT {TOP_SIZE}", (entity_id,),
             )]
         return {
-            "kind": kind, "id": entity_id, "name": row["name"], "artist": row["artist"], "image": row["image"] or "",
+            "kind": kind, "id": entity_id, "name": row["name"], "artist": row["artist"], "image": f"/stats/cover/{kind}/{entity_id}",
             "deezer_track_id": row["deezer_track_id"] or "", "plays": summary["plays"], "seconds": int(round(summary["seconds"])),
             "first_play": summary["first_play"], "last_play": summary["last_play"],
             "by_month": [{"key": key, "plays": months[key]} for key in sorted(months)],

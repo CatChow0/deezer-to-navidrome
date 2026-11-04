@@ -5,3 +5,4 @@ pycryptodome
 gunicorn
 rapidfuzz
 tzdata
+Pillow

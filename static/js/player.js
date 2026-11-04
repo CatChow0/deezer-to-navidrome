@@ -129,13 +129,116 @@ export function stopPreview() {
   loadToken++;
   queue = [];
   index = -1;
+  storyTrack = null;
   if (el) hide();
+}
+
+// ── Story audio ──────────────────────────────────────────────────────────────
+// The recap plays your own files: same element and volume, starting around the
+// hook, with a short fade between songs. A track with no playable file falls
+// back on Deezer's preview, and on silence if there is none.
+const FADE_MS = 500;
+const HOOK_POINT = 0.33;
+const KEEP_PLAYING_SECONDS = 40;
+let storyTrack = null;
+
+function hookTime(length) {
+  if (!length || !Number.isFinite(length)) return 0;
+  return Math.max(0, Math.min(length * HOOK_POINT, length - KEEP_PLAYING_SECONDS));
+}
+
+function setLevel(level, milliseconds) {
+  const target = Math.max(0, level);
+  if (gainNode && audioCtx) {
+    const now = audioCtx.currentTime;
+    gainNode.gain.cancelScheduledValues(now);
+    gainNode.gain.setValueAtTime(gainNode.gain.value, now);
+    gainNode.gain.linearRampToValueAtTime(target, now + milliseconds / 1000);
+    return;
+  }
+  audio.volume = Math.min(1, target);
+}
+
+function storyLevel() {
+  return prefs.muted ? 0 : prefs.volume ** 2;
+}
+
+const wait = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds));
+
+function loadSource(src, startAt) {
+  return new Promise((resolve, reject) => {
+    const done = handler => value => {
+      audio.removeEventListener('loadedmetadata', ready);
+      audio.removeEventListener('error', failed);
+      handler(value);
+    };
+    const failed = done(() => reject(new Error('This file cannot be played')));
+    const ready = done(() => {
+      audio.currentTime = startAt ?? hookTime(audio.duration);
+      resolve(audio.currentTime);
+    });
+    audio.addEventListener('loadedmetadata', ready);
+    audio.addEventListener('error', failed);
+    audio.src = src;
+    audio.load();
+  });
+}
+
+async function previewSource(deezerId) {
+  if (!deezerId) return null;
+  const { data } = await fetchJSON(`/api/preview/${encodeURIComponent(deezerId)}`);
+  return data?.ok && data.preview ? data.preview : null;
+}
+
+export async function playStoryTrack(track) {
+  if (!track?.id || storyTrack?.id === track.id) return;
+  const token = ++loadToken;
+  storyTrack = track;
+  current = null;
+  queue = [];
+  index = -1;
+  ensureAudioGraph();
+  if (!audio.paused) {
+    setLevel(0, FADE_MS);
+    await wait(FADE_MS);
+    if (token !== loadToken) return;
+  }
+  let started = false;
+  const attempt = async (src, startAt) => {
+    await loadSource(src, startAt);
+    if (token !== loadToken) return;
+    setLevel(0, 0);
+    await audio.play();
+    setLevel(storyLevel(), FADE_MS);
+    started = true;
+  };
+  try {
+    await attempt(`/stats/audio/${encodeURIComponent(track.id)}`, track.duration ? hookTime(track.duration) : undefined);
+  } catch (_) {
+    if (token !== loadToken) return;
+    try {
+      const preview = await previewSource(track.deezer_track_id);
+      if (preview && token === loadToken) await attempt(preview, 0);
+    } catch (_) {
+      // Blocked by the browser or nothing to play: the story goes on in silence.
+    }
+  }
+  if (!started && token === loadToken) audio.pause();
+}
+
+export function pauseStoryAudio() {
+  audio.pause();
+}
+
+export function resumeStoryAudio() {
+  if (storyTrack && audio.src) audio.play().then(() => setLevel(storyLevel(), 200)).catch(() => {});
 }
 
 export function toggleMute() {
   prefs.muted = !prefs.muted;
   savePrefs();
   applyVolume();
+  if (storyTrack) setLevel(storyLevel(), 100);
   if (el) syncVolumeControls();
   return prefs.muted;
 }
@@ -145,6 +248,7 @@ export function setPreviewVolume(volume) {
   prefs.muted = false;
   savePrefs();
   applyVolume();
+  if (storyTrack) setLevel(storyLevel(), 100);
   if (el) syncVolumeControls();
 }
 
@@ -385,6 +489,12 @@ export function initPlayer() {
   audio.addEventListener('play', syncButtons);
   audio.addEventListener('pause', syncButtons);
   audio.addEventListener('ended', () => {
+    if (storyTrack) {
+      // A slide outlasted the song: go round again instead of falling silent.
+      audio.currentTime = hookTime(audio.duration);
+      audio.play().catch(() => {});
+      return;
+    }
     if (index < queue.length - 1) load(index + 1);
     else syncButtons();
   });

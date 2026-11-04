@@ -1,8 +1,8 @@
 from contextlib import closing
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, request, send_file
 
-from core import stats_db, stats_enrich, stats_import, stats_ingest, stats_queries
+from core import stats_covers, stats_db, stats_enrich, stats_files, stats_import, stats_ingest, stats_queries
 from core.stats_queries import BadPeriod
 from routes.playlists import render_app
 
@@ -12,6 +12,11 @@ stats_bp = Blueprint("stats", __name__)
 BASE_URL_HINT = "http://deezer-to-navidrome:8080/apis/listenbrainz/1/"
 MIN_PASTED_TOKEN = 8
 MAX_ID = 2 ** 63 - 1
+COVER_MAX_AGE = 7 * 86400
+AUDIO_TYPES = {
+    ".flac": "audio/flac", ".mp3": "audio/mpeg", ".m4a": "audio/mp4", ".aac": "audio/aac",
+    ".ogg": "audio/ogg", ".opus": "audio/ogg", ".wav": "audio/wav",
+}
 
 
 @stats_bp.errorhandler(BadPeriod)
@@ -22,6 +27,29 @@ def bad_period(error):
 @stats_bp.get("/stats")
 def stats_view():
     return render_app("stats")
+
+
+@stats_bp.get("/stats/cover/<any(track, album, artist):kind>/<int:item_id>")
+def cover(kind, item_id):
+    found = stats_covers.cover_for(kind, item_id) if item_id <= MAX_ID else None
+    if found is None:
+        response = jsonify({"ok": False, "error": "No cover"})
+        response.status_code = 404
+        response.headers["Cache-Control"] = "no-store"
+        return response
+    return send_file(found, mimetype="image/jpeg", max_age=COVER_MAX_AGE)
+
+
+@stats_bp.get("/stats/audio/<int:track_id>")
+def audio(track_id):
+    found = None
+    if track_id <= MAX_ID:
+        with closing(stats_db.connect()) as conn:
+            row = conn.execute("SELECT key, file_path FROM tracks WHERE id = ?", (track_id,)).fetchone()
+        found = stats_files.local_file(row) if row else None
+    if found is None:
+        return jsonify({"ok": False, "error": "No file for this track"}), 404
+    return send_file(found, mimetype=AUDIO_TYPES.get(found.suffix.casefold()), conditional=True, max_age=0)
 
 
 @stats_bp.get("/api/stats/recaps")

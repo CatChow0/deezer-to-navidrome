@@ -22,6 +22,11 @@ def inside_music_folders(path):
     return None
 
 
+def music_root(path):
+    """The music folder holding this path, or None."""
+    return next((root for root in _roots() if Path(path).is_relative_to(root)), None)
+
+
 def local_file(track):
     """`track` needs `key` and `file_path`. Files move, so the library index is
     asked when the stored path no longer leads anywhere."""
