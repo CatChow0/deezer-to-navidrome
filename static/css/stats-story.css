@@ -847,6 +847,19 @@
     opacity: 1;
   }
 
+  /* A phone held sideways: tap and swipe are there, and text needs the room. */
+  @container (max-height: 500px) {
+    .st-skip-link {
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .st-skip-link:focus-visible {
+      opacity: 1;
+      pointer-events: auto;
+    }
+  }
+
   .st-slide--opener,
   .st-slide--genres,
   .st-slide--artist_countdown,
@@ -1035,13 +1048,13 @@
   /* Lists fill their half without spilling */
   .st-count-list,
   .st-moves {
-    gap: 2cqh;
+    gap: 1.4cqh;
   }
 
   .st-count-row .st-art,
   .st-move .st-art,
   .st-count-list--tiles .st-count-row .st-art {
-    --art: 13cqh;
+    --art: 11cqh;
   }
 
   .st-genre-name {
