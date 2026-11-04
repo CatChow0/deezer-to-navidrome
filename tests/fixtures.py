@@ -9,7 +9,10 @@ def make_navidrome(path, plays):
     conn = sqlite3.connect(path)
     conn.executescript("""
         CREATE TABLE media_file (id TEXT PRIMARY KEY, title TEXT, artist TEXT, album TEXT, album_artist TEXT,
-                                 duration REAL, tags TEXT, participants TEXT, missing INTEGER DEFAULT 0);
+                                 duration REAL, tags TEXT, participants TEXT, missing INTEGER DEFAULT 0,
+                                 path TEXT, library_id INTEGER DEFAULT 1);
+        CREATE TABLE library (id INTEGER PRIMARY KEY, name TEXT, path TEXT);
+        INSERT INTO library VALUES (1, 'Music', '/music');
         CREATE TABLE scrobbles (id INTEGER PRIMARY KEY, media_file_id TEXT NOT NULL, user_id TEXT NOT NULL,
                                 submission_time INTEGER NOT NULL);
     """)
@@ -19,11 +22,11 @@ def make_navidrome(path, plays):
         tags = {"genre": [{"id": str(i), "value": g} for i, g in enumerate(play.get("genres", []))]}
         participants = {"artist": [{"id": str(i), "name": a} for i, a in enumerate(artists)]}
         conn.execute(
-            "INSERT OR REPLACE INTO media_file(id, title, artist, album, album_artist, duration, tags, participants)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT OR REPLACE INTO media_file(id, title, artist, album, album_artist, duration, tags, participants, path)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (file_id, play["title"], " • ".join(artists), play.get("album", "Album"),
              play.get("album_artist", artists[0]), play.get("duration", 200),
-             json.dumps(tags), json.dumps(participants)),
+             json.dumps(tags), json.dumps(participants), play.get("path", file_id)),
         )
         conn.execute("INSERT INTO scrobbles(media_file_id, user_id, submission_time) VALUES (?, 'u', ?)", (file_id, play["ts"]))
     conn.commit()

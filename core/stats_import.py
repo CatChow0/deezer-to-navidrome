@@ -143,13 +143,27 @@ def _participants(participants_json, fallback):
     return split_artists(names) or split_artists(fallback)
 
 
+def _file_columns(conn) -> tuple:
+    """Where each file is, for Navidrome versions that say so."""
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(media_file)")}
+    library = {row[1] for row in conn.execute("PRAGMA table_info(library)")}
+    if {"path", "library_id"} <= columns and {"id", "path"} <= library:
+        return "f.path file_path, l.path library_path", "LEFT JOIN library l ON l.id = f.library_id"
+    return "NULL file_path, NULL library_path", ""
+
+
 def _read_navidrome(conn) -> list:
+    from core.stats_files import container_path
+
+    file_columns, library_join = _file_columns(conn)
     rows = conn.execute(
         "SELECT DISTINCT s.submission_time ts, s.media_file_id file, f.title, f.artist, f.album, f.album_artist,"
-        " f.duration, f.tags, f.participants"
-        " FROM scrobbles s JOIN media_file f ON f.id = s.media_file_id ORDER BY s.submission_time"
+        f" f.duration, f.tags, f.participants, {file_columns}"
+        f" FROM scrobbles s JOIN media_file f ON f.id = s.media_file_id {library_join} ORDER BY s.submission_time"
     ).fetchall()
+    _, _, _, mappings = config.get_paths_from_config()
     return [{
+        "path": container_path(row["library_path"], row["file_path"], mappings),
         "ts": int(row["ts"]),
         "title": row["title"] or "",
         "artists": _participants(row["participants"], row["artist"]),
@@ -184,6 +198,7 @@ def _read_maloja(conn) -> list:
         "album_artist": album_artist.get(row["album_id"]),
         "duration": row["length"] or row["duration"] or None,
         "genre": None,
+        "path": None,
     } for row in rows if row["title"]]
 
 
@@ -267,22 +282,35 @@ def _load_sources(folder: Path, warnings: list, keep_copy=True) -> tuple:
     return navidrome_plays, maloja_plays
 
 
-def library_durations() -> dict:
-    """Track lengths from the library index, by track key."""
+def _library_index() -> dict:
+    """Track lengths and file paths from the library index, by track key."""
     from core.library import load_library_cache
 
     _, _, cache_file, _ = config.get_paths_from_config()
     try:
         stamp = cache_file.stat().st_mtime_ns
     except OSError:
-        return {}
+        return {"durations": {}, "paths": {}}
     if _library_cache.get("stamp") != stamp:
-        durations = {}
+        durations, paths = {}, {}
         for entry in load_library_cache(cache_file):
-            if entry.get("duration") and entry.get("tag_title"):
-                durations[track_key(split_artists(entry.get("tag_artist")), entry["tag_title"])] = float(entry["duration"])
-        _library_cache.update(stamp=stamp, value=durations)
-    return _library_cache["value"]
+            if not entry.get("tag_title"):
+                continue
+            key = track_key(split_artists(entry.get("tag_artist")), entry["tag_title"])
+            if entry.get("duration"):
+                durations[key] = float(entry["duration"])
+            if entry.get("path"):
+                paths[key] = entry["path"]
+        _library_cache.update(stamp=stamp, durations=durations, paths=paths)
+    return _library_cache
+
+
+def library_durations() -> dict:
+    return _library_index()["durations"]
+
+
+def library_paths() -> dict:
+    return _library_index()["paths"]
 
 
 # --- Writing -------------------------------------------------------------------
@@ -403,6 +431,8 @@ def _apply_navidrome(conn, plays, stored, report) -> None:
         track_id = upsert_track(conn, play["title"], play["artists"], duration=play["duration"],
                                 duration_source="navidrome", genre=play["genre"], genre_source="navidrome")
         album_id = upsert_album(conn, play["album"], play["album_artist"])
+        if album_id and play["path"]:
+            conn.execute("UPDATE albums SET file_path = ? WHERE id = ?", (play["path"], album_id))
         exact = next((i for i in stored.near(play["ts"], 0) if i["id"] not in stored.used and i["key"] == key), None)
         if exact:
             take(exact, play, key, track_id, album_id)
@@ -440,13 +470,13 @@ def _apply_navidrome(conn, plays, stored, report) -> None:
         seen.add(key)
         track_id = conn.execute("SELECT id FROM tracks WHERE key = ?", (key,)).fetchone()[0]
         conn.execute(
-            "UPDATE tracks SET title = ?, artist_display = ?,"
+            "UPDATE tracks SET title = ?, artist_display = ?, file_path = COALESCE(?, file_path),"
             " duration_sec = COALESCE(?, duration_sec),"
             " duration_source = CASE WHEN ? IS NULL THEN duration_source ELSE 'navidrome' END,"
             " genre = COALESCE(?, genre),"
             " genre_source = CASE WHEN ? IS NULL THEN genre_source ELSE 'navidrome' END"
             " WHERE id = ?",
-            (play["title"], " • ".join(dict.fromkeys(play["artists"])), play["duration"], play["duration"],
+            (play["title"], " • ".join(dict.fromkeys(play["artists"])), play["path"], play["duration"], play["duration"],
              play["genre"], play["genre"], track_id),
         )
         set_track_artists(conn, track_id, play["artists"])

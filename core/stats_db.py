@@ -60,11 +60,29 @@ CREATE TABLE IF NOT EXISTS maloja_pairs (
     maloja_ts INTEGER PRIMARY KEY,
     partner_ts INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS covers (
+    kind TEXT NOT NULL,
+    item_key TEXT NOT NULL,
+    file TEXT,
+    color TEXT,
+    source TEXT,
+    checked_at INTEGER NOT NULL,
+    retry_at INTEGER,
+    PRIMARY KEY (kind, item_key)
+);
 CREATE TABLE IF NOT EXISTS meta (
     key TEXT PRIMARY KEY,
     value TEXT
 );
 """
+
+# Columns added since the first release. Existing databases get them on opening.
+_ADDED_COLUMNS = (
+    ("tracks", "file_path", "TEXT"),
+    ("albums", "file_path", "TEXT"),
+    ("artists", "lookup_at", "INTEGER"),
+)
+_SCHEMA_VERSION = 2
 
 _FEAT_BRACKET = re.compile(r"[\(\[]\s*(?:feat\.?|ft\.?|featuring|with)\b[^\)\]]*[\)\]]", re.I)
 _FEAT_INLINE = re.compile(r"\s(?:feat\.?|ft\.?|featuring)\s.*$", re.I)
@@ -84,7 +102,23 @@ def connect() -> sqlite3.Connection:
     conn.execute("PRAGMA synchronous=NORMAL")
     conn.execute("PRAGMA foreign_keys=ON")
     conn.executescript(_SCHEMA)
+    _migrate(conn)
     return conn
+
+
+def _migrate(conn) -> None:
+    if conn.execute("PRAGMA user_version").fetchone()[0] >= _SCHEMA_VERSION:
+        return
+    for table, column, kind in _ADDED_COLUMNS:
+        present = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
+        if column not in present:
+            try:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {kind}")
+            except sqlite3.OperationalError as e:
+                # Another thread opening the database at the same moment got there first.
+                if "duplicate column" not in str(e):
+                    raise
+    conn.execute(f"PRAGMA user_version = {_SCHEMA_VERSION}")
 
 
 def _is_latin(char) -> bool:
