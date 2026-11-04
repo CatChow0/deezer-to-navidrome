@@ -82,6 +82,14 @@ class Batches(unittest.TestCase):
         self.assertEqual((row["genre"], row["genre_source"]), ("Rap/Hip Hop", "deezer"))
         self.assertEqual(row["cover_url"], "http://img/cover.jpg")
 
+    def test_search_uses_plain_words(self):
+        # Deezer's API returned nothing at all for artist:"…" track:"…" queries.
+        self.track("Song (feat. B)", ("A", "B"))
+        asked = []
+        api = fake_api()
+        self.run_batch(lambda path, params=None: (asked.append(params), api(path, params))[1])
+        self.assertEqual(asked[0]["q"], "A Song")
+
     def test_known_values_stay(self):
         track = self.track(duration=99, duration_source="navidrome", genre="Pop", genre_source="navidrome")
         self.run_batch()

@@ -138,6 +138,25 @@
 {% block overlays %}
 {% include '_help.html' %}
 
+<div id="stats-story" class="overlay st-story" aria-hidden="true">
+  <section class="overlay-panel" role="dialog" aria-modal="true" aria-label="Recap" tabindex="-1">
+    <button type="button" class="icon-btn overlay-close" data-overlay-close aria-label="Close the recap">×</button>
+    <div class="st-story-top">
+      <div class="st-story-progress" data-story-progress aria-hidden="true"></div>
+      <div class="st-story-controls">
+        <button type="button" class="btn btn--ghost btn--sm" data-story-mute>Mute</button>
+        <input type="range" min="0" max="100" step="1" data-story-volume aria-label="Volume">
+        <span class="st-story-count" data-story-count aria-live="polite"></span>
+      </div>
+    </div>
+    <div class="st-story-stage" data-story-stage data-overlay-content></div>
+    <div class="st-story-nav">
+      <button type="button" class="btn btn--ghost" data-story-prev>Previous</button>
+      <button type="button" class="btn" data-story-next>Next</button>
+    </div>
+  </section>
+</div>
+
 <div id="drawer" class="overlay drawer" aria-hidden="true">
   <div class="overlay-backdrop" data-overlay-close></div>
   <section class="overlay-panel cell" role="dialog" aria-modal="true" aria-label="Details" tabindex="-1">

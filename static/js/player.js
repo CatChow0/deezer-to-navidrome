@@ -98,6 +98,7 @@ let index = -1;
 let current = null;
 let loadToken = 0;
 let el = null;
+let playerHidden = false;
 
 export function playButton(trackId, label = 'Play preview') {
   return `<button type="button" class="icon-btn play-btn" data-play-track="${escapeHtml(trackId)}" aria-label="${escapeHtml(label)}" title="Play a 30-second preview">${ICONS.play}</button>`;
@@ -105,6 +106,50 @@ export function playButton(trackId, label = 'Play preview') {
 
 export function playAlbumButton(albumId, label = 'Play previews of this release') {
   return `<button type="button" class="icon-btn play-btn" data-play-album="${escapeHtml(albumId)}" aria-label="${escapeHtml(label)}" title="Play 30-second previews">${ICONS.play}</button>`;
+}
+
+// For a page that runs its own audio controls (the story recap): the player
+// bar stays out of sight while it plays, with the same volume and levelling.
+export function setPlayerHidden(hidden) {
+  playerHidden = hidden;
+  if (hidden && el) {
+    el.hidden = true;
+    document.body.classList.remove('has-player');
+  }
+}
+
+export function playPreview(trackId) {
+  // Already playing, or already on its way: a slide with the same track goes on.
+  if (current?.id === trackId || queue[index] === trackId) return Promise.resolve();
+  queue = [trackId];
+  return load(0);
+}
+
+export function stopPreview() {
+  loadToken++;
+  queue = [];
+  index = -1;
+  if (el) hide();
+}
+
+export function toggleMute() {
+  prefs.muted = !prefs.muted;
+  savePrefs();
+  applyVolume();
+  if (el) syncVolumeControls();
+  return prefs.muted;
+}
+
+export function setPreviewVolume(volume) {
+  prefs.volume = Math.max(0, Math.min(1, volume));
+  prefs.muted = false;
+  savePrefs();
+  applyVolume();
+  if (el) syncVolumeControls();
+}
+
+export function previewAudioState() {
+  return { volume: prefs.volume, muted: prefs.muted };
 }
 
 function formatTime(seconds) {
@@ -130,6 +175,7 @@ function syncButtons() {
 }
 
 function show() {
+  if (playerHidden) return;
   el.hidden = false;
   document.body.classList.add('has-player');
 }
@@ -167,7 +213,7 @@ async function load(position) {
   if (token !== loadToken) return;
 
   if (!data?.ok || !data.preview) {
-    toast(data?.error || 'Deezer has no preview for this track', { tone: 'error' });
+    if (!playerHidden) toast(data?.error || 'Deezer has no preview for this track', { tone: 'error' });
     if (position < queue.length - 1) load(position + 1);
     else hide();
     return;

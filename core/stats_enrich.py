@@ -61,9 +61,8 @@ def _pending(conn, limit) -> list:
 def _lookup(track) -> tuple:
     """(matching Deezer track or None, its album's first genre or None)."""
     artists = split_artists(track["artist_display"])
-    title = clean_title(track["title"]).replace('"', " ").strip()
-    first = (artists[0] if artists else "").replace('"', " ")
-    found = deezer._public_api("/search/track", {"q": f'artist:"{first}" track:"{title}"', "limit": 10})
+    query = " ".join(f"{artists[0] if artists else ''} {clean_title(track['title'])}".split())
+    found = deezer._public_api("/search/track", {"q": query, "limit": 10})
     match = next((item for item in (found or {}).get("data") or [] if deezer_match(track["title"], artists, item)), None)
     genre = None
     if match and not track["genre"] and (match.get("album") or {}).get("id"):
@@ -101,7 +100,7 @@ def _retry_later(track_id, delay) -> None:
         conn.commit()
 
 
-def enrich_batch(limit=10) -> int:
+def enrich_batch(limit=40) -> int:
     """Looks up up to `limit` tracks; the network wait holds no database lock."""
     with closing(stats_db.connect()) as conn:
         tracks = _pending(conn, limit)
