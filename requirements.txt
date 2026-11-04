@@ -4,3 +4,4 @@ mutagen
 pycryptodome
 gunicorn
 rapidfuzz
+tzdata
