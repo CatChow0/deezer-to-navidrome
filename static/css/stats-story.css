@@ -1,5 +1,5 @@
-/* Story recap: a loud poster per slide. Everything is sized from the stage's
-   width (cqw) so a phone and a desktop see the same composition. */
+/* Story recap: a loud poster per slide, filling the screen. Sizes use --u, so a
+   slide scales with the window; wide windows get their own compositions. */
 
 .st-story {
   z-index: 1600;
@@ -23,20 +23,12 @@
 .st-stage {
   --ink: #fdfbff;
   position: relative;
-  width: min(100vw, calc(100dvh * 9 / 16));
-  height: min(100dvh, calc(100vw * 16 / 9));
+  width: 100vw;
+  height: 100dvh;
   overflow: hidden;
   container-type: size;
   user-select: none;
   -webkit-user-select: none;
-}
-
-@media (min-width: 700px) {
-  .st-stage {
-    width: min(100vw, calc((100dvh - 32px) * 9 / 16));
-    height: calc(100dvh - 32px);
-    border-radius: 24px;
-  }
 }
 
 .st-slides {
@@ -144,15 +136,21 @@
 .st-skip-link {
   position: absolute;
   z-index: 5;
-  bottom: 8px;
-  padding: 6px 12px;
+  top: 50%;
+  width: 52px;
+  height: 52px;
   opacity: 0;
   border: 0;
-  border-radius: var(--r-chip);
-  background: #000;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.72);
   color: #fff;
   font: inherit;
+  font-size: 30px;
+  line-height: 1;
+  transform: translateY(-50%);
+  cursor: pointer;
   pointer-events: none;
+  transition: opacity var(--t-fast);
 }
 
 .st-skip-link:focus-visible {
@@ -160,22 +158,24 @@
   pointer-events: auto;
 }
 
-.st-skip-link[data-story-prev] { left: 8px; }
-.st-skip-link[data-story-next] { right: 8px; }
+.st-skip-link[data-story-prev] { left: 16px; }
+.st-skip-link[data-story-next] { right: 16px; }
 
 /* ── The slide ──────────────────────────────────────────────────────────── */
 .st-slide {
+  --u: min(1cqw, 0.5625cqh);
+  --d: 1cqw;
   position: absolute;
   inset: 0;
   display: flex;
   flex-direction: column;
   justify-content: center;
   gap: 2.4cqh;
-  padding: 11cqh 7cqw 6cqh;
+  padding: 11cqh calc(7 * var(--u)) 6cqh;
   overflow: hidden;
   background: var(--bg);
   color: var(--ink);
-  font-size: 5cqw;
+  font-size: calc(5 * var(--u));
   line-height: 1.25;
   isolation: isolate;
 }
@@ -185,20 +185,20 @@
   content: "";
   position: absolute;
   z-index: -1;
-  width: 130cqw;
-  height: 130cqw;
+  width: calc(130 * var(--d));
+  height: calc(130 * var(--d));
   border-radius: 50%;
   background: color-mix(in srgb, var(--ink) 11%, transparent);
   animation: st-drift 14s ease-in-out infinite alternate;
 }
 
-.st-slide[data-deco="0"]::before { top: -55cqw; right: -55cqw; }
-.st-slide[data-deco="1"]::before { bottom: -60cqw; left: -50cqw; }
+.st-slide[data-deco="0"]::before { top: calc(-55 * var(--d)); right: calc(-55 * var(--d)); }
+.st-slide[data-deco="1"]::before { bottom: calc(-60 * var(--d)); left: calc(-50 * var(--d)); }
 .st-slide[data-deco="2"]::before {
-  top: 25cqh; left: -40cqw; border-radius: 0; height: 26cqw; rotate: -18deg; width: 190cqw;
+  top: 25cqh; left: calc(-40 * var(--d)); border-radius: 0; height: calc(26 * var(--d)); rotate: -18deg; width: calc(190 * var(--d));
 }
 .st-slide[data-deco="3"]::before {
-  top: -30cqw; left: -30cqw; border-radius: 28%; rotate: 24deg;
+  top: calc(-30 * var(--d)); left: calc(-30 * var(--d)); border-radius: 28%; rotate: 24deg;
 }
 
 .st-is-hidden { display: none; }
@@ -214,7 +214,7 @@
 
 .st-kicker {
   margin: 0;
-  font-size: 5.4cqw;
+  font-size: calc(5.4 * var(--u));
   font-weight: 600;
 }
 
@@ -223,20 +223,20 @@
   max-height: 34cqh;
   overflow: hidden;
   font-family: var(--font-display);
-  font-size: 10cqw;
+  font-size: calc(10 * var(--u));
   font-weight: 700;
   letter-spacing: -0.04em;
   line-height: 1.02;
 }
 
 .st-title--huge {
-  font-size: 15cqw;
+  font-size: calc(15 * var(--u));
   max-height: 26cqh;
 }
 
 .st-line {
   margin: 0;
-  font-size: 5.2cqw;
+  font-size: calc(5.2 * var(--u));
   font-weight: 500;
   overflow-wrap: anywhere;
 }
@@ -244,14 +244,14 @@
 .st-slide .st-note {
   margin: 0;
   color: inherit;
-  font-size: 3.8cqw;
+  font-size: calc(3.8 * var(--u));
   opacity: 0.85;
 }
 
 .st-big-note {
   margin: 0;
   font-family: var(--font-display);
-  font-size: 9cqw;
+  font-size: calc(9 * var(--u));
   font-weight: 500;
   letter-spacing: -0.04em;
 }
@@ -259,7 +259,7 @@
 .st-stat {
   margin: 0;
   font-family: var(--font-display);
-  font-size: 8.4cqw;
+  font-size: calc(8.4 * var(--u));
   font-weight: 600;
   letter-spacing: -0.04em;
   font-variant-numeric: tabular-nums;
@@ -268,7 +268,7 @@
 .st-giant {
   margin: 0;
   font-family: var(--font-display);
-  font-size: 42cqw;
+  font-size: min(calc(42 * var(--u)), calc(86 * var(--u) / (var(--digits, 2) * 0.78)));
   font-weight: 800;
   letter-spacing: -0.07em;
   line-height: 0.9;
@@ -276,18 +276,18 @@
 }
 
 .st-giant--time {
-  font-size: 19cqw;
+  font-size: calc(19 * var(--u));
   line-height: 1;
 }
 
 .st-giant--word {
-  font-size: 19cqw;
+  font-size: calc(19 * var(--u));
 }
 
 .st-teaser {
   margin: 0;
   font-family: var(--font-display);
-  font-size: 6cqw;
+  font-size: calc(6 * var(--u));
   font-weight: 600;
 }
 
@@ -297,7 +297,7 @@
 }
 
 .st-slide .st-actions .btn {
-  border: 0.4cqw solid var(--ink);
+  border: calc(0.4 * var(--u)) solid var(--ink);
   background: var(--ink);
   color: var(--bg);
 }
@@ -320,7 +320,7 @@
 .st-slam {
   margin: 0;
   font-family: var(--font-display);
-  font-size: 19cqw;
+  font-size: calc(19 * var(--u));
   font-weight: 800;
   letter-spacing: -0.06em;
   line-height: 1.05;
@@ -340,7 +340,7 @@
 }
 
 @keyframes st-drift {
-  to { transform: translate(8cqw, 6cqh) rotate(40deg) scale(1.1); }
+  to { transform: translate(calc(8 * var(--u)), 6cqh) rotate(40deg) scale(1.1); }
 }
 
 @keyframes st-flip {
@@ -361,7 +361,7 @@
 }
 
 @keyframes st-spin-in {
-  from { opacity: 0; transform: translateX(-90cqw) rotate(-540deg); }
+  from { opacity: 0; transform: translateX(calc(-90 * var(--u))) rotate(-540deg); }
   to { opacity: 1; transform: none; }
 }
 
@@ -394,19 +394,19 @@
 
 /* ── Covers ─────────────────────────────────────────────────────────────── */
 .st-slide .st-art {
-  --art: 18cqw;
-  border-radius: 3cqw;
+  --art: calc(18 * var(--u));
+  border-radius: calc(3 * var(--u));
 }
 
 /* Intro: covers rain down behind the month's name */
 .st-wall {
   position: absolute;
   z-index: -1;
-  inset: -4cqw;
+  inset: calc(-4 * var(--u));
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  grid-auto-rows: 34cqw;
-  gap: 3cqw;
+  grid-auto-rows: calc(34 * var(--u));
+  gap: calc(3 * var(--u));
   opacity: 0.9;
 }
 
@@ -418,7 +418,7 @@
 .st-wall > span:nth-child(even) { --turn: 5deg; }
 
 .st-wall .st-art {
-  --art: 34cqw;
+  --art: calc(34 * var(--u));
   width: 100%;
 }
 
@@ -443,10 +443,10 @@
 .st-tilt--other { --tilt: 5deg; }
 
 .st-tilt .st-art {
-  --art: 58cqw;
-  border-radius: 4cqw;
-  box-shadow: 2cqw 2cqw 0 var(--ink);
-  font-size: 15cqw;
+  --art: calc(58 * var(--u));
+  border-radius: calc(4 * var(--u));
+  box-shadow: calc(2 * var(--u)) calc(2 * var(--u)) 0 var(--ink);
+  font-size: calc(15 * var(--u));
 }
 
 /* Top artist: the photo is the slide */
@@ -462,7 +462,7 @@
   width: 100%;
   height: 100%;
   border-radius: 0;
-  font-size: 40cqw;
+  font-size: calc(40 * var(--u));
 }
 
 .st-slide--top_artist {
@@ -485,12 +485,12 @@
   left: 0;
   width: max-content;
   font-family: var(--font-display);
-  font-size: 24cqw;
+  font-size: calc(24 * var(--u));
   font-weight: 800;
   letter-spacing: -0.05em;
   line-height: 1;
   white-space: nowrap;
-  -webkit-text-stroke: 0.4cqw #fff;
+  -webkit-text-stroke: calc(0.4 * var(--u)) #fff;
   color: transparent;
   animation: st-marquee 22s linear infinite;
 }
@@ -508,10 +508,10 @@
 }
 
 .st-record .st-art {
-  --art: 62cqw;
+  --art: calc(62 * var(--u));
   border-radius: 50%;
-  font-size: 16cqw;
-  box-shadow: 0 0 0 2cqw rgba(0, 0, 0, 0.82), 0 0 0 2.4cqw rgba(255, 255, 255, 0.3);
+  font-size: calc(16 * var(--u));
+  box-shadow: 0 0 0 calc(2 * var(--u)) rgba(0, 0, 0, 0.82), 0 0 0 calc(2.4 * var(--u)) rgba(255, 255, 255, 0.3);
   animation: st-spin 6s linear 1100ms infinite;
 }
 
@@ -521,8 +521,8 @@
   z-index: 2;
   top: 50%;
   left: 50%;
-  width: 9cqw;
-  height: 9cqw;
+  width: calc(9 * var(--u));
+  height: calc(9 * var(--u));
   border-radius: 50%;
   background: var(--bg);
   transform: translate(-50%, -50%);
@@ -544,10 +544,10 @@
 .st-move {
   display: flex;
   align-items: center;
-  gap: 3cqw;
+  gap: calc(3 * var(--u));
   min-width: 0;
-  padding: 1.4cqw 2cqw;
-  border-radius: 3cqw;
+  padding: calc(1.4 * var(--u)) calc(2 * var(--u));
+  border-radius: calc(3 * var(--u));
   background: color-mix(in srgb, var(--ink) 12%, transparent);
   animation: st-flip 650ms var(--ease-out) calc(var(--i) * 1300ms + 400ms) both;
   transform-origin: top;
@@ -556,15 +556,15 @@
 .st-count-list--tiles .st-count-row {
   border-radius: 0;
   background: none;
-  border-bottom: 0.4cqw solid color-mix(in srgb, var(--ink) 40%, transparent);
+  border-bottom: calc(0.4 * var(--u)) solid color-mix(in srgb, var(--ink) 40%, transparent);
   animation-name: st-rise;
 }
 
 .st-count-rank {
   flex: none;
-  width: 9cqw;
+  width: calc(9 * var(--u));
   font-family: var(--font-display);
-  font-size: 9cqw;
+  font-size: calc(9 * var(--u));
   font-weight: 800;
   text-align: center;
 }
@@ -572,12 +572,12 @@
 .st-count-text {
   display: grid;
   min-width: 0;
-  font-size: 3.8cqw;
+  font-size: calc(3.8 * var(--u));
   line-height: 1.25;
 }
 
 .st-count-text small {
-  font-size: 3.4cqw;
+  font-size: calc(3.4 * var(--u));
   font-weight: 600;
   opacity: 0.85;
 }
@@ -585,7 +585,7 @@
 .st-count-text strong {
   max-height: 2.5em;
   overflow: hidden;
-  font-size: 5cqw;
+  font-size: calc(5 * var(--u));
   overflow-wrap: anywhere;
 }
 
@@ -605,28 +605,28 @@
   max-height: 1.15em;
   overflow: hidden;
   font-family: var(--font-display);
-  font-size: calc(5cqw + var(--share) * 13cqw);
+  font-size: calc(calc(5 * var(--u)) + var(--share) * calc(13 * var(--u)));
   font-weight: 700;
   letter-spacing: -0.04em;
   line-height: 1.1;
 }
 
 .st-genre-time {
-  font-size: 3.8cqw;
+  font-size: calc(3.8 * var(--u));
 }
 
 /* Loyalty: one lit square */
 .st-grid {
   display: grid;
   grid-template-columns: repeat(min(var(--cells), 4), 1fr);
-  gap: 2cqw;
+  gap: calc(2 * var(--u));
   width: 100%;
-  max-width: 76cqw;
+  max-width: calc(76 * var(--u));
 }
 
 .st-grid span {
   aspect-ratio: 1;
-  border-radius: 2.4cqw;
+  border-radius: calc(2.4 * var(--u));
   background: color-mix(in srgb, var(--ink) 18%, transparent);
   animation: st-pop 420ms var(--ease-out) calc(var(--i) * 90ms + 400ms) both;
 }
@@ -638,7 +638,7 @@
 
 /* Binge: a bar that keeps stretching */
 .st-stretch {
-  height: 7cqw;
+  height: calc(7 * var(--u));
   overflow: hidden;
   border-radius: var(--r-chip);
   background: color-mix(in srgb, var(--ink) 16%, transparent);
@@ -656,14 +656,14 @@
 .st-ticks {
   display: flex;
   flex-wrap: wrap;
-  gap: 1.6cqw;
+  gap: calc(1.6 * var(--u));
 }
 
 .st-ticks span {
-  width: 5cqw;
-  height: 5cqw;
+  width: calc(5 * var(--u));
+  height: calc(5 * var(--u));
   border-radius: 50%;
-  border: 0.5cqw solid var(--ink);
+  border: calc(0.5 * var(--u)) solid var(--ink);
 }
 
 .st-ticks .is-lit {
@@ -675,27 +675,27 @@
 .st-faces {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 3cqw;
+  gap: calc(3 * var(--u));
 }
 
 .st-face {
   display: grid;
   justify-items: center;
-  gap: 1cqw;
+  gap: calc(1 * var(--u));
   min-width: 0;
   animation: st-pop 520ms var(--ease-out) calc(var(--i) * 260ms + 500ms) both;
 }
 
 .st-face .st-art {
-  --art: 25cqw;
+  --art: calc(25 * var(--u));
   border-radius: 50%;
-  font-size: 8cqw;
+  font-size: calc(8 * var(--u));
 }
 
 .st-face em {
   width: 100%;
   overflow: hidden;
-  font-size: 3.4cqw;
+  font-size: calc(3.4 * var(--u));
   font-style: normal;
   font-weight: 600;
   text-align: center;
@@ -710,8 +710,8 @@
 
 .st-move-mark {
   flex: none;
-  width: 8cqw;
-  font-size: 9cqw;
+  width: calc(8 * var(--u));
+  font-size: calc(9 * var(--u));
   font-weight: 800;
   line-height: 1;
   text-align: center;
@@ -720,7 +720,7 @@
 /* Clock */
 .st-clock {
   align-self: center;
-  width: 78cqw;
+  width: calc(78 * var(--u));
   max-height: 44cqh;
 }
 
@@ -748,12 +748,12 @@
   max-width: 100%;
   max-height: 44cqh;
   margin: 1cqh 0;
-  padding: 3cqw 4cqw;
+  padding: calc(3 * var(--u)) calc(4 * var(--u));
   overflow: hidden;
-  border: 1.4cqw solid var(--ink);
-  border-radius: 3cqw;
+  border: calc(1.4 * var(--u)) solid var(--ink);
+  border-radius: calc(3 * var(--u));
   font-family: var(--font-display);
-  font-size: 14cqw;
+  font-size: calc(14 * var(--u));
   font-weight: 800;
   letter-spacing: -0.05em;
   line-height: 1.02;
@@ -768,23 +768,23 @@
 }
 
 .st-compare li {
-  font-size: 4.6cqw;
+  font-size: calc(4.6 * var(--u));
   animation: st-rise 500ms var(--ease-out) calc(var(--i) * 300ms + 500ms) both;
 }
 
 .st-compare strong {
   font-family: var(--font-display);
-  font-size: 6.4cqw;
+  font-size: calc(6.4 * var(--u));
 }
 
 /* Outro: a summary card */
 .st-card {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 3cqw;
+  gap: calc(3 * var(--u));
   margin: 0;
-  padding: 5cqw;
-  border-radius: 4cqw;
+  padding: calc(5 * var(--u));
+  border-radius: calc(4 * var(--u));
   background: var(--ink);
   color: var(--bg);
   animation: st-tilt-in 800ms var(--ease-out) 200ms both;
@@ -792,17 +792,17 @@
 }
 
 .st-card dt {
-  font-size: 3.4cqw;
+  font-size: calc(3.4 * var(--u));
   font-weight: 600;
   opacity: 0.8;
 }
 
 .st-card dd {
   max-height: 2.4em;
-  margin: 0.5cqw 0 0;
+  margin: calc(0.5 * var(--u)) 0 0;
   overflow: hidden;
   font-family: var(--font-display);
-  font-size: 5.6cqw;
+  font-size: calc(5.6 * var(--u));
   font-weight: 700;
   letter-spacing: -0.03em;
   line-height: 1.15;
@@ -828,4 +828,286 @@
 
   .st-tilt { transform: rotate(var(--tilt)); }
   .st-card { transform: rotate(var(--tilt)); }
+}
+
+/* ── Wide windows: a visual on one side, the words on the other ─────────────── */
+@container (min-aspect-ratio: 5/4) {
+  .st-slide {
+    --u: 1.1cqh;
+    --d: 0.62cqw;
+    padding: 12cqh 8cqw 7cqh;
+  }
+
+  .st-skip-link {
+    opacity: 0.8;
+    pointer-events: auto;
+  }
+
+  .st-skip-link:hover {
+    opacity: 1;
+  }
+
+  .st-slide--opener,
+  .st-slide--genres,
+  .st-slide--artist_countdown,
+  .st-slide--track_countdown,
+  .st-slide--loyalty,
+  .st-slide--top_track,
+  .st-slide--obsession,
+  .st-slide--album_run,
+  .st-slide--new_artists,
+  .st-slide--then_now,
+  .st-slide--clock,
+  .st-slide--time,
+  .st-slide--outro {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-auto-rows: min-content;
+    align-content: center;
+    align-items: center;
+    column-gap: 6cqw;
+    row-gap: 2.6cqh;
+  }
+
+  .st-slide--opener > *,
+  .st-slide--genres > *,
+  .st-slide--artist_countdown > *,
+  .st-slide--track_countdown > *,
+  .st-slide--loyalty > *,
+  .st-slide--top_track > *,
+  .st-slide--obsession > *,
+  .st-slide--album_run > *,
+  .st-slide--new_artists > *,
+  .st-slide--then_now > *,
+  .st-slide--clock > *,
+  .st-slide--time > *,
+  .st-slide--outro > * {
+    grid-column: 1;
+  }
+
+  /* The visual of each slide takes the other half. */
+  .st-slide > .st-tilt,
+  .st-slide > .st-record,
+  .st-slide > .st-genre-stack,
+  .st-slide > .st-count-list,
+  .st-slide > .st-grid,
+  .st-slide > .st-faces,
+  .st-slide > .st-moves,
+  .st-slide > .st-clock,
+  .st-slide > .st-compare,
+  .st-slide > .st-card,
+  .st-slide--obsession > .st-giant {
+    grid-column: 2;
+    grid-row: 1 / span 7;
+    align-self: center;
+    justify-self: center;
+    width: 100%;
+  }
+
+  .st-slide > .st-tilt,
+  .st-slide > .st-record {
+    width: auto;
+  }
+
+  /* A wide slide has room to breathe: smaller type than a phone's poster. */
+  .st-slide {
+    font-size: calc(3.2 * var(--u));
+  }
+
+  .st-kicker,
+  .st-line {
+    font-size: calc(3.6 * var(--u));
+  }
+
+  .st-slide .st-note {
+    font-size: calc(2.6 * var(--u));
+  }
+
+  .st-stat {
+    font-size: calc(6 * var(--u));
+  }
+
+  .st-teaser {
+    font-size: calc(4.4 * var(--u));
+  }
+
+  .st-title {
+    font-size: calc(8 * var(--u));
+    max-height: 30cqh;
+  }
+
+  .st-count-rank {
+    width: calc(7 * var(--u));
+    font-size: calc(7 * var(--u));
+  }
+
+  .st-count-text {
+    font-size: calc(2.6 * var(--u));
+  }
+
+  .st-count-text small {
+    font-size: calc(2.4 * var(--u));
+  }
+
+  .st-count-text strong {
+    font-size: calc(3.4 * var(--u));
+  }
+
+  .st-genre-time,
+  .st-face em {
+    font-size: calc(2.6 * var(--u));
+  }
+
+  .st-ticks span {
+    width: calc(3 * var(--u));
+    height: calc(3 * var(--u));
+    border-width: calc(0.4 * var(--u));
+  }
+
+  .st-ticks {
+    gap: calc(1 * var(--u));
+  }
+
+  .st-stretch {
+    height: calc(5 * var(--u));
+  }
+
+  .st-tilt .st-art,
+  .st-record .st-art {
+    --art: min(66cqh, 38cqw);
+  }
+
+  .st-slam {
+    font-size: calc(30 * var(--u));
+  }
+
+  .st-big-note {
+    font-size: calc(11 * var(--u));
+  }
+
+  /* Intro: a wide wall of covers, the name below it */
+  .st-wall {
+    grid-template-columns: repeat(6, 1fr);
+    grid-auto-rows: 17cqw;
+    gap: 1cqw;
+    inset: -2cqw;
+  }
+
+  .st-wall .st-art {
+    --art: 17cqw;
+    font-size: 4cqw;
+  }
+
+  /* Top artist: the photo holds the right, the name the left */
+  .st-slide--top_artist {
+    justify-content: center;
+  }
+
+  .st-bleed {
+    inset: 0 0 0 42%;
+  }
+
+  .st-bleed .st-art {
+    font-size: 30cqh;
+  }
+
+  .st-slide.st-slide--top_artist::before {
+    background: linear-gradient(90deg, #000 42%, rgba(0, 0, 0, 0.75) 58%, rgba(0, 0, 0, 0.05) 82%);
+  }
+
+  .st-bottom {
+    max-width: 50%;
+  }
+
+  .st-title--huge {
+    font-size: calc(20 * var(--u));
+    max-height: 44cqh;
+  }
+
+  /* Runs along the bottom, clear of the name */
+  .st-marquee {
+    top: auto;
+    bottom: 2cqh;
+    font-size: calc(12 * var(--u));
+    opacity: 0.45;
+  }
+
+  /* Lists fill their half without spilling */
+  .st-count-list,
+  .st-moves {
+    gap: 2cqh;
+  }
+
+  .st-count-row .st-art,
+  .st-move .st-art,
+  .st-count-list--tiles .st-count-row .st-art {
+    --art: 13cqh;
+  }
+
+  .st-genre-name {
+    font-size: calc(5 * var(--u) + var(--share) * 15 * var(--u));
+  }
+
+  .st-grid {
+    max-width: 62cqh;
+  }
+
+  .st-faces {
+    gap: 2cqh 2cqw;
+  }
+
+  .st-face .st-art {
+    --art: 24cqh;
+  }
+
+  .st-clock {
+    max-height: 72cqh;
+    width: 100%;
+  }
+
+  .st-slide--obsession > .st-giant {
+    font-size: min(calc(60 * var(--u)), calc(40cqw / (var(--digits, 2) * 0.78)));
+    text-align: center;
+  }
+
+  .st-giant--time {
+    font-size: calc(15 * var(--u));
+  }
+
+  .st-slide--binge .st-giant--time {
+    font-size: calc(24 * var(--u));
+  }
+
+  .st-compare {
+    gap: 3cqh;
+  }
+
+  .st-compare li {
+    font-size: calc(4 * var(--u));
+  }
+
+  .st-compare strong {
+    font-size: calc(9 * var(--u));
+  }
+
+  .st-card {
+    padding: calc(6 * var(--u));
+  }
+
+  .st-card dt {
+    font-size: calc(2.4 * var(--u));
+  }
+
+  .st-card dd {
+    font-size: calc(4.4 * var(--u));
+  }
+
+  .st-stamp {
+    font-size: calc(24 * var(--u));
+    max-height: 56cqh;
+  }
+
+  .st-slide--personality .st-center {
+    max-width: 78%;
+  }
 }

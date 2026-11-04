@@ -208,7 +208,7 @@ const BUILDERS = {
     const quip = obsession.plays >= 25 ? 'Are you okay?' : obsession.plays >= 12 ? 'That song had you.' : 'It got stuck in your head.';
     return `<p class="st-kicker st-rise">On ${escapeHtml(day(obsession.date))} you played</p>
       <h2 class="st-title st-rise" style="--i:1" data-fit>${escapeHtml(obsession.title)}</h2>
-      <p class="st-giant"><span data-count="${obsession.plays}">0</span></p>
+      <p class="st-giant" style="--digits:${String(obsession.plays).length}"><span data-count="${obsession.plays}">0</span></p>
       <p class="st-stat st-rise" style="--i:3">times in one day</p>
       <p class="st-line st-rise" style="--i:5">${escapeHtml(quip)}</p>`;
   },
@@ -272,7 +272,7 @@ const BUILDERS = {
     const max = Math.max(1, ...clock.hours);
     const bars = clock.hours.map((plays, h) => {
       const length = 18 + (plays / max) * 30;
-      return `<rect x="97.5" y="${50 - length}" width="5" height="${length}" rx="2.5" transform="rotate(${h * 15} 100 100)" class="${h === clock.peak_hour ? 'is-lit' : ''}" style="--i:${h}"></rect>`;
+      return `<g transform="rotate(${h * 15} 100 100)"><rect x="97.5" y="${50 - length}" width="5" height="${length}" rx="2.5" class="${h === clock.peak_hour ? 'is-lit' : ''}" style="--i:${h}"></rect></g>`;
     }).join('');
     const label = clock.peak_hour >= 22 || clock.peak_hour < 5 ? 'Night shift.' : clock.peak_hour < 11 ? 'Early start.' : clock.peak_hour < 18 ? 'Prime time.' : 'Evening ritual.';
     return `<h2 class="st-title st-rise">${hour(clock.peak_hour)} was your hour</h2>
@@ -577,6 +577,16 @@ export function initStory(storyOverlay) {
   host.querySelector('[data-story-volume]').addEventListener('input', event => {
     setPreviewVolume(Number(event.target.value) / 100);
     syncAudioControls();
+  });
+
+  window.addEventListener('resize', () => {
+    if (!slides.length) return;
+    const root = host.querySelector('[data-story-slides]');
+    root.querySelectorAll('[data-fit]').forEach(el => {
+      el.style.fontSize = '';
+      el.style.overflowWrap = '';
+    });
+    fitText(root);
   });
 
   // A cover that fails to load leaves the initials showing.
