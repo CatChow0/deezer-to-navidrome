@@ -275,6 +275,15 @@ class Slides(StoryCase):
         self.assertEqual(top["track"]["title"], "Love")
         self.assertTrue(all(key in top["track"] for key in ("id", "duration", "deezer_track_id")))
 
+    def test_placeholder_artist_stays_out_of_the_story(self):
+        for i in range(20):
+            self.play(at(10, 1) + i * 300, title="Untagged", artists=("[Unknown Artist]",))
+        for i in range(5):
+            self.play(at(10, 2) + i * 300, title="Real", artists=("Real One",))
+        story = self.story()
+        self.assertEqual([a["name"] for a in story["top_artists"]], ["Real One"])
+        self.assertEqual(story["loyalty"]["artist"]["name"], "Real One")
+
     def test_sparse_month_never_breaks(self):
         self.play(at(10, 1))
         story = self.story()

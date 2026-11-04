@@ -176,7 +176,10 @@ def _obsession(conn, plays, zone):
     (day, track_id), count = max(days.items(), key=lambda item: (item[1], item[0][0]))
     if count < OBSESSION_FROM:
         return None
-    return {**_load_track(conn, track_id), "date": day.isoformat(), "plays": count}
+    color = conn.execute(
+        "SELECT c.color FROM covers c JOIN tracks t ON c.kind = 'track' AND c.item_key = t.key WHERE t.id = ?", (track_id,),
+    ).fetchone()
+    return {**_load_track(conn, track_id), "date": day.isoformat(), "plays": count, "color": color[0] if color else ""}
 
 
 def _comparisons(seconds) -> list:
@@ -271,9 +274,14 @@ def _metrics(conn, data, plays, zone, story) -> dict:
     }
 
 
+def _named_artists(data) -> list:
+    """Top artists, without the placeholder tags give untagged files."""
+    return [artist for artist in data["top"]["artists"] if not artist["name"].startswith("[Unknown")]
+
+
 def _pick_slides(story, data) -> list:
     """The always-there frame, then this period's strongest stories."""
-    top = data["top"]
+    top = {"artists": _named_artists(data), "tracks": data["top"]["tracks"]}
     plays = data["totals"]["plays"]
     if not plays:
         return ["intro", "outro"]
@@ -315,7 +323,7 @@ def _pick_slides(story, data) -> list:
 
 def _slide_tracks(conn, story, data, start, end) -> dict:
     """The song behind each slide: that slide's subject when it has one."""
-    top = data["top"]
+    top = {"artists": _named_artists(data), "tracks": data["top"]["tracks"]}
     first_track = _load_track(conn, top["tracks"][0]["id"]) if top["tracks"] else None
     second_track = _load_track(conn, top["tracks"][1]["id"]) if len(top["tracks"]) > 1 else first_track
     artist_song = lambda artist: _artist_top_track(conn, artist["id"], start, end) if artist else None  # noqa: E731
@@ -352,8 +360,9 @@ def build_story(conn, data, start, end, previous_start, previous_end, zone) -> d
         opener = {**_load_track(conn, plays[0]["track_id"]), "date": first.date().isoformat(), "time": first.strftime("%H:%M")}
 
     loyalty = None
-    if data["top"]["artists"] and totals["plays"]:
-        artist = data["top"]["artists"][0]
+    artists = _named_artists(data)
+    if artists and totals["plays"]:
+        artist = artists[0]
         share = artist["plays"] / totals["plays"]
         if share >= LOYALTY_FROM:
             loyalty = {"artist": artist, "percent": round(share * 100), "one_in": round(1 / share)}
@@ -363,6 +372,7 @@ def build_story(conn, data, start, end, previous_start, previous_end, zone) -> d
         movers, comeback, dropped = _then_and_now(conn, data, start, previous_start, previous_end, end)
 
     story = {
+        "top_artists": artists,
         "opener": opener,
         "loyalty": loyalty,
         "obsession": _obsession(conn, plays, zone),

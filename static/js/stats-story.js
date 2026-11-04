@@ -1,181 +1,411 @@
-// Story recap: full-screen slides for a month or a year, with previews of what
-// each slide is about. Slides advance when you ask; nothing moves on its own.
+// Story recap: full-screen slides for a month or a year, moving on by themselves.
+// Tap the right side to skip, the left to go back, hold to pause. Which slides
+// appear is decided on the server, from what actually stood out in the period.
 
-import { escapeHtml, fetchJSON, on } from './core.js';
-import { playPreview, previewAudioState, setPlayerHidden, setPreviewVolume, stopPreview, toggleMute } from './player.js';
+import { escapeHtml, fetchJSON } from './core.js';
+import {
+  pauseStoryAudio, playStoryTrack, previewAudioState, resumeStoryAudio, setPlayerHidden, setPreviewVolume, stopPreview, toggleMute,
+} from './player.js';
 import { art, count, duration, plural } from './stats.js';
 
 const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
-const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
-const dateFormat = new Intl.DateTimeFormat(undefined, { day: 'numeric', month: 'long' });
+const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+const dayFormat = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'long' });
+const HOLD_MS = 220;
+const SWIPE_PX = 50;
+
+const SECONDS = {
+  intro: 6, opener: 7, genres: 8, artist_countdown: 11, top_artist: 9, loyalty: 8, track_countdown: 11, top_track: 9,
+  obsession: 8, binge: 8, album_run: 8, new_artists: 9, then_now: 11, biggest_month: 7, clock: 8, personality: 9, time: 10,
+};
+
+// Background and ink, chosen to read clearly together.
+const PALETTES = [
+  ['#1b00ff', '#ffe14d'], ['#ff2e93', '#1a0033'], ['#00e0c6', '#08002e'], ['#ff6a13', '#14002b'],
+  ['#ffe14d', '#2a0a7a'], ['#12002e', '#ff5cad'], ['#b6ff3c', '#12002e'], ['#6a00f4', '#fdfbff'],
+];
 
 let story = null;
 let host = null;
+let stage = null;
 let slides = [];
-let currentSlide = 0;
+let data = null;
+let current = 0;
 let loadToken = 0;
-let touchStart = null;
+let elapsed = 0;
+let lastFrame = 0;
+let frame = 0;
+let paused = false;
+let held = false;
+let holdTimer = 0;
+let pointer = null;
+let counters = [];
 
-function firstPlayable(tracks) {
-  return tracks.find(track => track.deezer_track_id)?.deezer_track_id || '';
+// ── Wording ──────────────────────────────────────────────────────────────────
+
+function period() {
+  const isYear = data.kind === 'year';
+  const name = isYear ? data.label : data.label.split(' ')[0];
+  const previous = data.previous && !data.so_far ? (isYear ? data.previous.label : data.previous.label.split(' ')[0]) : '';
+  return { name, here: isYear ? 'this year' : 'this month', previous };
 }
 
-function trackOfArtist(data, name) {
-  const needle = name.toLocaleLowerCase();
-  const match = data.top.tracks.find(track => track.deezer_track_id && track.artist.toLocaleLowerCase().includes(needle));
-  return match?.deezer_track_id || '';
-}
+const day = iso => dayFormat.format(new Date(`${iso}T12:00:00`));
+const hour = value => `${String(value).padStart(2, '0')}:00`;
 
-function diffBadge(row, data) {
-  if (!data.has_previous) return '';
-  if (row.is_new) return '<span class="st-diff st-diff--new">New</span>';
-  if (row.previous_plays === null || row.previous_plays === undefined) return '<span class="st-diff">Back</span>';
+// What a number in a top list means, always in words.
+function change(row) {
+  const { here, previous } = period();
+  if (!data.has_previous || data.so_far) return '';
+  if (row.is_new) return `New ${here}`;
+  if (row.previous_plays === null || row.previous_plays === undefined) return `Back after a break`;
   const delta = row.plays - row.previous_plays;
-  if (delta === 0) return '<span class="st-diff">Same</span>';
-  return `<span class="st-diff">${delta > 0 ? '+' : '-'}${count(Math.abs(delta))}</span>`;
+  if (delta === 0) return `Same as ${previous}`;
+  return `${delta > 0 ? '+' : '-'}${plural(Math.abs(delta), 'play')} vs ${previous}`;
 }
 
-function podium(rows, data) {
-  // Second, first, third: the winner stands in the middle.
-  const order = [rows[1], rows[0], rows[2]].filter(Boolean);
-  const places = rows.length > 1 ? [2, 1, 3] : [1];
-  return `<div class="st-podium">${order.map((row, i) => {
-    const name = row.name || row.title;
-    return `<div class="st-podium-item" data-place="${places[i]}">
-      <span class="st-podium-place">${places[i]}</span>
-      ${art(row.image, name)}
-      <strong>${escapeHtml(name)}</strong>
-      ${row.artist ? `<span class="st-row-sub">${escapeHtml(row.artist)}</span>` : ''}
-      <span class="st-row-sub">${plural(row.plays, 'play')} ${diffBadge(row, data)}</span>
-    </div>`;
-  }).join('')}</div>`;
+function vivid(hex) {
+  // A cover's main color, pushed bright enough to carry a whole slide.
+  const value = parseInt(hex.slice(1), 16);
+  const [r, g, b] = [(value >> 16) & 255, (value >> 8) & 255, value & 255].map(c => c / 255);
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const lightness = (max + min) / 2;
+  const delta = max - min;
+  let hue = 0;
+  if (delta) {
+    if (max === r) hue = ((g - b) / delta + 6) % 6;
+    else if (max === g) hue = (b - r) / delta + 2;
+    else hue = (r - g) / delta + 4;
+  }
+  return `hsl(${Math.round(hue * 60)} ${delta ? 78 : 12}% ${Math.round(Math.min(0.42, Math.max(0.26, lightness)) * 100)}%)`;
 }
 
-function restOfRanking(rows, data) {
-  const rest = rows.slice(3);
-  if (!rest.length) return '';
-  return `<ol class="st-story-list" start="4">${rest.map(row => `<li>
-    <span class="st-row-name-text">${escapeHtml(row.name || row.title)}</span>
-    <span class="st-row-value">${count(row.plays)} ${diffBadge(row, data)}</span>
-  </li>`).join('')}</ol>`;
+// ── Slides ───────────────────────────────────────────────────────────────────
+
+function letters(text) {
+  return [...text].map((char, i) => `<span class="st-letter" style="--i:${i}">${char === ' ' ? '&nbsp;' : escapeHtml(char)}</span>`).join('');
 }
 
-function buildSlides(data) {
-  const { top, totals, habits, genres } = data;
-  const fallback = firstPlayable(top.tracks);
-  const built = [];
-  const intro = data.so_far ? 'So far.' : data.partial ? 'From your first recorded play.' : 'Here is how it sounded.';
-  built.push({
-    track: fallback,
-    html: `<h2 class="st-story-huge">${escapeHtml(data.label)}</h2><p class="st-story-lead">${escapeHtml(intro)}</p>`,
+function countdownRows(rows, nameOf) {
+  return rows.slice(1, 5).reverse().map((row, i) => {
+    const rank = rows.indexOf(row) + 1;
+    const note = change(row);
+    return `<li class="st-count-row" style="--i:${i}">
+      <span class="st-count-rank">${rank}</span>
+      ${art(row.image, nameOf(row))}
+      <span class="st-count-text">
+        <strong data-fit>${escapeHtml(nameOf(row))}</strong>
+        <span>${plural(row.plays, 'play')}${note ? `<em>${escapeHtml(note)}</em>` : ''}</span>
+      </span>
+    </li>`;
+  }).join('');
+}
+
+const BUILDERS = {
+  intro() {
+    const { name, here } = period();
+    const covers = [...data.top.albums, ...data.top.tracks].filter(item => item.image).slice(0, 12);
+    const line = data.so_far ? `So far, anyway. ${name} isn't finished yet.`
+      : data.partial ? 'From your very first recorded play.'
+        : `Here's what you were really up to ${here === 'this year' ? 'all year' : `in ${name}`}.`;
+    return `<div class="st-wall" aria-hidden="true">${covers.map((item, i) => `<span style="--i:${i}">${art(item.image, item.title)}</span>`).join('')}</div>
+      <div class="st-center">
+        <h2 class="st-slam" aria-label="${escapeHtml(data.label)}" data-fit>${letters(name)}</h2>
+        ${data.kind === 'month' ? `<p class="st-big-note">${escapeHtml(data.label.split(' ')[1])}</p>` : ''}
+        <p class="st-line st-rise" style="--i:8">${escapeHtml(line)}</p>
+      </div>`;
+  },
+
+  opener() {
+    const { opener } = data.story;
+    return `<p class="st-kicker st-rise">${escapeHtml(period().name)} opened with</p>
+      <div class="st-tilt">${art(opener.image, opener.title)}</div>
+      <h2 class="st-title st-rise" style="--i:2" data-fit>${escapeHtml(opener.title)}</h2>
+      <p class="st-line st-rise" style="--i:3">${escapeHtml(opener.artist)}</p>
+      <p class="st-note st-rise" style="--i:4">${escapeHtml(day(opener.date))} at ${escapeHtml(opener.time)}</p>`;
+  },
+
+  genres() {
+    const top = data.genres[0];
+    const rows = data.genres.slice(0, 5);
+    const note = data.coverage.genre_pct < 100 ? `Genres are known for ${data.coverage.genre_pct}% of your plays.` : '';
+    return `<h2 class="st-title st-rise" data-fit>${escapeHtml(period().name)} sounded like ${escapeHtml(top.name)}</h2>
+      <ol class="st-genre-stack">${rows.map((genre, i) => `<li style="--i:${i};--share:${Math.max(0.12, genre.share)}">
+        <span class="st-genre-name" data-fit>${escapeHtml(genre.name)}</span>
+        <span class="st-genre-time">${Math.round(genre.share * 100)}% of known genres, ${escapeHtml(duration(genre.seconds))}</span>
+      </li>`).join('')}</ol>
+      ${note ? `<p class="st-note">${escapeHtml(note)}</p>` : ''}`;
+  },
+
+  artist_countdown() {
+    return `<h2 class="st-title st-rise">Your top 5 artists</h2>
+      <ol class="st-count-list">${countdownRows(data.story.top_artists, row => row.name)}</ol>
+      <p class="st-teaser st-rise" style="--i:7">And number one is…</p>`;
+  },
+
+  top_artist() {
+    const artist = data.story.top_artists[0];
+    const note = change(artist);
+    return `<div class="st-bleed">${art(artist.image, artist.name)}</div>
+      <div class="st-marquee" aria-hidden="true"><span>${escapeHtml(`${artist.name} `.repeat(6))}</span></div>
+      <div class="st-bottom">
+        <p class="st-kicker st-rise">Your number one artist</p>
+        <h2 class="st-title st-title--huge st-rise" style="--i:1" data-fit>${escapeHtml(artist.name)}</h2>
+        <p class="st-stat st-rise" style="--i:2"><span data-count="${artist.plays}">0</span> plays</p>
+        <p class="st-line st-rise" style="--i:3">About ${escapeHtml(duration(artist.seconds))} together${note ? `. ${escapeHtml(note)}` : ''}.</p>
+      </div>`;
+  },
+
+  loyalty() {
+    const { loyalty } = data.story;
+    const cells = Math.min(12, loyalty.one_in);
+    return `<h2 class="st-title st-rise" data-fit>1 in ${count(loyalty.one_in)} of your plays ${escapeHtml(period().here === 'this year' ? 'this year' : `in ${period().name}`)} was ${escapeHtml(loyalty.artist.name)}</h2>
+      <div class="st-grid" style="--cells:${cells}" aria-hidden="true">${Array.from({ length: cells }, (_, i) => `<span class="${i === cells - 1 ? 'is-lit' : ''}" style="--i:${i}"></span>`).join('')}</div>
+      <p class="st-line st-rise" style="--i:6">That's ${loyalty.percent}% of everything you played.</p>`;
+  },
+
+  track_countdown() {
+    return `<h2 class="st-title st-rise">The songs on repeat</h2>
+      <ol class="st-count-list st-count-list--tiles">${countdownRows(data.top.tracks, row => row.title)}</ol>
+      <p class="st-teaser st-rise" style="--i:7">One song beat them all…</p>`;
+  },
+
+  top_track() {
+    const track = data.top.tracks[0];
+    const note = change(track);
+    return `<p class="st-kicker st-rise">Your song of ${escapeHtml(period().name)}</p>
+      <div class="st-record">${art(track.image, track.title)}</div>
+      <h2 class="st-title st-rise" style="--i:2" data-fit>${escapeHtml(track.title)}</h2>
+      <p class="st-line st-rise" style="--i:3">${escapeHtml(track.artist)}</p>
+      <p class="st-stat st-rise" style="--i:4"><span data-count="${track.plays}">0</span> plays</p>
+      ${note ? `<p class="st-note st-rise" style="--i:5">${escapeHtml(note)}</p>` : ''}`;
+  },
+
+  obsession() {
+    const { obsession } = data.story;
+    const quip = obsession.plays >= 25 ? 'Are you okay?' : obsession.plays >= 12 ? 'That song had you.' : 'It got stuck in your head.';
+    return `<p class="st-kicker st-rise">On ${escapeHtml(day(obsession.date))} you played</p>
+      <h2 class="st-title st-rise" style="--i:1" data-fit>${escapeHtml(obsession.title)}</h2>
+      <p class="st-giant"><span data-count="${obsession.plays}">0</span></p>
+      <p class="st-stat st-rise" style="--i:3">times in one day</p>
+      <p class="st-line st-rise" style="--i:5">${escapeHtml(quip)}</p>`;
+  },
+
+  binge() {
+    const { binge } = data.story;
+    const width = Math.min(100, (binge.seconds / (16 * 3600)) * 100);
+    return `<p class="st-kicker st-rise">Your longest sitting</p>
+      <p class="st-giant st-giant--time" data-count-time="${binge.seconds}">0 min</p>
+      <div class="st-stretch" aria-hidden="true"><span style="--width:${Math.max(18, width)}%"></span></div>
+      <p class="st-line st-rise" style="--i:4">${escapeHtml(day(binge.date))}: ${plural(binge.plays, 'play')} with barely a break${binge.top_artist ? `, mostly ${escapeHtml(binge.top_artist)}` : ''}.</p>`;
+  },
+
+  album_run() {
+    const { album_run: run } = data.story;
+    const dots = Math.min(run.of, 24);
+    const lit = Math.round((run.tracks / run.of) * dots);
+    return `<div class="st-tilt st-tilt--other">${art(run.image, run.title)}</div>
+      <h2 class="st-title st-rise" style="--i:1" data-fit>${escapeHtml(run.title)}</h2>
+      <p class="st-stat st-rise" style="--i:2">${count(run.tracks)} of its ${plural(run.of, 'track')}</p>
+      <div class="st-ticks" aria-hidden="true">${Array.from({ length: dots }, (_, i) => `<span class="${i < lit ? 'is-lit' : ''}" style="--i:${i}"></span>`).join('')}</div>
+      <p class="st-line st-rise" style="--i:6">In one sitting on ${escapeHtml(day(run.date))}. Respect.</p>`;
+  },
+
+  new_artists() {
+    const list = data.new_artists;
+    const shown = list.slice(0, 6);
+    const lead = data.discovery;
+    return `<h2 class="st-title st-rise" data-fit>${plural(list.length, 'artist')} you'd never played before</h2>
+      <div class="st-faces">${shown.map((artist, i) => `<span class="st-face" style="--i:${i}">${art(artist.image, artist.name)}<em>${escapeHtml(artist.name)}</em></span>`).join('')}</div>
+      ${lead ? `<p class="st-line st-rise" style="--i:7">${escapeHtml(lead.name)} came out of nowhere: ${plural(lead.plays, 'play')}.</p>` : ''}`;
+  },
+
+  then_now() {
+    const { movers, comeback, dropped } = data.story;
+    const { name, previous } = period();
+    const rows = [];
+    if (movers?.rise) rows.push(['up', 'Climbing', movers.rise, `+${plural(movers.rise.delta, 'play')} vs ${previous}`]);
+    if (movers?.fall) rows.push(['down', 'Cooling off', movers.fall, `-${plural(Math.abs(movers.fall.delta), 'play')} vs ${previous}`]);
+    if (comeback) rows.push(['back', 'Back again', comeback, `${plural(comeback.plays, 'play')}, none in ${previous}`]);
+    if (dropped) rows.push(['gone', 'Gone quiet', dropped, `${plural(dropped.previous_plays, 'play')} in ${previous}, none in ${name}`]);
+    const marks = { up: '↑', down: '↓', back: '↻', gone: '×' };
+    return `<h2 class="st-title st-rise">${escapeHtml(previous)} vs ${escapeHtml(name)}</h2>
+      <ul class="st-moves">${rows.slice(0, 4).map(([kind, label, artist, note], i) => `<li class="st-move st-move--${kind}" style="--i:${i}">
+        <span class="st-move-mark" aria-hidden="true">${marks[kind]}</span>
+        ${art(artist.image, artist.name)}
+        <span class="st-count-text"><small>${label}</small><strong data-fit>${escapeHtml(artist.name)}</strong><span>${escapeHtml(note)}</span></span>
+      </li>`).join('')}</ul>`;
+  },
+
+  biggest_month() {
+    const { biggest_month: biggest } = data.story;
+    return `<p class="st-kicker st-rise">Your biggest month</p>
+      <h2 class="st-giant st-giant--word st-slam" aria-label="${escapeHtml(biggest.label)}" data-fit>${letters(biggest.label.split(' ')[0])}</h2>
+      <p class="st-stat st-rise" style="--i:6"><span data-count="${biggest.plays}">0</span> plays</p>`;
+  },
+
+  clock() {
+    const { clock } = data.story;
+    const max = Math.max(1, ...clock.hours);
+    const bars = clock.hours.map((plays, h) => {
+      const length = 18 + (plays / max) * 30;
+      return `<rect x="97.5" y="${50 - length}" width="5" height="${length}" rx="2.5" transform="rotate(${h * 15} 100 100)" class="${h === clock.peak_hour ? 'is-lit' : ''}" style="--i:${h}"></rect>`;
+    }).join('');
+    const label = clock.peak_hour >= 22 || clock.peak_hour < 5 ? 'Night shift.' : clock.peak_hour < 11 ? 'Early start.' : clock.peak_hour < 18 ? 'Prime time.' : 'Evening ritual.';
+    return `<h2 class="st-title st-rise">${hour(clock.peak_hour)} was your hour</h2>
+      <svg class="st-clock" viewBox="0 0 200 200" role="img" aria-label="Plays by hour of the day">${bars}<text x="100" y="108" text-anchor="middle">24 h</text></svg>
+      <p class="st-line st-rise" style="--i:6">${label} ${plural(clock.hours[clock.peak_hour], 'play')} started around then.</p>`;
+  },
+
+  personality() {
+    const { personality } = data.story;
+    return `<div class="st-center">
+        <p class="st-kicker st-rise">${escapeHtml(period().name)} made you</p>
+        <h2 class="st-stamp" data-fit>${escapeHtml(personality.name)}</h2>
+        <p class="st-line st-rise" style="--i:6">${escapeHtml(personality.reason)}</p>
+      </div>`;
+  },
+
+  time() {
+    const { totals, previous, so_far: soFar } = data;
+    const items = data.story.comparisons;
+    const seconds = totals.seconds;
+    let versus = '';
+    if (previous && !soFar && previous.totals.seconds) {
+      const percent = Math.round(((seconds - previous.totals.seconds) / previous.totals.seconds) * 100);
+      versus = percent === 0 ? `Exactly as much as ${period().previous}.` : `${percent > 0 ? '+' : ''}${percent}% vs ${period().previous}.`;
+    }
+    return `<p class="st-kicker st-rise">Estimated listening time</p>
+      <p class="st-giant st-giant--time" data-count-time="${seconds}">0 min</p>
+      <p class="st-line st-rise" style="--i:3">${plural(totals.plays, 'play')} of music${versus ? `. ${escapeHtml(versus)}` : '.'}</p>
+      <ul class="st-compare">${items.map((item, i) => `<li style="--i:${i + 4}">That's <strong>${count(item.value)}</strong> ${escapeHtml(item.unit)}</li>`).join('')}</ul>
+      ${data.coverage.length_pct < 100 ? `<p class="st-note">Track lengths are known for ${data.coverage.length_pct}% of plays, so the real time is higher.</p>` : ''}`;
+  },
+
+  outro() {
+    const { totals, top, story: info } = data;
+    const artist = info.top_artists[0];
+    const track = top.tracks[0];
+    if (!totals.plays) {
+      return `<div class="st-center"><h2 class="st-title">Nothing played in ${escapeHtml(period().name)}</h2>
+        <div class="st-actions"><button type="button" class="btn" data-overlay-close>Close</button></div></div>`;
+    }
+    return `<h2 class="st-title st-rise">That was ${escapeHtml(data.label)}${data.so_far ? ', so far' : ''}</h2>
+      <dl class="st-card">
+        <div><dt>Listening time</dt><dd>${escapeHtml(duration(totals.seconds))}</dd></div>
+        <div><dt>Plays</dt><dd>${count(totals.plays)}</dd></div>
+        ${artist ? `<div><dt>Top artist</dt><dd data-fit>${escapeHtml(artist.name)}</dd></div>` : ''}
+        ${track ? `<div><dt>Top track</dt><dd data-fit>${escapeHtml(track.title)}</dd></div>` : ''}
+        <div class="st-card-wide"><dt>You were</dt><dd data-fit>${escapeHtml(info.personality.name)}</dd></div>
+      </dl>
+      <div class="st-actions st-rise" style="--i:6">
+        <button type="button" class="btn" data-story-replay>Replay</button>
+        <button type="button" class="btn btn--ghost" data-overlay-close>Close</button>
+      </div>`;
+  },
+};
+
+// ── Engine ───────────────────────────────────────────────────────────────────
+
+function paletteFor(index, type) {
+  let seed = 0;
+  for (const char of data.key) seed = (seed * 31 + char.charCodeAt(0)) >>> 0;
+  const [back, ink] = PALETTES[(seed + index) % PALETTES.length];
+  if (type === 'top_artist') return ['#000000', '#ffffff'];  // white over the darkened photo
+  const coloured = { top_track: data.top.tracks[0]?.color, obsession: data.story.obsession?.color }[type];
+  if (coloured) return [vivid(coloured), '#ffffff'];
+  return [back, ink];
+}
+
+// Long names shrink until they fit; nothing on a slide ever scrolls.
+function fitText(root) {
+  root.querySelectorAll('[data-fit]').forEach(el => {
+    let size = parseFloat(getComputedStyle(el).fontSize);
+    const floor = size * 0.35;
+    // Tight line spacing makes letters reach a little past their box: that is fine.
+    const tooBig = () => el.scrollHeight > el.clientHeight + size * 0.3 || el.scrollWidth > el.clientWidth + 1;
+    while (size > floor && tooBig()) {
+      size *= 0.93;
+      el.style.fontSize = `${size}px`;
+    }
+    // Even at its smallest a very long word may not fit: only then may it break.
+    if (tooBig()) el.style.overflowWrap = 'anywhere';
   });
+}
 
-  if (genres.length) {
-    const max = genres[0].plays || 1;
-    built.push({
-      track: fallback,
-      html: `<h2 class="st-story-title">You kept coming back to ${escapeHtml(genres[0].name)}</h2>
-        <ol class="st-story-bars">${genres.slice(0, 5).map(genre => `<li>
-          <span>${escapeHtml(genre.name)}</span><span class="st-story-value">${duration(genre.seconds)}</span>
-          <span class="st-bar" style="width:${Math.max(2, (genre.plays / max) * 100)}%"></span>
-        </li>`).join('')}</ol>
-        ${data.coverage.genre_pct < 100 ? `<p class="st-story-note">Genres are known for ${data.coverage.genre_pct}% of these plays.</p>` : ''}`,
-    });
-  }
-
-  if (top.artists.length) {
-    built.push({
-      track: trackOfArtist(data, top.artists[0].name) || fallback,
-      html: `<h2 class="st-story-title">Your top artists</h2>${podium(top.artists, data)}${restOfRanking(top.artists, data)}`,
-    });
-  }
-
-  if (top.tracks.length) {
-    built.push({
-      track: top.tracks[0].deezer_track_id || fallback,
-      html: `<h2 class="st-story-title">Your top tracks</h2>${podium(top.tracks, data)}${restOfRanking(top.tracks, data)}`,
-    });
-  }
-
-  if (data.new_artists.length) {
-    const shown = data.new_artists.slice(0, 3);
-    built.push({
-      track: trackOfArtist(data, shown[0].name) || fallback,
-      html: `<h2 class="st-story-title">${plural(data.new_artists.length, 'new artist')}</h2>
-        <p class="st-story-lead">Never played before this period.</p>
-        <div class="st-story-new">${shown.map(artist => `<div>${art(artist.image, artist.name)}<strong>${escapeHtml(artist.name)}</strong><span class="st-row-sub">${plural(artist.plays, 'play')}</span></div>`).join('')}</div>`,
-    });
-  }
-
-  if (data.discovery) {
-    built.push({
-      track: trackOfArtist(data, data.discovery.name) || fallback,
-      html: `<div class="st-story-discovery">${art(data.discovery.image, data.discovery.name)}</div>
-        <h2 class="st-story-title">Your discovery: ${escapeHtml(data.discovery.name)}</h2>
-        <p class="st-story-lead">New to you, and already ${plural(data.discovery.plays, 'play')}.</p>`,
-    });
-  }
-
-  if (totals.plays) {
-    let peak = { day: 0, hour: 0, plays: 0 };
-    habits.heatmap.forEach((hours, day) => hours.forEach((plays, hour) => {
-      if (plays > peak.plays) peak = { day, hour, plays };
-    }));
-    const busiest = habits.busiest_day.date
-      ? dateFormat.format(new Date(`${habits.busiest_day.date}T12:00:00`))
-      : '';
-    built.push({
-      track: fallback,
-      html: `<h2 class="st-story-title">${DAYS[peak.day]}s around ${String(peak.hour).padStart(2, '0')}:00 were your time</h2>
-        <dl class="st-story-facts">
-          ${busiest ? `<div><dt>Busiest day</dt><dd>${escapeHtml(busiest)}</dd><dd class="st-row-sub">${plural(habits.busiest_day.plays, 'play')}</dd></div>` : ''}
-          ${habits.longest_streak.days > 1 ? `<div><dt>Longest streak</dt><dd>${count(habits.longest_streak.days)} days</dd><dd class="st-row-sub">in a row</dd></div>` : ''}
-        </dl>`,
-    });
-  }
-
-  const previous = data.previous;
-  if (previous && previous.totals.plays) {
-    const max = Math.max(totals.seconds, previous.totals.seconds, 1);
-    const change = previous.totals.seconds ? Math.round(((totals.seconds - previous.totals.seconds) / previous.totals.seconds) * 100) : 0;
-    const direction = change === 0 ? `the same as ${previous.label}` : `${Math.abs(change)}% ${change > 0 ? 'more' : 'less'} than ${previous.label}`;
-    built.push({
-      track: fallback,
-      html: `<h2 class="st-story-huge st-story-huge--time">${escapeHtml(duration(totals.seconds))}</h2>
-        <p class="st-story-lead">Estimated listening, ${escapeHtml(direction)}.</p>
-        <ol class="st-story-bars">
-          <li><span>${escapeHtml(data.label)}</span><span class="st-story-value">${duration(totals.seconds)}</span><span class="st-bar" style="width:${Math.max(2, (totals.seconds / max) * 100)}%"></span></li>
-          <li><span>${escapeHtml(previous.label)}</span><span class="st-story-value">${duration(previous.totals.seconds)}</span><span class="st-bar st-bar--dim" style="width:${Math.max(2, (previous.totals.seconds / max) * 100)}%"></span></li>
-        </ol>`,
-    });
-  }
-
-  built.push({
-    track: fallback,
-    html: `<h2 class="st-story-title">That was ${escapeHtml(data.label)}</h2>
-      <p class="st-story-lead">${plural(totals.plays, 'play')}, ${plural(totals.artists, 'artist')} and about ${duration(totals.seconds)}.</p>
-      <button type="button" class="btn" data-overlay-close>Close</button>`,
+function prepareCounters(root) {
+  counters = [];
+  root.querySelectorAll('[data-count]').forEach(el => {
+    counters.push({ el, to: Number(el.dataset.count), format: count });
   });
-  return built;
+  root.querySelectorAll('[data-count-time]').forEach(el => {
+    counters.push({ el, to: Number(el.dataset.countTime), format: duration });
+  });
+  counters.forEach(counter => { counter.el.textContent = counter.format(reducedMotion.matches ? counter.to : 0); });
+}
+
+function updateCounters() {
+  const share = Math.min(1, Math.max(0, (elapsed - 0.5) / 2));
+  const eased = 1 - (1 - share) ** 3;
+  counters.forEach(counter => {
+    counter.el.textContent = counter.format(Math.round(counter.to * eased));
+  });
+}
+
+function slideLength(index) {
+  return SECONDS[slides[index]?.type] || 0;
+}
+
+function paintProgress() {
+  const bars = host.querySelectorAll('[data-story-progress] span');
+  const length = slideLength(current);
+  bars.forEach((bar, i) => {
+    let fill = 0;
+    if (i < current) fill = 1;
+    else if (i === current) fill = length && !reducedMotion.matches ? Math.min(1, elapsed / length) : 1;
+    bar.style.setProperty('--fill', fill);
+  });
+}
+
+function tick(now) {
+  frame = requestAnimationFrame(tick);
+  if (paused || !slides.length) {
+    lastFrame = now;
+    return;
+  }
+  elapsed += Math.min(0.25, (now - lastFrame) / 1000);
+  lastFrame = now;
+  if (!reducedMotion.matches) updateCounters();
+  paintProgress();
+  const length = slideLength(current);
+  if (length && !reducedMotion.matches && elapsed >= length) show(current + 1);
 }
 
 function show(index) {
-  if (!slides.length) return;
-  if (index >= slides.length) {
-    story.close();
-    return;
-  }
-  currentSlide = Math.max(0, index);
-  const stage = host.querySelector('[data-story-stage]');
-  stage.innerHTML = `<div class="st-slide">${slides[currentSlide].html}</div>`;
-  stage.scrollTop = 0;
-  host.querySelectorAll('[data-story-progress] span').forEach((bar, i) => {
-    bar.classList.toggle('is-seen', i <= currentSlide);
-  });
-  host.querySelector('[data-story-prev]').disabled = currentSlide === 0;
-  const counter = host.querySelector('[data-story-count]');
-  counter.textContent = `${currentSlide + 1} of ${slides.length}`;
-  if (slides[currentSlide].track) playPreview(slides[currentSlide].track);
+  if (!slides.length || index >= slides.length) return;
+  current = Math.max(0, index);
+  elapsed = 0;
+  const slide = slides[current];
+  const [back, ink] = paletteFor(current, slide.type);
+  const root = host.querySelector('[data-story-slides]');
+  root.innerHTML = `<article class="st-slide st-slide--${slide.type}" data-deco="${current % 4}" style="--bg:${back};--ink:${ink}">${BUILDERS[slide.type]()}</article>`;
+  stage.style.setProperty('--ink', ink);
+  prepareCounters(root);
+  fitText(root);
+  host.querySelector('[data-story-count]').textContent = `${current + 1} of ${slides.length}`;
+  paintProgress();
+  if (slide.track) playStoryTrack(slide.track);
+}
+
+function setPaused(value) {
+  if (paused === value) return;
+  paused = value;
+  stage.classList.toggle('is-paused', value);
+  host.querySelector('[data-story-paused]').hidden = !value;
+  host.querySelector('[data-story-pause]').textContent = value ? 'Play' : 'Pause';
+  if (value) pauseStoryAudio();
+  else resumeStoryAudio();
 }
 
 function syncAudioControls() {
@@ -187,56 +417,132 @@ function syncAudioControls() {
 function closed() {
   loadToken++;
   slides = [];
+  cancelAnimationFrame(frame);
   document.removeEventListener('keydown', onKey);
+  document.removeEventListener('visibilitychange', onVisibility);
   stopPreview();
   setPlayerHidden(false);
+  setPaused(false);
+}
+
+function onVisibility() {
+  if (document.hidden) setPaused(true);
 }
 
 function onKey(event) {
   if (event.target.matches?.('input')) return;
-  if (event.key === 'ArrowRight' || event.key === ' ') {
-    if (event.target.closest?.('button') && event.key === ' ') return;
+  if (event.key === 'ArrowRight') {
     event.preventDefault();
-    show(currentSlide + 1);
+    show(current + 1);
   } else if (event.key === 'ArrowLeft') {
     event.preventDefault();
-    show(currentSlide - 1);
+    show(current - 1);
+  } else if (event.key === ' ' && !event.target.closest?.('button')) {
+    event.preventDefault();
+    setPaused(!paused);
   }
+}
+
+function start() {
+  stopPreview();
+  setPlayerHidden(true);
+  paused = false;
+  setPaused(false);
+  host.querySelector('[data-story-progress]').innerHTML = slides.map(() => '<span></span>').join('');
+  cancelAnimationFrame(frame);
+  lastFrame = performance.now();
+  frame = requestAnimationFrame(tick);
+  show(0);
 }
 
 async function openRecap(kind, key) {
   const token = ++loadToken;
   slides = [];
+  data = null;
+  const root = host.querySelector('[data-story-slides]');
   host.querySelector('[data-story-progress]').innerHTML = '';
   host.querySelector('[data-story-count]').textContent = '';
-  host.querySelector('[data-story-stage]').innerHTML = '<div class="st-slide"><p class="st-story-lead">Loading your recap…</p></div>';
+  root.innerHTML = '<article class="st-slide" style="--bg:#12002e;--ink:#fdfbff"><div class="st-center"><p class="st-line">Loading your recap…</p></div></article>';
   stopPreview();
   setPlayerHidden(true);
   syncAudioControls();
-  document.removeEventListener('keydown', onKey);
   document.addEventListener('keydown', onKey);
+  document.addEventListener('visibilitychange', onVisibility);
   story.open({ label: 'Recap', closeHandler: closed });
 
   const params = new URLSearchParams({ type: kind, key, tz });
-  const { ok, data } = await fetchJSON(`/api/stats/recap?${params}`);
+  const { ok, data: answer } = await fetchJSON(`/api/stats/recap?${params}`);
   if (token !== loadToken) return;
   if (!ok) {
-    host.querySelector('[data-story-stage]').innerHTML = `<div class="st-slide"><p class="st-story-lead">${escapeHtml(data?.error || 'This recap could not be loaded.')}</p><button type="button" class="btn" data-overlay-close>Close</button></div>`;
+    root.innerHTML = `<article class="st-slide" style="--bg:#12002e;--ink:#fdfbff"><div class="st-center">
+      <p class="st-line">${escapeHtml(answer?.error || 'This recap could not be loaded.')}</p>
+      <div class="st-actions"><button type="button" class="btn" data-overlay-close>Close</button></div></div></article>`;
     return;
   }
-  slides = buildSlides(data);
-  host.querySelector('[data-story-progress]').innerHTML = slides.map(() => '<span></span>').join('');
-  show(0);
+  data = answer;
+  slides = data.story.slides;
+  start();
+}
+
+// ── Touch and mouse ──────────────────────────────────────────────────────────
+
+function pointerDown(event) {
+  if (event.target.closest('button, input, a')) return;
+  pointer = { x: event.clientX, y: event.clientY };
+  held = false;
+  clearTimeout(holdTimer);
+  holdTimer = setTimeout(() => {
+    held = true;
+    setPaused(true);
+  }, HOLD_MS);
+}
+
+function pointerUp(event) {
+  if (!pointer) return;
+  clearTimeout(holdTimer);
+  const dx = event.clientX - pointer.x;
+  const dy = event.clientY - pointer.y;
+  pointer = null;
+  if (held) {
+    held = false;
+    setPaused(false);
+    return;
+  }
+  if (Math.abs(dx) > SWIPE_PX && Math.abs(dx) > Math.abs(dy)) {
+    show(current + (dx < 0 ? 1 : -1));
+    return;
+  }
+  const box = stage.getBoundingClientRect();
+  show(current + (event.clientX - box.left < box.width / 3 ? -1 : 1));
 }
 
 export function initStory(storyOverlay) {
   story = storyOverlay;
   host = storyOverlay.el;
+  stage = host.querySelector('[data-story-root]');
 
-  on(document, 'click', '[data-action="open-recap"]', (_, button) => openRecap(button.dataset.kind, button.dataset.key));
+  document.addEventListener('click', event => {
+    const button = event.target.closest('[data-action="open-recap"]');
+    if (button) openRecap(button.dataset.kind, button.dataset.key);
+  });
 
-  host.querySelector('[data-story-prev]').addEventListener('click', () => show(currentSlide - 1));
-  host.querySelector('[data-story-next]').addEventListener('click', () => show(currentSlide + 1));
+  const area = host.querySelector('[data-story-slides]');
+  area.addEventListener('pointerdown', pointerDown);
+  area.addEventListener('pointerup', pointerUp);
+  area.addEventListener('pointercancel', () => {
+    clearTimeout(holdTimer);
+    pointer = null;
+    if (held) setPaused(false);
+    held = false;
+  });
+  area.addEventListener('contextmenu', event => event.preventDefault());
+  area.addEventListener('click', event => {
+    if (event.target.closest('[data-story-replay]')) start();
+  });
+
+  host.querySelector('[data-story-prev]').addEventListener('click', () => show(current - 1));
+  host.querySelector('[data-story-next]').addEventListener('click', () => show(current + 1));
+  host.querySelector('[data-story-pause]').addEventListener('click', () => setPaused(!paused));
   host.querySelector('[data-story-mute]').addEventListener('click', () => {
     toggleMute();
     syncAudioControls();
@@ -250,19 +556,4 @@ export function initStory(storyOverlay) {
   host.addEventListener('error', event => {
     if (event.target.matches?.('[data-stats-img]')) event.target.remove();
   }, true);
-
-  // Swipe sideways to move; up and down stay free for scrolling a long slide.
-  const stage = host.querySelector('[data-story-stage]');
-  stage.addEventListener('touchstart', event => {
-    const touch = event.changedTouches[0];
-    touchStart = { x: touch.screenX, y: touch.screenY };
-  }, { passive: true });
-  stage.addEventListener('touchend', event => {
-    if (!touchStart) return;
-    const touch = event.changedTouches[0];
-    const dx = touch.screenX - touchStart.x;
-    const dy = touch.screenY - touchStart.y;
-    touchStart = null;
-    if (Math.abs(dx) > 40 && Math.abs(dx) > Math.abs(dy)) show(currentSlide + (dx < 0 ? 1 : -1));
-  }, { passive: true });
 }

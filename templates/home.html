@@ -140,19 +140,21 @@
 
 <div id="stats-story" class="overlay st-story" aria-hidden="true">
   <section class="overlay-panel" role="dialog" aria-modal="true" aria-label="Recap" tabindex="-1">
-    <button type="button" class="icon-btn overlay-close" data-overlay-close aria-label="Close the recap">×</button>
-    <div class="st-story-top">
-      <div class="st-story-progress" data-story-progress aria-hidden="true"></div>
-      <div class="st-story-controls">
-        <button type="button" class="btn btn--ghost btn--sm" data-story-mute>Mute</button>
-        <input type="range" min="0" max="100" step="1" data-story-volume aria-label="Volume">
-        <span class="st-story-count" data-story-count aria-live="polite"></span>
+    <div class="st-stage" data-story-root>
+      <div class="st-slides" data-story-slides data-overlay-content aria-live="polite"></div>
+      <div class="st-story-top">
+        <div class="st-story-progress" data-story-progress aria-hidden="true"></div>
+        <div class="st-story-controls">
+          <button type="button" data-story-pause>Pause</button>
+          <button type="button" data-story-mute>Mute</button>
+          <input type="range" min="0" max="100" step="1" data-story-volume aria-label="Volume">
+          <span class="st-story-count" data-story-count></span>
+        </div>
       </div>
-    </div>
-    <div class="st-story-stage" data-story-stage data-overlay-content></div>
-    <div class="st-story-nav">
-      <button type="button" class="btn btn--ghost" data-story-prev>Previous</button>
-      <button type="button" class="btn" data-story-next>Next</button>
+      <button type="button" class="icon-btn overlay-close" data-overlay-close aria-label="Close the recap">×</button>
+      <span class="st-paused" data-story-paused hidden>Paused</span>
+      <button type="button" class="st-skip-link" data-story-prev>Previous slide</button>
+      <button type="button" class="st-skip-link" data-story-next>Next slide</button>
     </div>
   </section>
 </div>

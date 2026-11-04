@@ -284,7 +284,17 @@ The **To review** filter lists the tracks to check. **Find on Deezer** on a row 
 
 The **Stats** tab shows what you listen to: a story recap of each month and year, top artists, albums and tracks for any week, month or year, genres, when you listen, and a searchable list of your plays. Open an artist, album or track for its plays over time.
 
-It keeps its own history in `stats.db`, so it needs neither Maloja nor lb-enricher, and no Navidrome password. Track lengths come from Navidrome and your library index; genres, covers and previews come from Deezer, a few tracks at a time in the background, most played first. Listening time is plays × track length, so it is an estimate, and recap audio is 30-second previews.
+It keeps its own history in `stats.db`, so it needs neither Maloja nor lb-enricher, and no Navidrome password. Track lengths come from Navidrome and your library index; missing genres come from Deezer, a few tracks at a time in the background, most played first. Listening time is plays × track length, so it is an estimate.
+
+### Recaps
+
+Each recap is a story of 10 to 12 slides that move on by themselves: tap the right side to skip, the left to go back, hold to pause. The slides depend on what stood out in that period, such as a song you played 40 times in a day, your longest sitting, who rose and fell, and a listener personality that compares the period with your usual habits.
+
+Recaps play your own files, starting about a third of the way into each song, using the music folders already mounted in this container. A track with no playable file falls back on Deezer's 30-second preview.
+
+### Covers
+
+Covers are cached in `stats_covers/` in `DATA_DIR`, at most 600 px. Tracks and albums use art embedded in your files, then a `cover`, `folder` or `front` image in the album's own folder, then Deezer. Artists use an `artist` or `folder` image in their folder, then their Deezer photo, then their most-played album's cover. The cache fills in the background, most played first, and a cover is also fetched the first time a page needs it. Run **Rebuild (merge)** once after upgrading from an earlier build: it records each track's exact file.
 
 ### Recording new plays
 
@@ -346,6 +356,7 @@ Both back up `stats.db` first (the last 3, as `stats.db.bak-*` in `DATA_DIR`) an
 | `stats.db` | Listening history | Survives **Reset data**; replaced only by Start clean |
 | `stats.db.bak-*` | Backups made before each rebuild (the last 3) | Replaced by newer ones |
 | `stats_sources/` | Saved copy of Maloja's database | Until replaced by a larger one |
+| `stats_covers/` | Cached artist, album and track covers | Survives **Reset data**; can be deleted, it fills again |
 | `covers/` | Playlist artwork | Until cleaned up |
 | `config.json` | App configuration | Survives restarts |
 | `secrets.json` | Password hash, API token, Deezer ARLs, webhook URL, session key | Survives restarts |

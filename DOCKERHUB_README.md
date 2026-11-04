@@ -99,7 +99,7 @@ Each download shows its progress on its button (*Queued* → `42%` or `3/14` →
 
 ## Listening stats
 
-The **Stats** tab keeps its own play history in `stats.db`. No Maloja, lb-enricher or Navidrome password needed.
+The **Stats** tab keeps its own play history in `stats.db`. No Maloja, lb-enricher or Navidrome password needed. Recaps are stories built from what stood out in each period, playing your own files, with covers taken from your files and Deezer and cached locally.
 
 - **New plays:** create a token in Settings → Listening stats, set `ND_LISTENBRAINZ_BASEURL=http://deezer-to-navidrome:8080/apis/listenbrainz/1/` in Navidrome, restart it, and link ListenBrainz in its personal settings with that token.
 - **Past plays:** mount Navidrome's and Maloja's data folders read-only at `/import/navidrome` and `/import/maloja`, then choose **Rebuild (merge)** in Settings. Merge never removes a play and can be run again at any time. **Start clean** wipes and rebuilds from the sources, and needs Navidrome's database.
@@ -207,6 +207,7 @@ Similarities use `rapidfuzz` (C++, GIL-releasing), so matching threads run in pa
 | `dedup_report.json` / `dedup_choices.json` | Latest duplicate analysis / persistent decisions |
 | `stats.db`, `stats.db.bak-*` | Listening history and the last 3 backups |
 | `stats_sources/` | Saved copy of Maloja's database |
+| `stats_covers/` | Cached artist, album and track covers |
 | `covers/` | Playlist artwork |
 | `dedup_quarantine/` | Quarantined duplicate files |
 

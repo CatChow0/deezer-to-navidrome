@@ -1,4 +1,5 @@
-/* Story recap: one idea per screen, set large over the night sky. */
+/* Story recap: a loud poster per slide. Everything is sized from the stage's
+   width (cqw) so a phone and a desktop see the same composition. */
 
 .st-story {
   z-index: 1600;
@@ -7,8 +8,8 @@
 .st-story .overlay-panel {
   position: absolute;
   inset: 0;
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  place-items: center;
   width: auto;
   max-width: none;
   height: auto;
@@ -16,49 +17,99 @@
   margin: 0;
   transform: none;
   border-radius: 0;
-  background:
-    radial-gradient(90% 70% at 15% 10%, rgba(139, 92, 246, 0.42), transparent 70%),
-    radial-gradient(80% 70% at 90% 90%, rgba(224, 71, 158, 0.28), transparent 70%),
-    var(--ink);
+  background: #05030f;
 }
 
+.st-stage {
+  --ink: #fdfbff;
+  position: relative;
+  width: min(100vw, calc(100dvh * 9 / 16));
+  height: min(100dvh, calc(100vw * 16 / 9));
+  overflow: hidden;
+  container-type: size;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+@media (min-width: 700px) {
+  .st-stage {
+    width: min(100vw, calc((100dvh - 32px) * 9 / 16));
+    height: calc(100dvh - 32px);
+    border-radius: 24px;
+  }
+}
+
+.st-slides {
+  position: absolute;
+  inset: 0;
+  touch-action: pan-y;
+  cursor: pointer;
+}
+
+/* ── Chrome on top of the slide ─────────────────────────────────────────── */
 .st-story-top {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding: 14px var(--pad) 0;
+  position: absolute;
+  z-index: 3;
+  inset: 0 0 auto 0;
+  display: grid;
+  gap: 8px;
+  padding: 12px 12px 0;
+  pointer-events: none;
+  color: var(--ink);
+}
+
+.st-story-top button,
+.st-story-top input {
+  pointer-events: auto;
 }
 
 .st-story-progress {
   display: flex;
-  gap: 4px;
-  min-height: 3px;
+  gap: 3px;
+  min-height: 4px;
 }
 
 .st-story-progress span {
+  --fill: 0;
+  position: relative;
   flex: 1;
-  height: 3px;
+  height: 4px;
+  overflow: hidden;
   border-radius: 2px;
-  background: rgba(255, 255, 255, 0.16);
-  transition: background var(--t-mid);
+  background: color-mix(in srgb, var(--ink) 28%, transparent);
 }
 
-.st-story-progress span.is-seen {
-  background: var(--text);
+.st-story-progress span::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: var(--ink);
+  transform: scaleX(var(--fill));
+  transform-origin: left;
 }
 
 .st-story-controls {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   padding-right: 44px;
-  color: var(--muted);
-  font-size: var(--step--1);
+  font-size: 12px;
+}
+
+.st-story-controls button {
+  padding: 3px 9px;
+  border: 1px solid color-mix(in srgb, var(--ink) 45%, transparent);
+  border-radius: var(--r-chip);
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
 }
 
 .st-story-controls input[type="range"] {
-  width: 96px;
-  accent-color: var(--violet);
+  width: 72px;
+  accent-color: var(--ink);
 }
 
 .st-story-count {
@@ -66,241 +117,715 @@
   font-variant-numeric: tabular-nums;
 }
 
-.st-story-stage {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  display: flex;
+.st-stage .overlay-close {
+  z-index: 4;
+  top: 20px;
+  right: 10px;
+  width: 34px;
+  height: 34px;
+  color: var(--ink);
+  background: color-mix(in srgb, var(--ink) 14%, transparent);
 }
 
+.st-paused {
+  position: absolute;
+  z-index: 3;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  padding: 8px 18px;
+  border-radius: var(--r-chip);
+  background: rgba(0, 0, 0, 0.72);
+  color: #fff;
+  font-weight: 600;
+  pointer-events: none;
+}
+
+.st-skip-link {
+  position: absolute;
+  z-index: 5;
+  bottom: 8px;
+  padding: 6px 12px;
+  opacity: 0;
+  border: 0;
+  border-radius: var(--r-chip);
+  background: #000;
+  color: #fff;
+  font: inherit;
+  pointer-events: none;
+}
+
+.st-skip-link:focus-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.st-skip-link[data-story-prev] { left: 8px; }
+.st-skip-link[data-story-next] { right: 8px; }
+
+/* ── The slide ──────────────────────────────────────────────────────────── */
 .st-slide {
-  width: min(960px, 100%);
-  margin: auto;
-  padding: var(--pad);
-  animation: st-slide-in var(--t-slow) var(--ease-out);
-}
-
-@keyframes st-slide-in {
-  from { opacity: 0; transform: translateX(28px); }
-  to { opacity: 1; transform: none; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .st-slide { animation: none; }
-  .st-story-progress span { transition: none; }
-}
-
-.st-story-nav {
+  position: absolute;
+  inset: 0;
   display: flex;
+  flex-direction: column;
   justify-content: center;
-  gap: 10px;
-  padding: 10px var(--pad) 18px;
+  gap: 2.4cqh;
+  padding: 11cqh 7cqw 6cqh;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--ink);
+  font-size: 5cqw;
+  line-height: 1.25;
+  isolation: isolate;
 }
 
-.st-story-huge {
+/* One big shape per slide, slowly moving, so no two backgrounds feel alike. */
+.st-slide::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  width: 130cqw;
+  height: 130cqw;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--ink) 11%, transparent);
+  animation: st-drift 14s ease-in-out infinite alternate;
+}
+
+.st-slide[data-deco="0"]::before { top: -55cqw; right: -55cqw; }
+.st-slide[data-deco="1"]::before { bottom: -60cqw; left: -50cqw; }
+.st-slide[data-deco="2"]::before {
+  top: 25cqh; left: -40cqw; border-radius: 0; height: 26cqw; rotate: -18deg; width: 190cqw;
+}
+.st-slide[data-deco="3"]::before {
+  top: -30cqw; left: -30cqw; border-radius: 28%; rotate: 24deg;
+}
+
+.st-is-hidden { display: none; }
+
+.st-center {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2.4cqh;
+  height: 100%;
+  min-height: 0;
+}
+
+.st-kicker {
+  margin: 0;
+  font-size: 5.4cqw;
+  font-weight: 600;
+}
+
+.st-title {
+  margin: 0;
+  max-height: 34cqh;
+  overflow: hidden;
+  font-family: var(--font-display);
+  font-size: 10cqw;
+  font-weight: 700;
+  letter-spacing: -0.04em;
+  line-height: 1.02;
+}
+
+.st-title--huge {
+  font-size: 15cqw;
+  max-height: 26cqh;
+}
+
+.st-line {
+  margin: 0;
+  font-size: 5.2cqw;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.st-slide .st-note {
+  margin: 0;
+  color: inherit;
+  font-size: 3.8cqw;
+  opacity: 0.85;
+}
+
+.st-big-note {
   margin: 0;
   font-family: var(--font-display);
-  font-size: clamp(2.6rem, 11vw, 8rem);
-  font-weight: 600;
-  letter-spacing: -0.05em;
-  line-height: 0.98;
-  overflow-wrap: anywhere;
-}
-
-.st-story-huge--time {
-  background: linear-gradient(90deg, var(--mint), var(--cyan));
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-}
-
-.st-story-title {
-  margin: 0 0 22px;
-  font-family: var(--font-display);
-  font-size: clamp(1.5rem, 4.4vw, 3rem);
+  font-size: 9cqw;
   font-weight: 500;
-  letter-spacing: -0.03em;
-  line-height: 1.08;
-  overflow-wrap: anywhere;
+  letter-spacing: -0.04em;
 }
 
-.st-story-lead {
-  margin: 16px 0 22px;
-  color: var(--text-soft);
-  font-size: var(--step-1);
-}
-
-.st-story-note {
-  margin: 16px 0 0;
-  color: var(--muted);
-  font-size: var(--step--1);
-}
-
-.st-story-value {
-  color: var(--text-soft);
+.st-stat {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 8.4cqw;
+  font-weight: 600;
+  letter-spacing: -0.04em;
   font-variant-numeric: tabular-nums;
 }
 
-.st-story-bars {
-  display: grid;
-  gap: 14px;
+.st-giant {
   margin: 0;
-  padding: 0;
-  list-style: none;
-  font-size: var(--step-1);
-}
-
-.st-story-bars li {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 4px 12px;
-}
-
-.st-story-bars .st-bar {
-  grid-column: 1 / -1;
-  height: 8px;
-  margin: 0;
-}
-
-.st-story-bars .st-bar--dim {
-  background: var(--faint);
-}
-
-.st-podium {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  align-items: end;
-  gap: var(--gap);
-  margin-bottom: 20px;
-}
-
-.st-podium-item {
-  display: grid;
-  justify-items: center;
-  gap: 4px;
-  min-width: 0;
-  text-align: center;
-}
-
-.st-podium-item strong {
-  max-width: 100%;
-  overflow-wrap: anywhere;
-}
-
-.st-podium-item .st-row-sub {
-  max-width: 100%;
-  white-space: normal;
-}
-
-.st-podium-item .st-art {
-  --art: clamp(72px, 15vw, 150px);
-  border-radius: var(--r-tile);
-}
-
-.st-podium-item[data-place="1"] .st-art {
-  --art: clamp(96px, 21vw, 210px);
-}
-
-.st-podium-place {
   font-family: var(--font-display);
-  font-size: var(--step-1);
+  font-size: 42cqw;
+  font-weight: 800;
+  letter-spacing: -0.07em;
+  line-height: 0.9;
+  font-variant-numeric: tabular-nums;
+}
+
+.st-giant--time {
+  font-size: 19cqw;
+  line-height: 1;
+}
+
+.st-giant--word {
+  font-size: 19cqw;
+}
+
+.st-teaser {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 6cqw;
   font-weight: 600;
 }
 
-.st-diff {
+.st-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.st-slide .st-actions .btn {
+  border: 0.4cqw solid var(--ink);
+  background: var(--ink);
+  color: var(--bg);
+}
+
+.st-slide .st-actions .btn--ghost {
+  background: transparent;
+  color: var(--ink);
+}
+
+/* ── Entrances: each slide type moves in its own way ────────────────────── */
+.st-rise {
+  animation: st-rise 600ms var(--ease-out) calc(var(--i, 0) * 180ms + 150ms) both;
+}
+
+.st-letter {
   display: inline-block;
-  padding: 0 6px;
-  border-radius: var(--r-chip);
-  background: var(--glass-hover);
-  color: var(--text-soft);
-  font-size: var(--step--1);
-  white-space: nowrap;
+  animation: st-slam 620ms cubic-bezier(0.2, 1.6, 0.4, 1) calc(var(--i, 0) * 70ms + 200ms) both;
 }
 
-.st-diff--new {
-  background: var(--ok-bg);
-  color: var(--ok);
-}
-
-.st-story-list {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr));
-  gap: 2px 28px;
+.st-slam {
   margin: 0;
-  padding: 0 0 0 2em;
+  font-family: var(--font-display);
+  font-size: 19cqw;
+  font-weight: 800;
+  letter-spacing: -0.06em;
+  line-height: 1.05;
+  white-space: nowrap;
+  overflow: hidden;
+  padding-top: 0.1em;
 }
 
-.st-story-list li {
-  color: var(--muted);
+@keyframes st-rise {
+  from { opacity: 0; transform: translateY(5cqh); }
+  to { opacity: 1; transform: none; }
 }
 
-.st-story-list li > * {
-  vertical-align: middle;
+@keyframes st-slam {
+  from { opacity: 0; transform: translateY(-40cqh) rotate(-14deg) scale(1.8); }
+  to { opacity: 1; transform: none; }
 }
 
-.st-story-list .st-row-value {
-  float: right;
-  margin-left: 10px;
+@keyframes st-drift {
+  to { transform: translate(8cqw, 6cqh) rotate(40deg) scale(1.1); }
 }
 
-.st-row-name-text {
-  color: var(--text);
+@keyframes st-flip {
+  from { opacity: 0; transform: perspective(600px) rotateX(-90deg); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes st-pop {
+  0% { opacity: 0; transform: scale(0); }
+  70% { opacity: 1; transform: scale(1.14); }
+  100% { opacity: 1; transform: none; }
+}
+
+@keyframes st-stamp {
+  0% { opacity: 0; transform: scale(4) rotate(-22deg); }
+  60% { opacity: 1; transform: scale(0.92) rotate(-5deg); }
+  100% { opacity: 1; transform: rotate(-5deg); }
+}
+
+@keyframes st-spin-in {
+  from { opacity: 0; transform: translateX(-90cqw) rotate(-540deg); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes st-spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes st-tilt-in {
+  from { opacity: 0; transform: rotate(-30deg) scale(0.4); }
+  to { opacity: 1; transform: rotate(var(--tilt, -5deg)); }
+}
+
+@keyframes st-stretch {
+  from { width: 0; }
+  to { width: var(--width); }
+}
+
+@keyframes st-marquee {
+  to { transform: translateX(-50%); }
+}
+
+@keyframes st-fall {
+  from { opacity: 0; transform: translateY(-70cqh) rotate(25deg); }
+  to { opacity: 0.9; transform: rotate(var(--turn, 0deg)); }
+}
+
+@keyframes st-swell {
+  to { transform: scale(1.12); }
+}
+
+/* ── Covers ─────────────────────────────────────────────────────────────── */
+.st-slide .st-art {
+  --art: 18cqw;
+  border-radius: 3cqw;
+}
+
+/* Intro: covers rain down behind the month's name */
+.st-wall {
+  position: absolute;
+  z-index: -1;
+  inset: -4cqw;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  grid-auto-rows: 34cqw;
+  gap: 3cqw;
+  opacity: 0.9;
+}
+
+.st-wall > span {
+  --turn: -6deg;
+  animation: st-fall 800ms var(--ease-out) calc(var(--i) * 60ms) both;
+}
+
+.st-wall > span:nth-child(even) { --turn: 5deg; }
+
+.st-wall .st-art {
+  --art: 34cqw;
+  width: 100%;
+}
+
+.st-slide--intro::after {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  background: linear-gradient(color-mix(in srgb, var(--bg) 35%, transparent), var(--bg) 72%);
+}
+
+.st-slide--intro .st-center {
+  justify-content: flex-end;
+}
+
+.st-tilt {
+  --tilt: -5deg;
+  align-self: center;
+  animation: st-tilt-in 800ms var(--ease-out) both;
+}
+
+.st-tilt--other { --tilt: 5deg; }
+
+.st-tilt .st-art {
+  --art: 58cqw;
+  border-radius: 4cqw;
+  box-shadow: 2cqw 2cqw 0 var(--ink);
+  font-size: 15cqw;
+}
+
+/* Top artist: the photo is the slide */
+.st-bleed {
+  position: absolute;
+  z-index: -2;
+  inset: 0;
+  animation: st-swell 11s ease-out both;
+}
+
+.st-bleed .st-art {
+  --art: 100%;
+  width: 100%;
+  height: 100%;
+  border-radius: 0;
+  font-size: 40cqw;
+}
+
+.st-slide--top_artist {
+  justify-content: flex-end;
+}
+
+.st-slide.st-slide--top_artist::before {
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border-radius: 0;
+  background: linear-gradient(rgba(0, 0, 0, 0.55), rgba(0, 0, 0, 0.1) 30%, rgba(0, 0, 0, 0.92) 72%);
+  animation: none;
+  rotate: none;
+}
+
+.st-marquee {
+  position: absolute;
+  top: 13cqh;
+  left: 0;
+  width: max-content;
+  font-family: var(--font-display);
+  font-size: 24cqw;
+  font-weight: 800;
+  letter-spacing: -0.05em;
+  line-height: 1;
+  white-space: nowrap;
+  -webkit-text-stroke: 0.4cqw #fff;
+  color: transparent;
+  animation: st-marquee 22s linear infinite;
+}
+
+.st-bottom {
+  display: flex;
+  flex-direction: column;
+  gap: 1.6cqh;
+}
+
+/* Top track: a record spinning in */
+.st-record {
+  align-self: center;
+  animation: st-spin-in 1100ms var(--ease-out) both;
+}
+
+.st-record .st-art {
+  --art: 62cqw;
+  border-radius: 50%;
+  font-size: 16cqw;
+  box-shadow: 0 0 0 2cqw rgba(0, 0, 0, 0.82), 0 0 0 2.4cqw rgba(255, 255, 255, 0.3);
+  animation: st-spin 6s linear 1100ms infinite;
+}
+
+.st-record .st-art::after {
+  content: "";
+  position: absolute;
+  z-index: 2;
+  top: 50%;
+  left: 50%;
+  width: 9cqw;
+  height: 9cqw;
+  border-radius: 50%;
+  background: var(--bg);
+  transform: translate(-50%, -50%);
+}
+
+/* Countdown rows flip over one by one, worst to best */
+.st-count-list,
+.st-moves,
+.st-compare,
+.st-genre-stack {
+  display: grid;
+  gap: 1.8cqh;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.st-count-row,
+.st-move {
+  display: flex;
+  align-items: center;
+  gap: 3cqw;
+  min-width: 0;
+  padding: 1.4cqw 2cqw;
+  border-radius: 3cqw;
+  background: color-mix(in srgb, var(--ink) 12%, transparent);
+  animation: st-flip 650ms var(--ease-out) calc(var(--i) * 1300ms + 400ms) both;
+  transform-origin: top;
+}
+
+.st-count-list--tiles .st-count-row {
+  border-radius: 0;
+  background: none;
+  border-bottom: 0.4cqw solid color-mix(in srgb, var(--ink) 40%, transparent);
+  animation-name: st-rise;
+}
+
+.st-count-rank {
+  flex: none;
+  width: 9cqw;
+  font-family: var(--font-display);
+  font-size: 9cqw;
+  font-weight: 800;
+  text-align: center;
+}
+
+.st-count-text {
+  display: grid;
+  min-width: 0;
+  font-size: 3.8cqw;
+  line-height: 1.25;
+}
+
+.st-count-text small {
+  font-size: 3.4cqw;
+  font-weight: 600;
+  opacity: 0.85;
+}
+
+.st-count-text strong {
+  max-height: 2.5em;
+  overflow: hidden;
+  font-size: 5cqw;
   overflow-wrap: anywhere;
 }
 
-.st-story-new {
+.st-count-text em {
+  display: block;
+  font-style: normal;
+  font-weight: 600;
+}
+
+/* Genres: type sized by share */
+.st-genre-stack li {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
-  gap: var(--gap);
+  animation: st-rise 500ms var(--ease-out) calc(var(--i) * 240ms + 400ms) both;
 }
 
-.st-story-new > div {
-  display: grid;
-  gap: 4px;
-  justify-items: start;
-  min-width: 0;
-}
-
-.st-story-new .st-art {
-  --art: clamp(96px, 16vw, 170px);
-  border-radius: var(--r-tile);
-}
-
-.st-story-discovery {
-  margin-bottom: 18px;
-}
-
-.st-story-discovery .st-art {
-  --art: clamp(140px, 28vw, 280px);
-  border-radius: var(--r-tile);
-}
-
-.st-story-facts {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: var(--gap);
-  margin: 0;
-}
-
-.st-story-facts dt {
-  color: var(--muted);
-}
-
-.st-story-facts dd {
-  margin: 2px 0 0;
+.st-genre-name {
+  max-height: 1.15em;
+  overflow: hidden;
   font-family: var(--font-display);
-  font-size: var(--step-2);
-  font-weight: 500;
+  font-size: calc(5cqw + var(--share) * 13cqw);
+  font-weight: 700;
+  letter-spacing: -0.04em;
+  line-height: 1.1;
 }
 
-.st-story-facts dd.st-row-sub {
-  font-family: var(--font-body);
-  font-size: var(--step--1);
-  font-weight: 400;
+.st-genre-time {
+  font-size: 3.8cqw;
 }
 
-@media (max-width: 560px) {
-  .st-story-controls input[type="range"] {
-    width: 64px;
+/* Loyalty: one lit square */
+.st-grid {
+  display: grid;
+  grid-template-columns: repeat(min(var(--cells), 4), 1fr);
+  gap: 2cqw;
+  width: 100%;
+  max-width: 76cqw;
+}
+
+.st-grid span {
+  aspect-ratio: 1;
+  border-radius: 2.4cqw;
+  background: color-mix(in srgb, var(--ink) 18%, transparent);
+  animation: st-pop 420ms var(--ease-out) calc(var(--i) * 90ms + 400ms) both;
+}
+
+.st-grid .is-lit {
+  background: var(--ink);
+  animation-delay: 1500ms;
+}
+
+/* Binge: a bar that keeps stretching */
+.st-stretch {
+  height: 7cqw;
+  overflow: hidden;
+  border-radius: var(--r-chip);
+  background: color-mix(in srgb, var(--ink) 16%, transparent);
+}
+
+.st-stretch span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--ink);
+  animation: st-stretch 2.4s var(--ease-out) 400ms both;
+}
+
+/* Album run: tracks ticking off */
+.st-ticks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.6cqw;
+}
+
+.st-ticks span {
+  width: 5cqw;
+  height: 5cqw;
+  border-radius: 50%;
+  border: 0.5cqw solid var(--ink);
+}
+
+.st-ticks .is-lit {
+  background: var(--ink);
+  animation: st-pop 300ms var(--ease-out) calc(var(--i) * 70ms + 600ms) both;
+}
+
+/* New artists: faces popping in */
+.st-faces {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 3cqw;
+}
+
+.st-face {
+  display: grid;
+  justify-items: center;
+  gap: 1cqw;
+  min-width: 0;
+  animation: st-pop 520ms var(--ease-out) calc(var(--i) * 260ms + 500ms) both;
+}
+
+.st-face .st-art {
+  --art: 25cqw;
+  border-radius: 50%;
+  font-size: 8cqw;
+}
+
+.st-face em {
+  width: 100%;
+  overflow: hidden;
+  font-size: 3.4cqw;
+  font-style: normal;
+  font-weight: 600;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Then and now: rows arriving from opposite sides */
+.st-move {
+  animation: st-rise 600ms var(--ease-out) calc(var(--i) * 900ms + 400ms) both;
+}
+
+.st-move-mark {
+  flex: none;
+  width: 8cqw;
+  font-size: 9cqw;
+  font-weight: 800;
+  line-height: 1;
+  text-align: center;
+}
+
+/* Clock */
+.st-clock {
+  align-self: center;
+  width: 78cqw;
+  max-height: 44cqh;
+}
+
+.st-clock rect {
+  fill: color-mix(in srgb, var(--ink) 38%, transparent);
+  animation: st-pop 400ms var(--ease-out) calc(var(--i) * 45ms + 300ms) both;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.st-clock rect.is-lit {
+  fill: var(--ink);
+}
+
+.st-clock text {
+  fill: var(--ink);
+  font-family: var(--font-display);
+  font-size: 18px;
+  font-weight: 700;
+}
+
+/* Personality: stamped on */
+.st-stamp {
+  align-self: flex-start;
+  max-width: 100%;
+  max-height: 44cqh;
+  margin: 1cqh 0;
+  padding: 3cqw 4cqw;
+  overflow: hidden;
+  border: 1.4cqw solid var(--ink);
+  border-radius: 3cqw;
+  font-family: var(--font-display);
+  font-size: 14cqw;
+  font-weight: 800;
+  letter-spacing: -0.05em;
+  line-height: 1.02;
+  overflow-wrap: normal;
+  transform: rotate(-5deg);
+  animation: st-stamp 700ms cubic-bezier(0.2, 1.3, 0.4, 1) 700ms both;
+}
+
+/* Time */
+.st-compare {
+  gap: 1cqh;
+}
+
+.st-compare li {
+  font-size: 4.6cqw;
+  animation: st-rise 500ms var(--ease-out) calc(var(--i) * 300ms + 500ms) both;
+}
+
+.st-compare strong {
+  font-family: var(--font-display);
+  font-size: 6.4cqw;
+}
+
+/* Outro: a summary card */
+.st-card {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 3cqw;
+  margin: 0;
+  padding: 5cqw;
+  border-radius: 4cqw;
+  background: var(--ink);
+  color: var(--bg);
+  animation: st-tilt-in 800ms var(--ease-out) 200ms both;
+  --tilt: -1.5deg;
+}
+
+.st-card dt {
+  font-size: 3.4cqw;
+  font-weight: 600;
+  opacity: 0.8;
+}
+
+.st-card dd {
+  max-height: 2.4em;
+  margin: 0.5cqw 0 0;
+  overflow: hidden;
+  font-family: var(--font-display);
+  font-size: 5.6cqw;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  line-height: 1.15;
+}
+
+.st-card-wide {
+  grid-column: 1 / -1;
+}
+
+/* Hold to pause: everything waits */
+.st-stage.is-paused *,
+.st-stage.is-paused *::before,
+.st-stage.is-paused *::after {
+  animation-play-state: paused !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .st-slide *,
+  .st-slide::before,
+  .st-slide::after {
+    animation: none !important;
   }
+
+  .st-tilt { transform: rotate(var(--tilt)); }
+  .st-card { transform: rotate(var(--tilt)); }
 }
