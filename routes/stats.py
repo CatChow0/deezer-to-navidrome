@@ -50,7 +50,7 @@ def entity(kind, entity_id):
 
 @stats_bp.get("/api/stats/plays")
 def plays():
-    return jsonify(stats_queries.search_plays(request.args.get("q", ""), request.args.get("page", 1, type=int)))
+    return jsonify(stats_queries.search_plays(request.args.get("q", ""), request.args.get("page", 1, type=int), per_page=25))
 
 
 @stats_bp.get("/api/stats/status")

@@ -1,8 +1,9 @@
-// Dashboard ⇄ Settings: one page, two views; the topbar switch slides between
+// Dashboard, Stats, Releases and Settings: one page, several views; the topbar switch slides between
 // them and keeps the URL in sync (/ and /config) without reloading.
 
 const TITLES = {
   dashboard: 'Deezer → Navidrome',
+  stats: 'Stats · Deezer → Navidrome',
   releases: 'Releases · Deezer → Navidrome',
   settings: 'Settings · Deezer → Navidrome',
 };
@@ -73,7 +74,7 @@ export function initViews() {
   });
 
   window.addEventListener('popstate', event => {
-    const fromPath = location.pathname.startsWith('/config') ? 'settings' : location.pathname.startsWith('/releases') ? 'releases' : 'dashboard';
+    const fromPath = location.pathname.startsWith('/config') ? 'settings' : location.pathname.startsWith('/releases') ? 'releases' : location.pathname.startsWith('/stats') ? 'stats' : 'dashboard';
     const name = event.state?.view || fromPath;
     showView(name, { push: false });
   });

@@ -15,6 +15,7 @@ import { initSecurity } from './security.js';
 import { initMixes } from './mixes.js';
 import { initReleases } from './releases.js';
 import { initPlayer } from './player.js';
+import { initStats } from './stats.js';
 import { initHelp } from './help.js';
 
 initViews();
@@ -34,5 +35,6 @@ initAccount();
 initSecurity();
 initMixes(overlay('mix-picker'));
 initReleases();
+initStats(drawer);
 initPlayer();
 initHelp(overlay('help-modal'));
