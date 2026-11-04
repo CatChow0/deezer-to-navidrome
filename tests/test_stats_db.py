@@ -36,6 +36,7 @@ class TrackKey(unittest.TestCase):
         self.assertEqual(split_artists("Earth, Wind & Fire"), ["Earth, Wind & Fire"])
         self.assertEqual(split_artists(["A", " ", None]), ["A"])
         self.assertEqual(split_artists(None), [])
+        self.assertEqual(split_artists(["A • B", "C"]), ["A", "B", "C"])
 
 
 class Storage(unittest.TestCase):

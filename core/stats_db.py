@@ -112,8 +112,15 @@ def title_key(title) -> str:
 def split_artists(value) -> list:
     if not value:
         return []
-    items = value if isinstance(value, (list, tuple)) else str(value).split(" • ")
-    return [str(item).strip() for item in items if item and str(item).strip()]
+    items = value if isinstance(value, (list, tuple)) else [value]
+    # Maloja keeps some "A • B" credits as one artist, in lists too.
+    return [part.strip() for item in items if item for part in str(item).split(" • ") if part.strip()]
+
+
+def usable_genre(value) -> bool:
+    """Tags hold junk too: bare ID3 numbers and placeholders."""
+    text = str(value or "").strip()
+    return bool(text) and not text.isdigit() and text.casefold() not in ("<unknown>", "unknown")
 
 
 def track_key(artists, title) -> str:
