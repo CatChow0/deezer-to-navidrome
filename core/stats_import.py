@@ -466,15 +466,19 @@ def _count_removed(old_plays, conn) -> int:
     return removed
 
 
-def run_import(mode: str, progress=None) -> dict:
+def check_can_run(mode: str) -> None:
     if mode not in ("merge", "clean"):
         raise ValueError(f"Unknown import mode: {mode}")
-    say = progress or (lambda message, percent=None: None)
     status = source_status()
     if mode == "clean" and not status["can_clean"]:
         raise ImportRefused(f"Start clean needs Navidrome's database, and it was not found at {status['navidrome']['path']}.")
     if not status["can_merge"]:
         raise ImportRefused("No source found: mount Navidrome's or Maloja's database first.")
+
+
+def run_import(mode: str, progress=None) -> dict:
+    check_can_run(mode)
+    say = progress or (lambda message, percent=None: None)
 
     report = {
         "mode": mode, "started_at": int(time.time()), "finished_at": None, "before": 0, "after": 0,
@@ -532,8 +536,7 @@ def import_running() -> bool:
 
 def start_import_task(mode: str) -> str:
     """Runs the import in the background, listed in Activity."""
-    if mode not in ("merge", "clean"):
-        raise ValueError(f"Unknown import mode: {mode}")
+    check_can_run(mode)
     if not _running.acquire(blocking=False):
         raise ImportRefused("A rebuild is already running.")
     title = "Stats history: start clean" if mode == "clean" else "Stats history: merge"

@@ -14,6 +14,7 @@ from routes.dedup import dedup_bp
 from routes.listenbrainz import listenbrainz_bp
 from routes.playlists import playlists_bp
 from routes.search import search_bp
+from routes.stats import stats_bp
 from routes.system import system_bp
 
 ensure_dirs()
@@ -36,6 +37,7 @@ app.register_blueprint(cache_bp)
 app.register_blueprint(dedup_bp)
 app.register_blueprint(listenbrainz_bp)
 app.register_blueprint(search_bp)
+app.register_blueprint(stats_bp)
 app.register_blueprint(system_bp)
 
 # The ListenBrainz routes check their own token: Navidrome has no session.

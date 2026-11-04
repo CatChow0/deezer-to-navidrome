@@ -121,6 +121,10 @@
 </div>
 </section>
 
+<section class="view{% if view == 'stats' %} is-active{% endif %}" data-view-name="stats" aria-label="Stats" {% if view != 'stats' %}inert{% endif %}>
+  {% include '_stats.html' %}
+</section>
+
 <section class="view{% if view == 'releases' %} is-active{% endif %}" data-view-name="releases" aria-label="Releases" {% if view != 'releases' %}inert{% endif %}>
   {% include '_releases.html' %}
 </section>
