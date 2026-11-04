@@ -89,6 +89,7 @@ def _save(track_id, key, match, genre) -> None:
         ).rowcount
         if saved:
             stats_covers.forget(conn, "track", key)
+            stats_covers.forget_albums_of(conn, track_id)
         if saved and artist.get("name"):
             conn.execute(
                 "UPDATE artists SET deezer_id = COALESCE(deezer_id, ?), picture_url = COALESCE(picture_url, ?) WHERE key = ?",

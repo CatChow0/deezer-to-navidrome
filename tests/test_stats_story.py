@@ -125,7 +125,8 @@ class Items(StoryCase):
             self.play(at(9, 2) + i * 300, title="Fa", artists=("Faller",))
         for i in range(6):
             self.play(at(10, 2) + i * 300, title="Fa", artists=("Faller",))
-        self.play(at(8, 1), title="C", artists=("Returning",))
+        for i in range(5):
+            self.play(at(8, 1) + i * 300, title="C", artists=("Returning",))
         for i in range(7):
             self.play(at(10, 3) + i * 300, title="C", artists=("Returning",))
         for i in range(25):
@@ -150,11 +151,11 @@ class Items(StoryCase):
     def test_comparisons_only_when_at_least_one(self):
         self.play(at(10, 1), duration=3 * HOUR)
         items = self.story()["comparisons"]
-        self.assertEqual([i["unit"] for i in items], ["films"])
+        self.assertEqual([i["unit"] for i in items], ["film"])
         self.assertEqual(items[0]["value"], 1)
         self.play(at(10, 2), title="L", duration=30 * HOUR)
         units = {i["unit"]: i["value"] for i in self.story()["comparisons"]}
-        self.assertEqual(units, {"films": 16, "flights from Paris to Tokyo": 2, "days of non-stop music": 1})
+        self.assertEqual(units, {"films": 16, "flights from Paris to Tokyo": 2, "day of non-stop music": 1})
 
     def test_clock(self):
         self.play(at(10, 1, 22))
@@ -234,10 +235,11 @@ class Personality(unittest.TestCase):
 class Slides(StoryCase):
     def rich_month(self):
         self.filler(9, 30)
-        self.play(at(8, 1), title="C", artists=("Returning",))
+        for i in range(5):
+            self.play(at(6, 1) + i * 300, title="C", artists=("Returning",))
         for i in range(30):
             self.play(at(10, 1 + i % 25, 9) + i, title=f"A{i % 4}", artists=("Top",), album="Top Album", genre="Rap")
-        for i in range(12):
+        for i in range(30):
             self.play(at(10, 14, 20) + i * 240, title="Stuck", artists=("Second",), album="S", genre="Pop")
         for i in range(8):
             self.play(at(10, 20, 21) + i * 200, title=f"Run{i}", artists=("Third",), album="Run Album", genre="Rock")

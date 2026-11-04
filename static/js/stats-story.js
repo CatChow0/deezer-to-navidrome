@@ -50,35 +50,52 @@ function period() {
   return { name, here: isYear ? 'this year' : 'this month', previous };
 }
 
+const playWord = n => (n === 1 ? 'play' : 'plays');
 const day = iso => dayFormat.format(new Date(`${iso}T12:00:00`));
 const hour = value => `${String(value).padStart(2, '0')}:00`;
 
 // What a number in a top list means, always in words.
 function change(row) {
   const { here, previous } = period();
-  if (!data.has_previous || data.so_far) return '';
-  if (row.is_new) return `New ${here}`;
-  if (row.previous_plays === null || row.previous_plays === undefined) return `Back after a break`;
+  if (row.is_new && data.story.established) return `New ${here}`;
+  if (!data.story.comparable) return '';
+  if (row.previous_plays === null || row.previous_plays === undefined) return `None in ${previous}`;
   const delta = row.plays - row.previous_plays;
   if (delta === 0) return `Same as ${previous}`;
   return `${delta > 0 ? '+' : '-'}${plural(Math.abs(delta), 'play')} vs ${previous}`;
 }
 
+function relativeLight(r, g, b) {
+  const channel = c => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
+  return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b);
+}
+
+function fromHsl(hue, saturation, lightness) {
+  const part = n => {
+    const k = (n + hue / 30) % 12;
+    return lightness - saturation * Math.min(lightness, 1 - lightness) * Math.max(-1, Math.min(k - 3, 9 - k, 1));
+  };
+  return [part(0), part(8), part(4)];
+}
+
+// A cover's main color, pushed bright enough to carry a whole slide, and dark
+// enough for white text. Near-greys stay grey instead of turning mustard.
 function vivid(hex) {
-  // A cover's main color, pushed bright enough to carry a whole slide.
   const value = parseInt(hex.slice(1), 16);
   const [r, g, b] = [(value >> 16) & 255, (value >> 8) & 255, value & 255].map(c => c / 255);
   const max = Math.max(r, g, b);
   const min = Math.min(r, g, b);
-  const lightness = (max + min) / 2;
   const delta = max - min;
   let hue = 0;
   if (delta) {
-    if (max === r) hue = ((g - b) / delta + 6) % 6;
-    else if (max === g) hue = (b - r) / delta + 2;
-    else hue = (r - g) / delta + 4;
+    if (max === r) hue = (((g - b) / delta + 6) % 6) * 60;
+    else if (max === g) hue = ((b - r) / delta + 2) * 60;
+    else hue = ((r - g) / delta + 4) * 60;
   }
-  return `hsl(${Math.round(hue * 60)} ${delta ? 78 : 12}% ${Math.round(Math.min(0.42, Math.max(0.26, lightness)) * 100)}%)`;
+  const saturation = delta < 0.12 ? 0.08 : 0.78;
+  let lightness = Math.min(0.42, Math.max(0.26, (max + min) / 2));
+  while (lightness > 0.1 && 1.05 / (relativeLight(...fromHsl(hue, saturation, lightness)) + 0.05) < 4.5) lightness -= 0.01;
+  return `hsl(${Math.round(hue)} ${Math.round(saturation * 100)}% ${Math.round(lightness * 100)}%)`;
 }
 
 // ── Slides ───────────────────────────────────────────────────────────────────
@@ -139,7 +156,7 @@ const BUILDERS = {
   },
 
   artist_countdown() {
-    return `<h2 class="st-title st-rise">Your top 5 artists</h2>
+    return `<h2 class="st-title st-rise">Your top ${Math.min(5, data.story.top_artists.length)} artists</h2>
       <ol class="st-count-list">${countdownRows(data.story.top_artists, row => row.name)}</ol>
       <p class="st-teaser st-rise" style="--i:7">And number one is…</p>`;
   },
@@ -152,15 +169,19 @@ const BUILDERS = {
       <div class="st-bottom">
         <p class="st-kicker st-rise">Your number one artist</p>
         <h2 class="st-title st-title--huge st-rise" style="--i:1" data-fit>${escapeHtml(artist.name)}</h2>
-        <p class="st-stat st-rise" style="--i:2"><span data-count="${artist.plays}">0</span> plays</p>
+        <p class="st-stat st-rise" style="--i:2"><span data-count="${artist.plays}">0</span> ${playWord(artist.plays)}</p>
         <p class="st-line st-rise" style="--i:3">About ${escapeHtml(duration(artist.seconds))} together${note ? `. ${escapeHtml(note)}` : ''}.</p>
       </div>`;
   },
 
   loyalty() {
     const { loyalty } = data.story;
-    const cells = Math.min(12, loyalty.one_in);
-    return `<h2 class="st-title st-rise" data-fit>1 in ${count(loyalty.one_in)} of your plays ${escapeHtml(period().here === 'this year' ? 'this year' : `in ${period().name}`)} was ${escapeHtml(loyalty.artist.name)}</h2>
+    const cells = Math.max(2, Math.min(12, loyalty.one_in));
+    const when = period().here === 'this year' ? 'this year' : `in ${period().name}`;
+    const headline = loyalty.one_in < 2
+      ? `${loyalty.artist.name} took over ${when}`
+      : `1 in ${count(loyalty.one_in)} of your plays ${when} was ${loyalty.artist.name}`;
+    return `<h2 class="st-title st-rise" data-fit>${escapeHtml(headline)}</h2>
       <div class="st-grid" style="--cells:${cells}" aria-hidden="true">${Array.from({ length: cells }, (_, i) => `<span class="${i === cells - 1 ? 'is-lit' : ''}" style="--i:${i}"></span>`).join('')}</div>
       <p class="st-line st-rise" style="--i:6">That's ${loyalty.percent}% of everything you played.</p>`;
   },
@@ -178,7 +199,7 @@ const BUILDERS = {
       <div class="st-record">${art(track.image, track.title)}</div>
       <h2 class="st-title st-rise" style="--i:2" data-fit>${escapeHtml(track.title)}</h2>
       <p class="st-line st-rise" style="--i:3">${escapeHtml(track.artist)}</p>
-      <p class="st-stat st-rise" style="--i:4"><span data-count="${track.plays}">0</span> plays</p>
+      <p class="st-stat st-rise" style="--i:4"><span data-count="${track.plays}">0</span> ${playWord(track.plays)}</p>
       ${note ? `<p class="st-note st-rise" style="--i:5">${escapeHtml(note)}</p>` : ''}`;
   },
 
@@ -207,7 +228,8 @@ const BUILDERS = {
     const lit = Math.round((run.tracks / run.of) * dots);
     return `<div class="st-tilt st-tilt--other">${art(run.image, run.title)}</div>
       <h2 class="st-title st-rise" style="--i:1" data-fit>${escapeHtml(run.title)}</h2>
-      <p class="st-stat st-rise" style="--i:2">${count(run.tracks)} of its ${plural(run.of, 'track')}</p>
+      <p class="st-stat st-rise" style="--i:2">${plural(run.tracks, 'track')} in a row</p>
+      <p class="st-note st-rise" style="--i:3">Out of the ${plural(run.of, 'track')} you've played from it.</p>
       <div class="st-ticks" aria-hidden="true">${Array.from({ length: dots }, (_, i) => `<span class="${i < lit ? 'is-lit' : ''}" style="--i:${i}"></span>`).join('')}</div>
       <p class="st-line st-rise" style="--i:6">In one sitting on ${escapeHtml(day(run.date))}. Respect.</p>`;
   },
@@ -218,7 +240,7 @@ const BUILDERS = {
     const lead = data.discovery;
     return `<h2 class="st-title st-rise" data-fit>${plural(list.length, 'artist')} you'd never played before</h2>
       <div class="st-faces">${shown.map((artist, i) => `<span class="st-face" style="--i:${i}">${art(artist.image, artist.name)}<em>${escapeHtml(artist.name)}</em></span>`).join('')}</div>
-      ${lead ? `<p class="st-line st-rise" style="--i:7">${escapeHtml(lead.name)} came out of nowhere: ${plural(lead.plays, 'play')}.</p>` : ''}`;
+      ${lead && lead.plays >= 5 ? `<p class="st-line st-rise" style="--i:7">${escapeHtml(lead.name)} came out of nowhere: ${plural(lead.plays, 'play')}.</p>` : ''}`;
   },
 
   then_now() {
@@ -242,7 +264,7 @@ const BUILDERS = {
     const { biggest_month: biggest } = data.story;
     return `<p class="st-kicker st-rise">Your biggest month</p>
       <h2 class="st-giant st-giant--word st-slam" aria-label="${escapeHtml(biggest.label)}" data-fit>${letters(biggest.label.split(' ')[0])}</h2>
-      <p class="st-stat st-rise" style="--i:6"><span data-count="${biggest.plays}">0</span> plays</p>`;
+      <p class="st-stat st-rise" style="--i:6"><span data-count="${biggest.plays}">0</span> ${playWord(biggest.plays)}</p>`;
   },
 
   clock() {
@@ -272,7 +294,7 @@ const BUILDERS = {
     const items = data.story.comparisons;
     const seconds = totals.seconds;
     let versus = '';
-    if (previous && !soFar && previous.totals.seconds) {
+    if (previous && !soFar && data.story.comparable && previous.totals.seconds) {
       const percent = Math.round(((seconds - previous.totals.seconds) / previous.totals.seconds) * 100);
       versus = percent === 0 ? `Exactly as much as ${period().previous}.` : `${percent > 0 ? '+' : ''}${percent}% vs ${period().previous}.`;
     }
@@ -418,6 +440,9 @@ function closed() {
   loadToken++;
   slides = [];
   cancelAnimationFrame(frame);
+  clearTimeout(holdTimer);
+  pointer = null;
+  held = false;
   document.removeEventListener('keydown', onKey);
   document.removeEventListener('visibilitychange', onVisibility);
   stopPreview();
@@ -446,7 +471,6 @@ function onKey(event) {
 function start() {
   stopPreview();
   setPlayerHidden(true);
-  paused = false;
   setPaused(false);
   host.querySelector('[data-story-progress]').innerHTML = slides.map(() => '<span></span>').join('');
   cancelAnimationFrame(frame);
@@ -488,9 +512,12 @@ async function openRecap(kind, key) {
 
 function pointerDown(event) {
   if (event.target.closest('button, input, a')) return;
+  // Keeps the release ours even when the finger slides off the stage.
+  event.currentTarget.setPointerCapture?.(event.pointerId);
   pointer = { x: event.clientX, y: event.clientY };
   held = false;
   clearTimeout(holdTimer);
+  if (paused) return; // already paused with the button: a tap just moves on
   holdTimer = setTimeout(() => {
     held = true;
     setPaused(true);

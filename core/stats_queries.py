@@ -141,7 +141,10 @@ def _with_art(conn, kind, rows) -> list:
     for row in rows:
         cover = known.get(row.pop("key"))
         missing = cover is not None and not cover["file"] and (cover["retry_at"] or 0) > now
-        row["image"] = "" if missing else f"/stats/cover/{kind}/{row['id']}"
+        # The image's own name in the URL: a browser can keep it for good, and a
+        # new image, or a row renumbered by Start clean, gets a new address.
+        version = f"?v={cover['file'].split('.')[0]}" if cover is not None and cover["file"] else ""
+        row["image"] = "" if missing else f"/stats/cover/{kind}/{row['id']}{version}"
         row["color"] = cover["color"] if cover and cover["color"] else ""
     return rows
 

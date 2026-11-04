@@ -255,7 +255,7 @@ class ApiRows(CoversCase):
         track, album = self.track(path=song, album="Album", album_path=song)
         stats_covers.cover_for("track", track)
         data = stats_queries.overview("all", "", "UTC")
-        self.assertEqual(data["top"]["tracks"][0]["image"], f"/stats/cover/track/{track}")
+        self.assertTrue(data["top"]["tracks"][0]["image"].startswith(f"/stats/cover/track/{track}"))
         self.assertRegex(data["top"]["tracks"][0]["color"], "^#")
         self.assertEqual(data["top"]["albums"][0]["image"], f"/stats/cover/album/{album}")
 
@@ -346,7 +346,7 @@ class Route(CoversCase):
         track, _ = self.track(path=song)
         response = self.client.get(f"/stats/cover/track/{track}")
         self.assertEqual((response.status_code, response.mimetype), (200, "image/jpeg"))
-        self.assertIn("max-age", response.headers["Cache-Control"])
+        self.assertIn("no-cache", response.headers["Cache-Control"])
         response.close()
 
     def test_missing_art_404_not_stored_by_the_browser(self):

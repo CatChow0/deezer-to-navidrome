@@ -80,6 +80,8 @@ function applyVolume() {
   const level = prefs.muted ? 0 : prefs.volume ** 2;
   if (gainNode) {
     audio.volume = 1;
+    // A fade left over from a story must not carry on under a normal preview.
+    gainNode.gain.cancelScheduledValues(audioCtx.currentTime);
     gainNode.gain.value = level * levelFactor();
   } else {
     // Without Web Audio, the element can only turn the sound down.
@@ -130,6 +132,8 @@ export function stopPreview() {
   queue = [];
   index = -1;
   storyTrack = null;
+  storyPaused = false;
+  dropPendingLoad?.();
   if (el) hide();
 }
 
@@ -141,6 +145,8 @@ const FADE_MS = 500;
 const HOOK_POINT = 0.33;
 const KEEP_PLAYING_SECONDS = 40;
 let storyTrack = null;
+let storyPaused = false;
+let dropPendingLoad = null;
 
 function hookTime(length) {
   if (!length || !Number.isFinite(length)) return 0;
@@ -167,12 +173,15 @@ const wait = milliseconds => new Promise(resolve => setTimeout(resolve, millisec
 
 function loadSource(src, startAt) {
   return new Promise((resolve, reject) => {
+    dropPendingLoad?.();
     const done = handler => value => {
       audio.removeEventListener('loadedmetadata', ready);
       audio.removeEventListener('error', failed);
+      dropPendingLoad = null;
       handler(value);
     };
     const failed = done(() => reject(new Error('This file cannot be played')));
+    dropPendingLoad = failed;
     const ready = done(() => {
       audio.currentTime = startAt ?? hookTime(audio.duration);
       resolve(audio.currentTime);
@@ -206,11 +215,11 @@ export async function playStoryTrack(track) {
   let started = false;
   const attempt = async (src, startAt) => {
     await loadSource(src, startAt);
-    if (token !== loadToken) return;
+    started = true;
+    if (token !== loadToken || storyPaused) return; // resuming plays it
     setLevel(0, 0);
     await audio.play();
-    setLevel(storyLevel(), FADE_MS);
-    started = true;
+    if (token === loadToken) setLevel(storyLevel(), FADE_MS);
   };
   try {
     await attempt(`/stats/audio/${encodeURIComponent(track.id)}`, track.duration ? hookTime(track.duration) : undefined);
@@ -227,10 +236,12 @@ export async function playStoryTrack(track) {
 }
 
 export function pauseStoryAudio() {
+  storyPaused = true;
   audio.pause();
 }
 
 export function resumeStoryAudio() {
+  storyPaused = false;
   if (storyTrack && audio.src) audio.play().then(() => setLevel(storyLevel(), 200)).catch(() => {});
 }
 

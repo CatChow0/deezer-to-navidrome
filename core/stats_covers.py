@@ -185,15 +185,16 @@ def _top_track(conn, artist_id):
 
 
 def _sources(conn, kind, row):
-    """Each candidate as a function giving (image bytes or None, network failed)."""
+    """Each candidate as (source name, function giving image bytes or None and
+    whether the network failed)."""
     local = lambda read: (lambda: (read(), False))  # noqa: E731
     candidates = []
     if kind == "artist":
         track = _top_track(conn, row["id"])
         path = local_file(track) if track else None
         if path:
-            candidates.append(local(lambda: _artist_folder_art(path, row["key"])))
-        candidates.append(lambda: _download(row["picture_url"]))
+            candidates.append(("folder", local(lambda: _artist_folder_art(path, row["key"]))))
+        candidates.append(("deezer", lambda: _download(row["picture_url"])))
         return candidates
 
     if kind == "track":
@@ -201,15 +202,15 @@ def _sources(conn, kind, row):
     else:
         path = inside_music_folders(row["file_path"]) if row["file_path"] else None
     if path:
-        candidates.append(local(lambda: _embedded_art(path)))
-        candidates.append(local(lambda: _album_folder_art(path)))
+        candidates.append(("embedded", local(lambda: _embedded_art(path))))
+        candidates.append(("folder", local(lambda: _album_folder_art(path))))
     url = row["cover_url"]
     if kind == "album" and not url:
         found = conn.execute(
             "SELECT MAX(t.cover_url) FROM plays p JOIN tracks t ON t.id = p.track_id WHERE p.album_id = ?", (row["id"],)
         ).fetchone()
         url = found[0] if found else None
-    candidates.append(lambda: _download(url))
+    candidates.append(("deezer", lambda: _download(url)))
     return candidates
 
 
@@ -248,12 +249,12 @@ def _cover_with(conn, kind, item_id):
             return None
 
     network_failed = False
-    for source in _sources(conn, kind, row):
-        data, failed = source()
+    for source, read in _sources(conn, kind, row):
+        data, failed = read()
         network_failed = network_failed or failed
         stored = _store(data) if data else None
         if stored:
-            _save(conn, kind, row["key"], stored[0], stored[1], "file", None)
+            _save(conn, kind, row["key"], stored[0], stored[1], source, None)
             return covers_dir() / stored[0]
 
     if kind == "artist":
@@ -279,6 +280,24 @@ def forget(conn, kind, key) -> None:
     conn.execute(
         "DELETE FROM covers WHERE kind = ? AND item_key = ? AND (file IS NULL OR source = 'album')", (kind, key),
     )
+
+
+def forget_albums_of(conn, track_id) -> None:
+    """A track found its cover: an album with none so far may now have one."""
+    conn.execute(
+        "DELETE FROM covers WHERE kind = 'album' AND file IS NULL AND item_key IN"
+        " (SELECT al.key FROM plays p JOIN albums al ON al.id = p.album_id WHERE p.track_id = ?)", (track_id,),
+    )
+
+
+def refresh_after_merge(conn) -> None:
+    """Merge just learned where files are: gaps and Deezer covers look again,
+    since art from those files comes first."""
+    for kind, table in (("track", "tracks"), ("album", "albums")):
+        conn.execute(
+            f"DELETE FROM covers WHERE kind = ? AND (file IS NULL OR source = 'deezer')"
+            f" AND item_key IN (SELECT key FROM {table} WHERE file_path IS NOT NULL)", (kind,),
+        )
 
 
 _UNRESOLVED = "(c.item_key IS NULL OR (c.file IS NULL AND COALESCE(c.retry_at, 0) <= ?))"

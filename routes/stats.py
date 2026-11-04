@@ -12,7 +12,7 @@ stats_bp = Blueprint("stats", __name__)
 BASE_URL_HINT = "http://deezer-to-navidrome:8080/apis/listenbrainz/1/"
 MIN_PASTED_TOKEN = 8
 MAX_ID = 2 ** 63 - 1
-COVER_MAX_AGE = 7 * 86400
+COVER_MAX_AGE = 365 * 86400
 AUDIO_TYPES = {
     ".flac": "audio/flac", ".mp3": "audio/mpeg", ".m4a": "audio/mp4", ".aac": "audio/aac",
     ".ogg": "audio/ogg", ".opus": "audio/ogg", ".wav": "audio/wav",
@@ -37,7 +37,10 @@ def cover(kind, item_id):
         response.status_code = 404
         response.headers["Cache-Control"] = "no-store"
         return response
-    return send_file(found, mimetype="image/jpeg", max_age=COVER_MAX_AGE)
+    response = send_file(found, mimetype="image/jpeg", conditional=True, etag=True)
+    # Sign-in only: never for a shared proxy. Without a version the browser must ask.
+    response.headers["Cache-Control"] = f"private, max-age={COVER_MAX_AGE}" if request.args.get("v") else "private, no-cache"
+    return response
 
 
 @stats_bp.get("/stats/audio/<int:track_id>")
@@ -47,7 +50,7 @@ def audio(track_id):
         with closing(stats_db.connect()) as conn:
             row = conn.execute("SELECT key, file_path FROM tracks WHERE id = ?", (track_id,)).fetchone()
         found = stats_files.local_file(row) if row else None
-    if found is None:
+    if found is None or found.suffix.casefold() not in AUDIO_TYPES:
         return jsonify({"ok": False, "error": "No file for this track"}), 404
     return send_file(found, mimetype=AUDIO_TYPES.get(found.suffix.casefold()), conditional=True, max_age=0)
 

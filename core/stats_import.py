@@ -651,6 +651,9 @@ def run_import(mode: str, progress=None, dry_run=False) -> dict:
             _apply_maloja(conn, maloja_plays, stored, report, mode, navidrome_plays)
             _fill_lengths(conn)
             _remove_orphans(conn)
+            if not dry_run:
+                from core.stats_covers import refresh_after_merge
+                refresh_after_merge(conn)
             report["added"] = report["from_navidrome"] + report["from_maloja"]
             report["after"] = stats_db.play_count(conn)
             report["maloja_only"] = conn.execute("SELECT COUNT(*) FROM plays WHERE source = 'maloja'").fetchone()[0]

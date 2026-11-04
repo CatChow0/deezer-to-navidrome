@@ -1,6 +1,7 @@
 """What makes one recap different from the next: its obsessions, binges, movers
 and listener personality, and which slides it is worth showing. Every number
 comes from the plays; a slide with nothing true to say does not appear."""
+import hashlib
 from collections import Counter, defaultdict
 from datetime import datetime, timedelta
 
@@ -12,6 +13,9 @@ BINGE_FROM = 2 * 3600
 ALBUM_RUN_TRACKS = 4
 MOVER_FROM = 5
 DROPPED_FROM = 5
+COMEBACK_PAST_PLAYS = 5
+MOSTLY_FROM = 0.5
+ESTABLISHED_AFTER = 90 * 86400
 MIN_SLIDES_TOTAL = 12
 PERSONALITY_MIN_PLAYS = 20
 FILM_SECONDS = 2 * 3600
@@ -19,6 +23,8 @@ FLIGHT_SECONDS = 14 * 3600
 DAY_SECONDS = 24 * 3600
 
 ALWAYS = {"intro", "top_artist", "personality", "time", "outro"}
+# Slides without a story of their own: which of them show rotates by period.
+ROTATING = {"opener", "track_countdown", "clock"}
 ORDER = [
     "intro", "opener", "genres", "artist_countdown", "top_artist", "loyalty", "track_countdown", "top_track",
     "obsession", "binge", "album_run", "new_artists", "then_now", "biggest_month", "clock", "personality", "time", "outro",
@@ -64,7 +70,8 @@ PERSONALITY_RULES = (
 
 def personality(metrics) -> dict:
     if metrics["plays"] < PERSONALITY_MIN_PLAYS:
-        return {"name": "Just Warming Up", "reason": f"Only {metrics['plays']:,} plays so far. The story is just starting."}
+        count = metrics["plays"]
+        return {"name": "Just Warming Up", "reason": f"Only {count:,} play{'' if count == 1 else 's'}. Barely enough to judge."}
     best = max(PERSONALITY_RULES, key=lambda rule: rule[1](metrics))
     if best[1](metrics) >= 1:
         return {"name": best[0], "reason": best[2](metrics)}
@@ -137,10 +144,11 @@ def _binge(conn, sessions, zone):
         ).fetchone()
         if names:
             credits[names[0]] += 1
+    leader = credits.most_common(1)[0] if credits else ("", 0)
     return {
         "date": datetime.fromtimestamp(longest[0]["listened_at"], zone).date().isoformat(),
         "seconds": seconds, "plays": len(longest),
-        "top_artist": credits.most_common(1)[0][0] if credits else "",
+        "top_artist": leader[0] if leader[1] >= len(longest) * MOSTLY_FROM else "",
         "track_id": Counter(tracks).most_common(1)[0][0],
     }
 
@@ -183,8 +191,10 @@ def _obsession(conn, plays, zone):
 
 
 def _comparisons(seconds) -> list:
-    items = (("films", FILM_SECONDS), ("flights from Paris to Tokyo", FLIGHT_SECONDS), ("days of non-stop music", DAY_SECONDS))
-    return [{"value": seconds // size, "unit": unit} for unit, size in items if seconds // size >= 1]
+    items = (("film", "films", FILM_SECONDS), ("flight from Paris to Tokyo", "flights from Paris to Tokyo", FLIGHT_SECONDS),
+             ("day of non-stop music", "days of non-stop music", DAY_SECONDS))
+    return [{"value": seconds // size, "unit": one if seconds // size == 1 else many}
+            for one, many, size in items if seconds // size >= 1]
 
 
 def _clock(plays, zone) -> dict:
@@ -213,10 +223,10 @@ def _then_and_now(conn, data, start, previous_start, previous_end, end) -> tuple
     candidates = sorted((a for a in now if a not in before), key=lambda a: (-now[a], a))
     for artist in candidates:
         earlier = conn.execute(
-            "SELECT 1 FROM plays p JOIN track_artists ta ON ta.track_id = p.track_id WHERE ta.artist_id = ? AND p.listened_at < ? LIMIT 1",
+            "SELECT COUNT(*) FROM plays p JOIN track_artists ta ON ta.track_id = p.track_id WHERE ta.artist_id = ? AND p.listened_at < ?",
             (artist, previous_start),
-        ).fetchone()
-        if earlier:
+        ).fetchone()[0]
+        if earlier >= COMEBACK_PAST_PLAYS:
             comeback = _artist_card(conn, artist, plays=now[artist])
             break
 
@@ -264,14 +274,19 @@ def _metrics(conn, data, plays, zone, story) -> dict:
         "comeback_plays": story["comeback"]["plays"] if story["comeback"] else 0,
         "plays": total,
         "top_track_share": share(top["tracks"][0]["plays"]) if top["tracks"] else 0,
-        "top_artist_share": share(top["artists"][0]["plays"]) if top["artists"] else 0,
+        "top_artist_share": share(_named_artists(data)[0]["plays"]) if _named_artists(data) else 0,
         "new_artist_share": new_artists / data["totals"]["artists"] if data["totals"]["artists"] else 0,
-        "has_previous": data["has_previous"],
+        "has_previous": story["established"],
         "genre_count": len(data["genres"]),
         "top_genre_share": data["genres"][0]["share"] if data["genres"] else 1,
         "genre_pct": data["coverage"]["genre_pct"],
         "top_albums_share": share(sum(album["plays"] for album in top["albums"][:5])),
     }
+
+
+def rotation_bonus(key, name) -> float:
+    """Between 0 and 1, fixed for a period and a slide, different across periods."""
+    return int(hashlib.md5(f"{key}|{name}".encode()).hexdigest()[:4], 16) / 0xFFFF
 
 
 def _named_artists(data) -> list:
@@ -288,9 +303,11 @@ def _pick_slides(story, data) -> list:
     scores = {}
     if story["opener"]:
         scores["opener"] = 0.4
+    if story["established"] is not None and plays >= PERSONALITY_MIN_PLAYS:
+        scores["clock"] = 0.6
     if len(data["genres"]) >= 2:
         scores["genres"] = 1.0
-    if len(top["tracks"]) >= 3:
+    if len(top["tracks"]) >= 3 and top["tracks"][0]["plays"] >= 2:
         scores["track_countdown"] = 0.8
     if story["loyalty"]:
         scores["loyalty"] = story["loyalty"]["percent"] / 20
@@ -300,14 +317,14 @@ def _pick_slides(story, data) -> list:
         scores["binge"] = story["binge"]["seconds"] / (8 * 3600)
     if story["album_run"]:
         scores["album_run"] = story["album_run"]["tracks"] / 20
-    if data["new_artists"]:
+    if data["new_artists"] and story["established"]:
         scores["new_artists"] = min(len(data["new_artists"]) / 3, 2)
     if story["movers"] or story["comeback"] or story["dropped"]:
         scores["then_now"] = 1.2
     if story["biggest_month"]:
         scores["biggest_month"] = 1.0
-    if plays >= PERSONALITY_MIN_PLAYS:
-        scores["clock"] = 0.6
+    for name in ROTATING & set(scores):
+        scores[name] += rotation_bonus(data["key"], name)
 
     chosen = set(ALWAYS)
     if not top["artists"]:
@@ -346,6 +363,18 @@ def _slide_tracks(conn, story, data, start, end) -> dict:
 
 
 def build_story(conn, data, start, end, previous_start, previous_end, zone) -> dict:
+    data["new_artists"] = [artist for artist in data["new_artists"] if not artist["name"].startswith("[Unknown")]
+    data["discovery"] = data["new_artists"][0] if data["new_artists"] else None
+    first_ever = conn.execute("SELECT MIN(listened_at) FROM plays").fetchone()[0]
+    # History starts when recording did: nothing can be "new to you" for a while,
+    # and a period recorded only in part is no base for a comparison.
+    established = first_ever is not None and first_ever <= start - ESTABLISHED_AFTER
+    previous_partial = (
+        previous_start is not None and first_ever is not None and first_ever >= previous_start
+        and datetime.fromtimestamp(first_ever, zone).date() > datetime.fromtimestamp(previous_start, zone).date()
+    )
+    comparable = bool(data["has_previous"] and not data["so_far"] and not previous_partial)
+
     plays = [dict(row) for row in conn.execute(
         "SELECT p.listened_at, p.track_id, p.album_id, COALESCE(p.duration_sec, t.duration_sec, 0) seconds"
         " FROM plays p JOIN tracks t ON t.id = p.track_id WHERE p.listened_at >= ? AND p.listened_at < ?"
@@ -368,11 +397,13 @@ def build_story(conn, data, start, end, previous_start, previous_end, zone) -> d
             loyalty = {"artist": artist, "percent": round(share * 100), "one_in": round(1 / share)}
 
     movers = comeback = dropped = None
-    if data["has_previous"] and not data["so_far"]:
+    if comparable:
         movers, comeback, dropped = _then_and_now(conn, data, start, previous_start, previous_end, end)
 
     story = {
         "top_artists": artists,
+        "established": established,
+        "comparable": comparable,
         "opener": opener,
         "loyalty": loyalty,
         "obsession": _obsession(conn, plays, zone),
