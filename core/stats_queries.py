@@ -14,6 +14,7 @@ from core.stats_genres import genre_group
 
 _SECONDS = "COALESCE(p.duration_sec, t.duration_sec, 0)"
 TOP_SIZE = 10
+MAX_PAGE = 10 ** 9
 
 
 class BadPeriod(ValueError):
@@ -272,6 +273,7 @@ def recap(kind, key, tz) -> dict:
         data["new_artists"] = []
         data["discovery"] = None
         counts = {"artists": {}, "albums": {}, "tracks": {}}
+        new_ids = {"artists": set(), "albums": set(), "tracks": set()}
         if has_previous:
             prev_key = previous_key(kind, key)
             prev_start, prev_end = period_bounds(kind, prev_key, tz)
@@ -283,9 +285,14 @@ def recap(kind, key, tz) -> dict:
             }
             data["new_artists"] = _artist_rows(conn, start, end, limit=None, only_new_since=True)
             data["discovery"] = data["new_artists"][0] if data["new_artists"] else None
+            new_ids["artists"] = {row["id"] for row in data["new_artists"]}
+            for name, column in (("tracks", "track_id"), ("albums", "album_id")):
+                new_ids[name] = {row[0] for row in conn.execute(
+                    f"SELECT {column} FROM plays WHERE {column} IS NOT NULL GROUP BY {column} HAVING MIN(listened_at) >= ?", (start,))}
         for kind_name, rows in data["top"].items():
             for row in rows:
                 row["previous_plays"] = counts[kind_name].get(row["id"])
+                row["is_new"] = row["id"] in new_ids[kind_name]
         return data
 
 
@@ -363,7 +370,7 @@ def entity(kind, entity_id, tz):
 
 def search_plays(q, page, per_page=50) -> dict:
     needle = stats_db.fold(q or "").strip()
-    page = max(1, int(page or 1))
+    page = min(max(1, int(page or 1)), MAX_PAGE)
     with closing(stats_db.connect()) as conn:
         conn.create_function("fold", 1, stats_db.fold, deterministic=True)
         where, args = "1=1", ()

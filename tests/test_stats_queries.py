@@ -212,7 +212,7 @@ class WithPlays(unittest.TestCase):
         self.play(stamp(2026, 10, 2), title="A2", artists=("X",), duration=None)
         base, story = overview("month", "2026-10", UTC), recap("month", "2026-10", UTC)
         self.assertEqual(base["totals"], story["totals"])
-        strip = lambda rows: [{k: v for k, v in row.items() if k != "previous_plays"} for row in rows]
+        strip = lambda rows: [{k: v for k, v in row.items() if k not in ("previous_plays", "is_new")} for row in rows]
         for kind in ("artists", "albums", "tracks"):
             self.assertEqual(base["top"][kind], strip(story["top"][kind]))
         self.assertEqual(base["genres"], story["genres"])

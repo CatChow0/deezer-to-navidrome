@@ -11,11 +11,12 @@ from core import config, stats_db, stats_import, stats_ingest
 from tests.test_stats_db import reset
 
 TOKEN = "scrobble-secret"
+BASE_TIME = 1700000000
 
 
 def listen(ts=1000, title="Song", artist="A", **extra):
     meta = {"track_name": title, "artist_name": artist, "release_name": "Album", **extra}
-    return {"listened_at": ts, "track_metadata": meta}
+    return {"listened_at": BASE_TIME + ts, "track_metadata": meta}
 
 
 class ListenBrainz(unittest.TestCase):

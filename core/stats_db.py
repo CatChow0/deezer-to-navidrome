@@ -56,6 +56,10 @@ CREATE TABLE IF NOT EXISTS plays (
 );
 CREATE INDEX IF NOT EXISTS plays_listened_at ON plays(listened_at);
 CREATE INDEX IF NOT EXISTS plays_album ON plays(album_id);
+CREATE TABLE IF NOT EXISTS maloja_pairs (
+    maloja_ts INTEGER PRIMARY KEY,
+    partner_ts INTEGER NOT NULL
+);
 CREATE TABLE IF NOT EXISTS meta (
     key TEXT PRIMARY KEY,
     value TEXT
@@ -64,6 +68,7 @@ CREATE TABLE IF NOT EXISTS meta (
 
 _FEAT_BRACKET = re.compile(r"[\(\[]\s*(?:feat\.?|ft\.?|featuring|with)\b[^\)\]]*[\)\]]", re.I)
 _FEAT_INLINE = re.compile(r"\s(?:feat\.?|ft\.?|featuring)\s.*$", re.I)
+_FEAT_SPLIT = re.compile(r"\s+(?:feat\.?|ft\.?|featuring)\s+", re.I)
 
 
 def db_path() -> Path:
@@ -82,18 +87,36 @@ def connect() -> sqlite3.Connection:
     return conn
 
 
+def _is_latin(char) -> bool:
+    code = ord(char)
+    return code < 0x250 or 0x1E00 <= code <= 0x1EFF
+
+
 def fold(text) -> str:
-    """Accents and case removed, for comparing and searching names."""
-    text = unicodedata.normalize("NFKD", str(text or ""))
-    return "".join(c for c in text if not unicodedata.combining(c)).casefold()
+    """Case removed, and accents on Latin letters. Marks stay in other scripts,
+    where they make a different word (ガラス and カラス)."""
+    kept = []
+    after_latin = False
+    for char in unicodedata.normalize("NFKD", str(text or "")):
+        if unicodedata.combining(char):
+            if not after_latin:
+                kept.append(char)
+        else:
+            kept.append(char)
+            after_latin = _is_latin(char)
+    return unicodedata.normalize("NFKC", "".join(kept)).casefold()
+
+
+def _keeps_name_apart(char) -> bool:
+    return char.isalnum() or char == "_" or unicodedata.category(char)[0] == "M" or unicodedata.category(char) == "So"
 
 
 def _clean(text) -> str:
     """fold() without punctuation; falls back on the folded text, so a name
     made only of punctuation still has a usable, distinct form."""
     folded = fold(text)
-    cleaned = " ".join(re.sub(r"[^\w]+", " ", folded.replace("&", " and ")).split())
-    return cleaned or " ".join(folded.split())
+    spaced = "".join(c if _keeps_name_apart(c) else " " for c in folded.replace("&", " and "))
+    return " ".join(spaced.split()) or " ".join(folded.split())
 
 
 def name_key(name) -> str:
@@ -114,7 +137,8 @@ def split_artists(value) -> list:
         return []
     items = value if isinstance(value, (list, tuple)) else [value]
     # Maloja keeps some "A • B" credits as one artist, in lists too.
-    return [part.strip() for item in items if item for part in str(item).split(" • ") if part.strip()]
+    parts = [part for item in items if item for credit in str(item).split(" • ") for part in _FEAT_SPLIT.split(credit)]
+    return [part.strip() for part in parts if part.strip() not in ("", "•")]
 
 
 def usable_genre(value) -> bool:
@@ -168,12 +192,16 @@ def upsert_track(conn, title, artists, *, duration=None, duration_source=None, g
     return track_id
 
 
+def album_key(album_artist, title) -> str:
+    return f"{name_key(album_artist)}|{_clean(title)}"
+
+
 def upsert_album(conn, title, album_artist):
     title = str(title or "").strip()
     if not title:
         return None
     album_artist = str(album_artist or "").strip()
-    key = f"{name_key(album_artist)}|{_clean(title)}"
+    key = album_key(album_artist, title)
     row = conn.execute("SELECT id FROM albums WHERE key=?", (key,)).fetchone()
     if row:
         return row[0]

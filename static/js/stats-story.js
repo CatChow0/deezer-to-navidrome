@@ -28,7 +28,8 @@ function trackOfArtist(data, name) {
 
 function diffBadge(row, data) {
   if (!data.has_previous) return '';
-  if (row.previous_plays === null || row.previous_plays === undefined) return '<span class="st-diff st-diff--new">New</span>';
+  if (row.is_new) return '<span class="st-diff st-diff--new">New</span>';
+  if (row.previous_plays === null || row.previous_plays === undefined) return '<span class="st-diff">Back</span>';
   const delta = row.plays - row.previous_plays;
   if (delta === 0) return '<span class="st-diff">Same</span>';
   return `<span class="st-diff">${delta > 0 ? '+' : '-'}${count(Math.abs(delta))}</span>`;

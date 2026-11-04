@@ -203,9 +203,21 @@ def _keep_maloja_copy(conn) -> None:
     partial.replace(kept)
 
 
-def _load_sources(folder: Path, warnings: list) -> tuple:
+def _load_saved_maloja(folder: Path, warnings: list):
+    """The saved copy, or None: a damaged one must not stop the other sources."""
+    kept = _kept_maloja()
+    if not kept.exists():
+        return None
+    try:
+        return _open_copy(kept, folder, "kept.db", MALOJA_NEEDS, "The saved Maloja copy")
+    except (ImportRefused, sqlite3.DatabaseError, OSError) as e:
+        warnings.append(f"The saved Maloja copy could not be used: {e}")
+        return None
+
+
+def _load_sources(folder: Path, warnings: list, keep_copy=True) -> tuple:
     navidrome_plays, maloja_plays = [], []
-    navidrome, maloja, kept = _navidrome_path(), _maloja_path(), _kept_maloja()
+    navidrome, maloja = _navidrome_path(), _maloja_path()
     try:
         if navidrome.is_file():
             conn = _open_copy(navidrome, folder, "navidrome.db", NAVIDROME_NEEDS, "Navidrome")
@@ -218,27 +230,40 @@ def _load_sources(folder: Path, warnings: list) -> tuple:
     except sqlite3.DatabaseError as e:
         raise ImportRefused(f"Navidrome's database could not be read: {e}") from e
 
+    live = saved = None
     try:
-        live = None
+        saved = _load_saved_maloja(folder, warnings)
+        saved_count = -1
+        if saved:
+            try:
+                saved_count = _scrobble_count(saved)
+            except sqlite3.DatabaseError as e:
+                warnings.append(f"The saved Maloja copy could not be used: {e}")
+                saved.close()
+                saved = None
         if maloja.is_file():
             live = _open_copy(maloja, folder, "maloja.db", MALOJA_NEEDS, "Maloja")
-        saved = _open_copy(kept, folder, "kept.db", MALOJA_NEEDS, "The saved Maloja copy") if kept.exists() else None
-        try:
-            live_count = _scrobble_count(live) if live else -1
-            saved_count = _scrobble_count(saved) if saved else -1
-            if live and live_count >= saved_count:
-                _keep_maloja_copy(live)
+            if _scrobble_count(live) >= saved_count:
+                # Read first: a file that cannot be read must not replace a good copy.
                 maloja_plays = _read_maloja(live)
-            elif saved:
-                if live:
-                    warnings.append("The mounted Maloja database has fewer plays than the saved copy: the saved copy was used.")
-                maloja_plays = _read_maloja(saved)
-        finally:
-            for conn in (live, saved):
-                if conn:
-                    conn.close()
+                if keep_copy:
+                    _keep_maloja_copy(live)
+                return navidrome_plays, maloja_plays
+            warnings.append("The mounted Maloja database has fewer plays than the saved copy: the saved copy was used.")
     except sqlite3.DatabaseError as e:
         raise ImportRefused(f"Maloja's database could not be read: {e}") from e
+    finally:
+        if live:
+            live.close()
+
+    try:
+        if saved:
+            maloja_plays = _read_maloja(saved)
+    except sqlite3.DatabaseError as e:
+        warnings.append(f"The saved Maloja copy could not be used: {e}")
+    finally:
+        if saved:
+            saved.close()
     return navidrome_plays, maloja_plays
 
 
@@ -301,6 +326,16 @@ class _Stored:
         self.times.insert(position, item["ts"])
         self.items.insert(position, item)
 
+    def remove(self, item):
+        position = next(i for i in range(bisect.bisect_left(self.times, item["ts"]), len(self.items)) if self.items[i] is item)
+        del self.items[position]
+        del self.times[position]
+
+    def move(self, item, ts):
+        self.remove(item)
+        item["ts"] = ts
+        self.add(item)
+
 
 def _rekey_tracks(conn) -> int:
     """Applies the current key rule to stored tracks, joining those that now
@@ -328,36 +363,59 @@ def _wipe(conn) -> None:
         conn.execute(f"DELETE FROM {table}")
 
 
-def _point_play(conn, play_id, track_id, album_id, duration, source) -> tuple:
-    """Points a stored play at Navidrome's details. Returns (updated, merged)."""
-    row = conn.execute("SELECT track_id, album_id, duration_sec, source FROM plays WHERE id = ?", (play_id,)).fetchone()
+def _point_play(conn, play_id, track_id, album_id, duration, listened_at) -> tuple:
+    """Gives a stored play Navidrome's details and time, so the next run finds
+    it again at that exact moment. Returns (updated, merged)."""
+    row = conn.execute("SELECT track_id, album_id, duration_sec, listened_at, source FROM plays WHERE id = ?", (play_id,)).fetchone()
     duration = duration or row["duration_sec"]
-    if (row["track_id"], row["album_id"], row["duration_sec"], row["source"]) == (track_id, album_id, duration, source):
+    wanted = (track_id, album_id, duration, listened_at, "navidrome")
+    if tuple(row) == wanted:
         return 0, 0
     try:
         conn.execute(
-            "UPDATE plays SET track_id = ?, album_id = ?, duration_sec = ?, source = ? WHERE id = ?",
-            (track_id, album_id, duration, source, play_id),
+            "UPDATE plays SET track_id = ?, album_id = ?, duration_sec = ?, listened_at = ?, source = ? WHERE id = ?",
+            (*wanted, play_id),
         )
         return 1, 0
     except sqlite3.IntegrityError:
-        # Another row already says the same track at the same moment.
+        # Another row already says the same track at the same moment: one play.
         conn.execute("DELETE FROM plays WHERE id = ?", (play_id,))
         return 0, 1
 
 
 def _apply_navidrome(conn, plays, stored, report) -> None:
+    def take(match, play, key, track_id, album_id):
+        stored.used.add(match["id"])
+        updated, merged = _point_play(conn, match["id"], track_id, album_id, play["duration"], play["ts"])
+        report["updated"] += updated
+        report["merged"] += merged
+        if merged:
+            stored.remove(match)
+        else:
+            match.update(key=key, title=play["title"], source="navidrome")
+            stored.move(match, play["ts"])
+
+    # The same track at the same moment first, so that a looser match below
+    # cannot take a play that has its exact twin in the source.
+    remaining = []
     for play in plays:
         key = track_key(play["artists"], play["title"])
         track_id = upsert_track(conn, play["title"], play["artists"], duration=play["duration"],
                                 duration_source="navidrome", genre=play["genre"], genre_source="navidrome")
         album_id = upsert_album(conn, play["album"], play["album_artist"])
+        exact = next((i for i in stored.near(play["ts"], 0) if i["id"] not in stored.used and i["key"] == key), None)
+        if exact:
+            take(exact, play, key, track_id, album_id)
+        else:
+            remaining.append((play, key, track_id, album_id))
+
+    for play, key, track_id, album_id in remaining:
         match = None
         for item in stored.near(play["ts"]):
             if item["id"] in stored.used:
                 continue
             if item["source"] == "navidrome":
-                if item["ts"] == play["ts"]:  # the same play again, perhaps retagged
+                if item["ts"] == play["ts"]:  # the same play, retagged
                     match = item
                     break
                 continue
@@ -365,13 +423,9 @@ def _apply_navidrome(conn, plays, stored, report) -> None:
                 match = item
                 break
         if match:
-            stored.used.add(match["id"])
-            updated, merged = _point_play(conn, match["id"], track_id, album_id, play["duration"], "navidrome")
-            report["updated"] += updated
-            report["merged"] += merged
-            match.update(key=key, title=play["title"], source="navidrome")
-        else:
-            add_play(conn, track_id, album_id, play["duration"], play["ts"], "navidrome")
+            take(match, play, key, track_id, album_id)
+            continue
+        if add_play(conn, track_id, album_id, play["duration"], play["ts"], "navidrome"):
             row = conn.execute("SELECT id FROM plays WHERE track_id = ? AND listened_at = ?", (track_id, play["ts"])).fetchone()
             stored.add({"id": row[0], "ts": play["ts"], "key": key, "title": play["title"], "source": "navidrome"})
             stored.used.add(row[0])
@@ -398,12 +452,37 @@ def _apply_navidrome(conn, plays, stored, report) -> None:
         set_track_artists(conn, track_id, play["artists"])
 
 
-def _apply_maloja(conn, plays, stored, report) -> None:
+def _apply_maloja(conn, plays, stored, report, mode, navidrome_plays) -> None:
+    """A Maloja play once paired stays paired: its partner's title may change
+    later, and matching again would then count the play twice."""
     stored.used = set()
-    keyed = [(play, track_key(play["artists"], play["title"])) for play in plays]
+    pairs = dict(conn.execute("SELECT maloja_ts, partner_ts FROM maloja_pairs").fetchall())
+    navidrome_times = {play["ts"] for play in navidrome_plays}
+
+    def pair(play, key, partner):
+        stored.used.add(partner["id"])
+        conn.execute("INSERT OR REPLACE INTO maloja_pairs(maloja_ts, partner_ts) VALUES (?, ?)", (play["ts"], partner["ts"]))
+        # An earlier run may have stored it alone, before its partner was known.
+        for item in stored.near(play["ts"], 0):
+            if item["source"] == "maloja" and item["key"] == key:
+                conn.execute("DELETE FROM plays WHERE id = ?", (item["id"],))
+                stored.remove(item)
+                report["merged"] += 1
+                break
 
     # First the plays that clearly line up, so a loose pairing below cannot
     # take a partner away from them.
+    keyed = []
+    for play in plays:
+        key = track_key(play["artists"], play["title"])
+        partner_ts = pairs.get(play["ts"])
+        if partner_ts is not None and (mode == "merge" or partner_ts in navidrome_times):
+            partner = next((i for i in stored.near(partner_ts, 0) if i["source"] != "maloja" and i["id"] not in stored.used), None)
+            if partner:
+                stored.used.add(partner["id"])
+            continue
+        keyed.append((play, key))
+
     remaining = []
     for play, key in keyed:
         match = next((
@@ -412,7 +491,7 @@ def _apply_maloja(conn, plays, stored, report) -> None:
             and same_play(play["ts"], key, play["title"], item["ts"], item["key"], item["title"])
         ), None)
         if match:
-            stored.used.add(match["id"])
+            pair(play, key, match)
         else:
             remaining.append((play, key))
 
@@ -424,7 +503,7 @@ def _apply_maloja(conn, plays, stored, report) -> None:
             if item["source"] != "maloja" and item["id"] not in stored.used and item["key"] == key
         ), None)
         if match:
-            stored.used.add(match["id"])
+            pair(play, key, match)
             continue
         if any(i["source"] == "maloja" and i["ts"] == play["ts"] and i["key"] == key for i in stored.near(play["ts"], 0)):
             continue  # imported by an earlier run
@@ -476,7 +555,23 @@ def check_can_run(mode: str) -> None:
         raise ImportRefused("No source found: mount Navidrome's or Maloja's database first.")
 
 
-def run_import(mode: str, progress=None) -> dict:
+def _plays_since(conn, last_id) -> list:
+    """Plays that arrived after the sources were read: they cannot be in them."""
+    plays = []
+    for row in conn.execute(
+        "SELECT p.id, p.listened_at, p.track_id, p.duration_sec, t.title, al.title album, al.album_artist"
+        " FROM plays p JOIN tracks t ON t.id = p.track_id LEFT JOIN albums al ON al.id = p.album_id"
+        " WHERE p.id > ? AND p.source = 'live'", (last_id,),
+    ).fetchall():
+        artists = [r[0] for r in conn.execute(
+            "SELECT a.name FROM track_artists ta JOIN artists a ON a.id = ta.artist_id"
+            " WHERE ta.track_id = ? ORDER BY ta.position", (row["track_id"],))]
+        plays.append({**dict(row), "artists": artists})
+    return plays
+
+
+def run_import(mode: str, progress=None, dry_run=False) -> dict:
+    """`dry_run` works out the same report and leaves everything as it was."""
     check_can_run(mode)
     say = progress or (lambda message, percent=None: None)
 
@@ -485,33 +580,45 @@ def run_import(mode: str, progress=None) -> dict:
         "added": 0, "updated": 0, "merged": 0, "removed": 0, "from_navidrome": 0, "from_maloja": 0,
         "maloja_only": 0, "read_navidrome": 0, "read_maloja": 0, "backup": None, "warnings": [],
     }
-    folder = Path(tempfile.mkdtemp(prefix="stats_import", dir=config.DATA_DIR))
-    try:
-        say("Reading the sources", 5)
-        navidrome_plays, maloja_plays = _load_sources(folder, report["warnings"])
-    finally:
-        shutil.rmtree(folder, ignore_errors=True)
-    report["read_navidrome"] = len(navidrome_plays)
-    report["read_maloja"] = len(maloja_plays)
-
     conn = stats_db.connect()
     try:
-        say("Backing up the current history", 30)
-        report["backup"] = _backup()
+        last_id = conn.execute("SELECT COALESCE(MAX(id), 0) FROM plays").fetchone()[0]
+        folder = Path(tempfile.mkdtemp(prefix="stats_import", dir=config.DATA_DIR))
+        try:
+            say("Reading the sources", 5)
+            if dry_run:
+                navidrome_plays, maloja_plays = _load_sources(folder, report["warnings"], False)
+            else:
+                navidrome_plays, maloja_plays = _load_sources(folder, report["warnings"])
+        finally:
+            shutil.rmtree(folder, ignore_errors=True)
+        report["read_navidrome"] = len(navidrome_plays)
+        report["read_maloja"] = len(maloja_plays)
+        if mode == "clean" and not navidrome_plays:
+            raise ImportRefused("Navidrome's database has no plays, so Start clean would empty your history. Nothing was changed.")
+
+        if not dry_run:
+            say("Backing up the current history", 30)
+            report["backup"] = _backup()
         conn.execute("BEGIN IMMEDIATE")
         try:
             report["before"] = stats_db.play_count(conn)
             old_plays = []
             if mode == "clean":
                 old_plays = _Stored(conn).items
+                arrived = _plays_since(conn, last_id)
                 _wipe(conn)
+                for play in arrived:
+                    track_id = upsert_track(conn, play["title"], play["artists"])
+                    add_play(conn, track_id, upsert_album(conn, play["album"], play["album_artist"]),
+                             play["duration_sec"], play["listened_at"], "live")
             else:
                 report["merged"] += _rekey_tracks(conn)
             stored = _Stored(conn)
             say("Adding Navidrome's plays", 45)
             _apply_navidrome(conn, navidrome_plays, stored, report)
             say("Adding Maloja's plays", 75)
-            _apply_maloja(conn, maloja_plays, stored, report)
+            _apply_maloja(conn, maloja_plays, stored, report, mode, navidrome_plays)
             _fill_lengths(conn)
             _remove_orphans(conn)
             report["added"] = report["from_navidrome"] + report["from_maloja"]
@@ -520,14 +627,22 @@ def run_import(mode: str, progress=None) -> dict:
             if mode == "clean":
                 report["removed"] = _count_removed(old_plays, conn)
             report["finished_at"] = int(time.time())
-            stats_db.set_meta(conn, "last_import", report)
-            conn.commit()
+            if dry_run:
+                conn.rollback()
+            else:
+                stats_db.set_meta(conn, "last_import", report)
+                conn.commit()
         except BaseException:
             conn.rollback()
             raise
     finally:
         conn.close()
     return report
+
+
+def preview_clean() -> dict:
+    """What Start clean would do, for its confirmation."""
+    return run_import("clean", dry_run=True)
 
 
 def import_running() -> bool:

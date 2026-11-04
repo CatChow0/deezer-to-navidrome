@@ -52,7 +52,7 @@ def deezer_match(title, artists, item) -> bool:
 
 def _pending(conn, limit) -> list:
     return conn.execute(
-        "SELECT t.id, t.title, t.artist_display, t.genre, COUNT(p.id) plays FROM tracks t JOIN plays p ON p.track_id = t.id"
+        "SELECT t.id, t.key, t.title, t.artist_display, t.genre, COUNT(p.id) plays FROM tracks t JOIN plays p ON p.track_id = t.id"
         f" WHERE {_MISSING} AND {_DUE} GROUP BY t.id ORDER BY plays DESC, t.id LIMIT ?",
         (int(time.time()), limit),
     ).fetchall()
@@ -72,21 +72,22 @@ def _lookup(track) -> tuple:
     return match, genre
 
 
-def _save(track_id, match, genre) -> None:
+def _save(track_id, key, match, genre) -> None:
     now = int(time.time())
     album = match.get("album") or {}
     artist = match.get("artist") or {}
     with closing(stats_db.connect()) as conn:
-        conn.execute(
+        # A rebuild during the wait can give this id to another track: the key says.
+        saved = conn.execute(
             "UPDATE tracks SET deezer_track_id = ?, deezer_album_id = ?, cover_url = COALESCE(cover_url, ?),"
             " duration_source = CASE WHEN duration_sec IS NULL AND ? IS NOT NULL THEN 'deezer' ELSE duration_source END,"
             " duration_sec = COALESCE(duration_sec, ?),"
             " genre_source = CASE WHEN genre IS NULL AND ? IS NOT NULL THEN 'deezer' ELSE genre_source END,"
-            " genre = COALESCE(genre, ?), lookup_at = ? WHERE id = ?",
+            " genre = COALESCE(genre, ?), lookup_at = ? WHERE id = ? AND key = ?",
             (str(match.get("id") or "") or None, str(album.get("id") or "") or None, album.get("cover_medium"),
-             match.get("duration"), match.get("duration"), genre, genre, now + RETRY_INCOMPLETE, track_id),
-        )
-        if artist.get("name"):
+             match.get("duration"), match.get("duration"), genre, genre, now + RETRY_INCOMPLETE, track_id, key),
+        ).rowcount
+        if saved and artist.get("name"):
             conn.execute(
                 "UPDATE artists SET deezer_id = COALESCE(deezer_id, ?), picture_url = COALESCE(picture_url, ?) WHERE key = ?",
                 (str(artist.get("id") or "") or None, artist.get("picture_medium"), name_key(artist["name"])),
@@ -94,9 +95,9 @@ def _save(track_id, match, genre) -> None:
         conn.commit()
 
 
-def _retry_later(track_id, delay) -> None:
+def _retry_later(track_id, key, delay) -> None:
     with closing(stats_db.connect()) as conn:
-        conn.execute("UPDATE tracks SET lookup_at = ? WHERE id = ?", (int(time.time()) + delay, track_id))
+        conn.execute("UPDATE tracks SET lookup_at = ? WHERE id = ? AND key = ?", (int(time.time()) + delay, track_id, key))
         conn.commit()
 
 
@@ -109,12 +110,12 @@ def enrich_batch(limit=40) -> int:
             match, genre = _lookup(track)
         except Exception as e:
             logger.info("Deezer lookup failed for %s: %s", track["title"], e)
-            _retry_later(track["id"], RETRY_ERROR)
+            _retry_later(track["id"], track["key"], RETRY_ERROR)
             continue
         if match:
-            _save(track["id"], match, genre)
+            _save(track["id"], track["key"], match, genre)
         else:
-            _retry_later(track["id"], RETRY_NO_MATCH)
+            _retry_later(track["id"], track["key"], RETRY_NO_MATCH)
     return len(tracks)
 
 

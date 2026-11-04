@@ -78,6 +78,7 @@ function render(host, status) {
         <button type="button" class="btn btn--sm" data-stats-rebuild="merge" ${sources.can_merge && !status.import_running ? '' : 'disabled'}>Rebuild (merge)</button>
         <button type="button" class="btn btn--danger btn--sm" data-stats-rebuild="clean" ${sources.can_clean && !status.import_running ? '' : 'disabled'}>Start clean</button>
       </div>
+      <p class="help-live help-live--warn" data-stats-clean-note hidden></p>
       ${sources.can_clean ? '' : '<p class="muted">Start clean is off because Navidrome\'s database is not mounted: without it, most of your history could not be rebuilt.</p>'}
       ${status.import_running ? '<p class="muted">A rebuild is running: follow it in Activity.</p>' : ''}
     </div>`;
@@ -105,12 +106,7 @@ async function copy(value, label) {
 export function initStatsSettings() {
   const host = document.querySelector('[data-stats-settings]');
   if (!host) return;
-  let plays = 0;
-
-  const reload = async () => {
-    const status = await load(host);
-    if (status) plays = status.plays;
-  };
+  const reload = () => load(host);
 
   on(host, 'click', '[data-stats-copy]', (_, button) => {
     if (button.dataset.statsCopy === 'token') copy(host.querySelector('[data-stats-token]').value, 'Token');
@@ -148,7 +144,18 @@ export function initStatsSettings() {
   });
   on(host, 'click', '[data-stats-rebuild]', async (_, button) => {
     const mode = button.dataset.statsRebuild;
-    if (mode === 'clean' && !armed(button, `Replace ${plural(plays, 'play')}: click to confirm`)) return;
+    if (mode === 'clean' && button.dataset.armed !== 'true') {
+      button.disabled = true;
+      const { ok, data } = await fetchJSON('/api/stats/import/preview', { method: 'POST' });
+      button.disabled = false;
+      if (!ok) return toast(data?.error || 'Start clean could not be checked', { tone: 'error' });
+      const note = host.querySelector('[data-stats-clean-note]');
+      note.hidden = false;
+      note.textContent = `Start clean would lose ${plural(data.removed, 'play')}: ${count(data.before)} now, ${count(data.after)} afterwards. Plays the sources no longer have cannot come back, except from a backup.`;
+      armed(button, `Lose ${plural(data.removed, 'play')}: click to confirm`);
+      return;
+    }
+    if (mode === 'clean') armed(button);
     button.disabled = true;
     await runServerTask(mode === 'clean' ? 'Stats history: start clean' : 'Stats history: merge', '/api/stats/import', {
       json: { mode },

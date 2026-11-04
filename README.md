@@ -317,7 +317,7 @@ The app reads copies of these files and never writes to them. When the same play
 | Plays gone from the sources | Kept | Lost |
 | Needs Navidrome's database | No | Yes |
 
-Both back up `stats.db` first (the last 3, as `stats.db.bak-*` in `DATA_DIR`) and report what changed. Merge can be run any time without counting anything twice. The first import saves a copy of Maloja's database in `stats_sources/`, so rebuilds keep working after you remove Maloja. **Reset data** in Settings does not touch your listening history.
+Both back up `stats.db` first (the last 3, as `stats.db.bak-*` in `DATA_DIR`) and report what changed. To go back to a backup, stop the container, delete `stats.db` and its `-wal` and `-shm` files, rename the backup to `stats.db`, and start it again. Start clean shows how many plays it would lose before you confirm, and refuses to run if Navidrome's database has no plays. Merge can be run any time without counting anything twice. The first import saves a copy of Maloja's database in `stats_sources/`, so rebuilds keep working after you remove Maloja. **Reset data** in Settings does not touch your listening history.
 
 ### Moving from Wrapped, Maloja and lb-enricher
 

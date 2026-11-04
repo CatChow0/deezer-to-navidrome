@@ -11,6 +11,7 @@ stats_bp = Blueprint("stats", __name__)
 # Where Navidrome reaches this app when both run in the same compose file.
 BASE_URL_HINT = "http://deezer-to-navidrome:8080/apis/listenbrainz/1/"
 MIN_PASTED_TOKEN = 8
+MAX_ID = 2 ** 63 - 1
 
 
 @stats_bp.errorhandler(BadPeriod)
@@ -42,7 +43,7 @@ def recap():
 
 @stats_bp.get("/api/stats/<any(artist, album, track):kind>/<int:entity_id>")
 def entity(kind, entity_id):
-    data = stats_queries.entity(kind, entity_id, request.args.get("tz"))
+    data = stats_queries.entity(kind, entity_id, request.args.get("tz")) if entity_id <= MAX_ID else None
     if data is None:
         return jsonify({"ok": False, "error": "Not found"}), 404
     return jsonify(data)
@@ -84,6 +85,16 @@ def start_import():
     except stats_import.ImportRefused as e:
         return jsonify({"ok": False, "error": str(e)}), 409
     return jsonify({"ok": True, "task_id": task_id}), 202
+
+
+@stats_bp.post("/api/stats/import/preview")
+def preview_import():
+    if stats_import.import_running():
+        return jsonify({"ok": False, "error": "A rebuild is already running."}), 409
+    try:
+        return jsonify({"ok": True, **stats_import.preview_clean()})
+    except stats_import.ImportRefused as e:
+        return jsonify({"ok": False, "error": str(e)}), 409
 
 
 def _env_token_refusal():
