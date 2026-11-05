@@ -11,7 +11,7 @@
 
 ---
 
-**Made for you** builds Daily Mix, Daily Mix+ and Discover from what you listen to, with tempo and genre filled in by **Fix missing metadata**, and a 30-day quarantine for what they download.
+**Made for you** builds Daily Mix or Daily Mix+, and Discover, from what you listen to, with tempo and genre filled in by **Fix missing metadata**, your own limits, and a 30-day quarantine for what they download.
 
 The **New** button keeps the notes of each version, and **Help** is a full guide with a search.
 
