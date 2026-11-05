@@ -1,3 +1,4 @@
+import threading
 import re
 from pathlib import Path
 
@@ -13,6 +14,11 @@ except ImportError:
     from difflib import SequenceMatcher
     def similarity(a: str, b: str) -> float:
         return SequenceMatcher(None, a or "", b or "").ratio() if a and b else 0.0
+
+
+# Held around every swap or move of a music file, so two tasks never act on one file at
+# once: a tag writer would otherwise bring back a file that was just moved or repaired.
+FILES_LOCK = threading.RLock()
 
 
 def sanitize_filename(name: str) -> str:

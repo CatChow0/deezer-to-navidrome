@@ -5,6 +5,7 @@ import uuid
 from collections import defaultdict
 from pathlib import Path
 
+from core.utils import FILES_LOCK
 from core.config import (
     DEDUP_CHOICES_FILE,
     DEDUP_QUARANTINE_DIR,
@@ -378,7 +379,8 @@ def quarantine_file(path_str: str):
         target = DEDUP_QUARANTINE_DIR / f"{src.stem}__{suffix}{src.suffix}"
         suffix += 1
 
-    shutil.move(str(src), str(target))
+    with FILES_LOCK:
+        shutil.move(str(src), str(target))
     return {"path": path_str, "status": "moved", "target": str(target)}
 
 
@@ -421,7 +423,8 @@ def apply_dedup_decisions(decisions, mode="quarantine"):
             elif mode == "delete":
                 p = Path(path_str)
                 if p.exists():
-                    p.unlink()
+                    with FILES_LOCK:
+                        p.unlink()
                     results.append({"path": path_str, "status": "deleted"})
                 else:
                     results.append({"path": path_str, "status": "missing"})

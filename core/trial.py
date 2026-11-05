@@ -14,7 +14,7 @@ import tempfile
 from pathlib import Path
 
 from core import config, deezer_dl, metadata_fix, stats_db
-from core.utils import read_tags
+from core.utils import FILES_LOCK, read_tags
 
 logger = logging.getLogger(__name__)
 
@@ -157,7 +157,8 @@ def keep(conn, deezer_id, now, reason="Kept by hand") -> None:
     songs = deezer_dl.download_dir() / "songs"
     songs.mkdir(parents=True, exist_ok=True)
     target = _free_name(songs, source.name)
-    shutil.move(str(source), str(target))
+    with FILES_LOCK:
+        shutil.move(str(source), str(target))
     _set(conn, deezer_id, KEPT, now, reason, target)
     metadata_fix.move_file(conn, row["path"], target)
     _follow_move(row["path"], target)
@@ -170,8 +171,10 @@ def remove(conn, deezer_id, now) -> None:
     source = _inside(row["path"], trial_dir())
     trash_dir().mkdir(parents=True, exist_ok=True)
     target = _free_name(trash_dir(), source.name)
-    shutil.move(str(source), str(target))
+    with FILES_LOCK:
+        shutil.move(str(source), str(target))
     _set(conn, deezer_id, TRASH, now, "Removed", target)
+    metadata_fix.move_file(conn, row["path"], target)
     _forget_file(row["path"])
 
 
@@ -195,8 +198,10 @@ def restore(conn, deezer_id, now) -> None:
     songs = deezer_dl.download_dir() / "songs"
     songs.mkdir(parents=True, exist_ok=True)
     target = _free_name(songs, source.name)
-    shutil.move(str(source), str(target))
+    with FILES_LOCK:
+        shutil.move(str(source), str(target))
     _set(conn, deezer_id, KEPT, now, "Restored", target)
+    metadata_fix.move_file(conn, row["path"], target)
 
 
 def purge(conn, now) -> int:

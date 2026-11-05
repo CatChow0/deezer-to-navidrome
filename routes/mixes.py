@@ -91,10 +91,22 @@ def fix_metadata():
     conn = mixes_db.connect()
     try:
         mixes_db.set_meta(conn, "metadata_fix_on", True)
+        mixes_db.set_meta(conn, "metadata_write_off", False)
     finally:
         conn.close()
     task_id = create_task("Fix missing metadata", kind="metadata")
     metadata_fix.start_background(mix_builder.library_entries, task_id=task_id)
+    return jsonify({"ok": True, "task_id": task_id})
+
+
+@mixes_bp.post("/api/metadata/undo")
+def undo_metadata():
+    from core.config import create_task
+
+    if metadata_fix.is_running():
+        return jsonify({"ok": False, "error": "Fix missing metadata is running: wait for it to finish"}), 409
+    task_id = create_task("Undo metadata fix", kind="metadata")
+    metadata_fix.start_undo(task_id)
     return jsonify({"ok": True, "task_id": task_id})
 
 

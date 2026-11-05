@@ -200,6 +200,12 @@ def _scheduler_loop():
 
 def start():
     global _scheduler_thread, _stop_event
+    try:
+        from core.metadata_fix import recover_at_start
+
+        recover_at_start()
+    except Exception as e:
+        logger.error(f"[metadata] Could not clear temporary files: {e}")
     _stop_event = threading.Event()
     _scheduler_thread = threading.Thread(
         target=_scheduler_loop, daemon=True, name="auto-scan-scheduler"

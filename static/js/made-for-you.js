@@ -38,10 +38,13 @@ function versionsHtml(state) {
     <p class="muted" data-mfy-analysis>${analysis.left
       ? `Missing metadata: ${measured} of ${analysis.total} files done. ${anyOn ? 'Mixes start once most of it is done.' : 'Turning a version on starts it: it adds the missing tempo and genre to your files\' tags.'}`
       : `Tempo and genre checked for all ${analysis.total} files.`}</p>
-    ${analysis.write_errors ? `<p class="help-live help-live--warn">${plural(analysis.write_errors, 'file')} could not be tagged. Is the folder mounted read-only? Their results still count for the mixes.</p>` : ''}
+    <p class="muted">${plural(analysis.tagged, 'file')} tagged${analysis.only_in_app ? `, ${analysis.only_in_app} kept only in the app (format without tags, or writing turned off)` : ''}.</p>
+    ${analysis.write_errors ? `<p class="help-live help-live--warn">${plural(analysis.write_errors, 'file')} could not be tagged. Is the folder mounted read-only? Their results still count for the mixes, and writing is tried again every day.</p>` : ''}
+    ${analysis.write_off ? '<p class="muted">Writing to your files is off since the last undo. <b>Fix missing metadata</b> turns it back on.</p>' : ''}
     ${lastRun?.notes?.length ? `<p class="help-live help-live--warn">${lastRun.notes.map(escapeHtml).join(' ')}</p>` : ''}
     <div class="button-row">
       <button type="button" class="btn btn--sm" data-mfy-generate ${!anyOn || state.running ? 'disabled' : ''}>${state.running ? 'Generating…' : 'Regenerate now'}</button>
+      ${analysis.can_undo ? `<button type="button" class="btn btn--ghost btn--sm" data-mfy-undo>Undo metadata fix</button>` : ''}
     </div>
     <h4 class="help-h">Limits</h4>
     <form class="mfy-limits" data-mfy-limits>
@@ -195,6 +198,16 @@ export function initMadeForYou(modal) {
   on(root, 'click', '[data-mfy-action]', (_, button) => {
     button.disabled = true;
     send(`/api/mixes/trial/${encodeURIComponent(button.dataset.mfyId)}/${button.dataset.mfyAction}`);
+  });
+  on(root, 'click', '[data-mfy-undo]', async (_, button) => {
+    if (button.dataset.armed !== '1') {
+      button.dataset.armed = '1';
+      button.textContent = `Click again: removes what was added to ${state.analysis.can_undo} files`;
+      return;
+    }
+    button.disabled = true;
+    await runServerTask('Undo metadata fix', '/api/metadata/undo');
+    load();
   });
   on(root, 'click', '[data-mfy-remove-all]', (_, button) => {
     if (button.dataset.armed) {

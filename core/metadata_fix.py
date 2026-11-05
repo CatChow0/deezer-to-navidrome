@@ -2,9 +2,14 @@
 tags, so Navidrome sees them too and they never have to be found again.
 
 A value already in a file is never replaced. A file is never written directly: the
-tags go on a copy, which replaces the original only once its audio is proven the
-same. Results are also kept in mixes.db, so a file that cannot be written (a
-read-only mount) still counts for the mixes."""
+tags go on a copy, whose audio bytes must match the original's before it takes its
+place. mixes.db keeps every result as well, which is what counts for a file that
+cannot take tags (a read-only mount, a format without tags), and it remembers what
+was added so it can be taken back.
+
+After a brutal stop a file is either the old one or the new one, both complete: at
+worst a temporary copy stays behind, and the journal says which one to clear."""
+import hashlib
 import logging
 import os
 import shutil
@@ -15,21 +20,29 @@ from pathlib import Path
 from mutagen import File as MutagenFile
 
 from core import audio_tempo, mixes_db, stats_db
+from core.utils import FILES_LOCK
 
 logger = logging.getLogger(__name__)
 
 PAUSE_SECONDS = 0.05    # Leaves room for the rest of the app on a small server.
-COMMIT_EVERY = 25
+DAY = 86400
 LOOKUP_RETRY_DAYS = 30
 TEMP_SUFFIX = ".d2ntmp"
-WRITABLE = {".flac", ".mp3", ".m4a", ".mp4", ".ogg", ".opus"}
-DURATION_TOLERANCE = 0.2
+BYTE_COMPARED = {".flac", ".mp3"}       # Their audio can be compared byte for byte.
+DECODE_COMPARED = {".ogg", ".opus"}     # Rewritten pages: compared once decoded.
+WRITABLE = BYTE_COMPARED | DECODE_COMPARED
+WRITTEN, IN_FILE, UNSUPPORTED, FAILED, OFF = "written", "in_file", "unsupported", "failed", "off"
+CHUNK = 1024 * 1024
 
 _running = threading.Lock()
 
 
 class WriteRefused(Exception):
     pass
+
+
+class FileChanged(WriteRefused):
+    """Something else changed or moved the file during the write."""
 
 
 def available() -> bool:
@@ -66,31 +79,181 @@ def read_tags(path) -> tuple:
     return (bpm if bpm > 0 else None), (genre if stats_db.usable_genre(genre) else None)
 
 
-def _same_audio(original, copy) -> bool:
-    """FLAC stores a checksum of its audio. Other formats are compared on what is
-    left once the tags are set aside: the same length and audio properties."""
-    a, b = MutagenFile(original), MutagenFile(copy)
-    if a is None or b is None or a.info is None or b.info is None:
-        return False
-    if abs(a.info.length - b.info.length) > DURATION_TOLERANCE:
-        return False
-    if hasattr(a.info, "md5_signature") and a.info.md5_signature != b.info.md5_signature:
-        return False
-    return getattr(a.info, "sample_rate", 0) == getattr(b.info, "sample_rate", 0)
+def _id3_size(handle) -> int:
+    """Bytes taken by an ID3v2 tag at the start of a file."""
+    handle.seek(0)
+    head = handle.read(10)
+    if len(head) < 10 or head[:3] != b"ID3":
+        return 0
+    size = (head[6] & 127) << 21 | (head[7] & 127) << 14 | (head[8] & 127) << 7 | (head[9] & 127)
+    return size + (20 if head[5] & 0x10 else 10)
 
 
-def _kept_all_tags(original, copy, added) -> bool:
+def _flac_audio_start(handle) -> int:
+    start = _id3_size(handle)
+    handle.seek(start)
+    if handle.read(4) != b"fLaC":
+        raise WriteRefused("Not a FLAC file")
+    while True:
+        header = handle.read(4)
+        if len(header) < 4:
+            raise WriteRefused("Damaged FLAC metadata")
+        handle.seek(int.from_bytes(header[1:4], "big"), 1)
+        if header[0] & 0x80:
+            return handle.tell()
+
+
+def _hash_range(handle, start, end) -> str:
+    digest = hashlib.md5()
+    handle.seek(start)
+    left = end - start
+    while left > 0:
+        chunk = handle.read(min(CHUNK, left))
+        if not chunk:
+            break
+        digest.update(chunk)
+        left -= len(chunk)
+    return digest.hexdigest()
+
+
+def audio_fingerprint(path) -> str:
+    """Identifies a file's audio whatever its tags say. FLAC's own checksum would not
+    do: it sits in the header and is merely copied, so it stays the same even if the
+    audio is damaged. These are the actual bytes."""
+    path = Path(path)
+    suffix = path.name.removesuffix(TEMP_SUFFIX).rsplit(".", 1)[-1].lower()
+    if f".{suffix}" in DECODE_COMPARED:
+        np, soundfile = audio_tempo._libraries()
+        samples, _ = soundfile.read(str(path), dtype="float32")
+        return hashlib.md5(np.asarray(samples).tobytes()).hexdigest()
+    with open(path, "rb") as handle:
+        size = handle.seek(0, 2)
+        if suffix == "flac":
+            return _hash_range(handle, _flac_audio_start(handle), size)
+        if suffix == "mp3":
+            start = _id3_size(handle)
+            handle.seek(max(0, size - 128))
+            # An ID3v1 tag at the very end is a tag too, not audio.
+            end = size - 128 if size >= 128 and handle.read(3) == b"TAG" else size
+            return _hash_range(handle, start, end)
+    raise WriteRefused(f"Cannot compare the audio of a {suffix} file")
+
+
+def _kept_all_tags(original, copy, changed) -> bool:
     before, after = MutagenFile(original, easy=True), MutagenFile(copy, easy=True)
     for key in (before.tags or {}).keys():
-        if key not in added and list(before.tags[key]) != list(after.tags.get(key) or []):
+        if key not in changed and list(before.tags[key]) != list(after.tags.get(key) or []):
             return False
     pictures = lambda f: len(getattr(MutagenFile(f), "pictures", []) or [])
     return pictures(original) == pictures(copy)
 
 
-def write_tags(path, bpm=None, genre=None) -> bool:
+def _sync(path) -> None:
+    """To the disk, not just the system's cache: a power cut must not leave a file
+    that was renamed but never written."""
+    handle = os.open(path, os.O_RDONLY)
+    try:
+        os.fsync(handle)
+    except OSError:
+        pass
+    finally:
+        os.close(handle)
+
+
+def _sync_folder(folder) -> None:
+    try:
+        _sync(folder)
+    except OSError:
+        pass    # Folders cannot be opened this way everywhere; the file itself is safe.
+
+
+def _signature(path):
+    stat = path.stat()
+    return stat.st_size, stat.st_mtime_ns
+
+
+def _journal(conn, temp, path) -> None:
+    if conn is not None:
+        conn.execute("INSERT OR REPLACE INTO write_journal(temp, path, started_at) VALUES (?,?,?)",
+                     (str(temp), str(path), int(time.time())))
+        conn.commit()
+
+
+def _journal_done(conn, temp) -> None:
+    if conn is not None:
+        conn.execute("DELETE FROM write_journal WHERE temp=?", (str(temp),))
+        conn.commit()
+
+
+def recover(conn) -> int:
+    """Clears the temporary copies a brutal stop left behind. Only those the journal
+    names, with our suffix: nothing else is ever removed. The originals are intact."""
+    cleared = 0
+    for row in conn.execute("SELECT temp FROM write_journal").fetchall():
+        temp = Path(row["temp"])
+        if temp.name.endswith(TEMP_SUFFIX):
+            try:
+                if temp.exists():
+                    temp.unlink()
+                    cleared += 1
+            except OSError as e:
+                logger.warning("Could not clear %s: %s", temp, e)
+                continue
+        conn.execute("DELETE FROM write_journal WHERE temp=?", (row["temp"],))
+    conn.commit()
+    return cleared
+
+
+def _rewrite(path, change, keys, conn=None) -> None:
+    """Applies `change(audio)` on a copy, proves the audio and other tags are intact,
+    and only then swaps it in, unless the file changed in the meantime."""
+    path = Path(path)
+    temp = path.with_name(path.name + TEMP_SUFFIX)
+    _journal(conn, temp, path)
+    try:
+        before = _signature(path)
+        fingerprint = audio_fingerprint(path)
+        shutil.copy2(path, temp)
+        audio = MutagenFile(temp, easy=True)
+        if audio is None:
+            raise WriteRefused("Unknown audio format")
+        change(audio)
+        audio.save()
+        if audio_fingerprint(temp) != fingerprint:
+            raise WriteRefused("The audio differed after writing the tags")
+        if not _kept_all_tags(path, temp, keys):
+            raise WriteRefused("Other tags changed while writing")
+        _sync(temp)
+        with FILES_LOCK:
+            try:
+                unchanged = _signature(path) == before
+            except OSError:
+                unchanged = False
+            if not unchanged:
+                raise FileChanged("The file changed during the write")
+            stat = path.stat()
+            if hasattr(os, "chown"):
+                try:
+                    os.chown(temp, stat.st_uid, stat.st_gid)
+                except OSError:
+                    pass
+            os.replace(temp, path)
+        _sync_folder(path.parent)
+    except (WriteRefused, OSError):
+        raise
+    except Exception as e:
+        raise WriteRefused(str(e)) from e
+    finally:
+        try:
+            temp.unlink(missing_ok=True)
+        finally:
+            _journal_done(conn, temp)
+
+
+def write_tags(path, bpm=None, genre=None, conn=None) -> bool:
     """Adds the values to the file's tags. True when written, False when the format
-    takes no tags. Raises WriteRefused or OSError, and the original is left as it was."""
+    is not one this app can verify. Raises WriteRefused or OSError, and the original
+    is left as it was."""
     path = Path(path)
     if path.suffix.lower() not in WRITABLE:
         return False
@@ -101,35 +264,24 @@ def write_tags(path, bpm=None, genre=None) -> bool:
         added["genre"] = genre
     if not added:
         return False
-    temp = path.with_name(path.name + TEMP_SUFFIX)
-    try:
-        shutil.copy2(path, temp)
-        audio = MutagenFile(temp, easy=True)
-        if audio is None:
-            raise WriteRefused("Unknown audio format")
+
+    def change(audio):
         if audio.tags is None:
             audio.add_tags()
         for key, value in added.items():
             audio[key] = value
-        audio.save()
-        if not _same_audio(path, temp):
-            raise WriteRefused("The audio differed after writing the tags")
-        if not _kept_all_tags(path, temp, added):
-            raise WriteRefused("Other tags changed while writing")
-        stat = path.stat()
-        if hasattr(os, "chown"):
-            try:
-                os.chown(temp, stat.st_uid, stat.st_gid)
-            except OSError:
-                pass
-        os.replace(temp, path)
-        return True
-    except (WriteRefused, OSError):
-        raise
-    except Exception as e:
-        raise WriteRefused(str(e)) from e
-    finally:
-        temp.unlink(missing_ok=True)
+
+    _rewrite(path, change, added, conn)
+    return True
+
+
+def remove_tags(path, keys, conn=None) -> None:
+    def change(audio):
+        for key in keys:
+            if key in audio:
+                del audio[key]
+
+    _rewrite(path, change, keys, conn)
 
 
 # --- Genre from Deezer --------------------------------------------------------
@@ -177,7 +329,7 @@ def lookup_genre(conn, artist, title, album, now, api=_api):
         return None
     key = f"{stats_db.name_key(names[0])}|{stats_db.name_key(album) or stats_db.title_key(title)}"
     row = conn.execute("SELECT genre, checked_at FROM album_genres WHERE key=?", (key,)).fetchone()
-    if row and (row["genre"] or now - row["checked_at"] < LOOKUP_RETRY_DAYS * 86400):
+    if row and (row["genre"] or now - row["checked_at"] < LOOKUP_RETRY_DAYS * DAY):
         return row["genre"] or None
     try:
         album_id = _find_album_id(names[0], title, album, api)
@@ -198,12 +350,19 @@ def _mtime(path):
         return None
 
 
+def writing_off(conn) -> bool:
+    return bool(mixes_db.get_meta(conn, "metadata_write_off"))
+
+
 def pending(conn, entries, now=None) -> list:
-    """Files never seen or changed since, and those without a genre whose lookup is
-    old enough to try again. A file this app just tagged differs from the index until
-    its next refresh: the file itself says whether it really changed."""
+    """Files never seen or changed since, those without a genre whose lookup is old
+    enough to try again, and those a write failed on, once a day. A file this app just
+    tagged differs from the index until its next refresh: the file itself says whether
+    it really changed."""
     now = now or time.time()
-    known = {r["path"]: r for r in conn.execute("SELECT path, mtime_ns, genre, analyzed_at FROM track_features")}
+    retry_writes = not writing_off(conn)
+    known = {r["path"]: r for r in conn.execute(
+        "SELECT path, mtime_ns, genre, analyzed_at, write_state, write_tried_at FROM track_features")}
     result = []
     for entry in entries:
         path = entry.get("path")
@@ -214,54 +373,111 @@ def pending(conn, entries, now=None) -> list:
             result.append(entry)
         elif row["mtime_ns"] != entry.get("mtime_ns", 0) and _mtime(path) != row["mtime_ns"]:
             result.append(entry)
-        elif not row["genre"] and now - row["analyzed_at"] > LOOKUP_RETRY_DAYS * 86400:
+        elif not row["genre"] and now - row["analyzed_at"] > LOOKUP_RETRY_DAYS * DAY:
+            result.append(entry)
+        elif retry_writes and row["write_state"] == FAILED and now - row["write_tried_at"] >= DAY:
             result.append(entry)
     return result
 
 
-def fix_file(conn, entry, now, api=_api, write=write_tags) -> dict:
-    """Never measures a tempo the file carries, so a lost database costs little."""
+def fix_file(conn, entry, now, api=_api, write=write_tags, write_off=False) -> dict:
+    """Never measures a tempo the file carries or the base knows, so neither a retry
+    nor a lost database costs another analysis of a tagged file."""
     path = entry["path"]
     tag_bpm, tag_genre = read_tags(path)
-    row = conn.execute("SELECT bpm, mtime_ns FROM track_features WHERE path=?", (path,)).fetchone()
-    unchanged = row is not None and row["mtime_ns"] == _mtime(path)
+    row = conn.execute("SELECT * FROM track_features WHERE path=?", (path,)).fetchone()
+    mtime_before = _mtime(path)
+    unchanged = row is not None and row["mtime_ns"] == mtime_before
     bpm = tag_bpm or (row["bpm"] if unchanged and row["bpm"] else None) or audio_tempo.file_tempo(path)
     artist = entry.get("tag_artist") or entry.get("parsed_artist") or ""
     title = entry.get("tag_title") or entry.get("parsed_title") or entry.get("parsed_track_title") or ""
-    genre = tag_genre or lookup_genre(conn, artist, title, entry.get("tag_album") or "", now, api)
-    error = ""
-    written = False
-    new_bpm, new_genre = (bpm if not tag_bpm else None), (genre if not tag_genre else None)
-    if new_bpm or new_genre:
+    genre = tag_genre or (row["genre"] if unchanged and row["genre"] else None) \
+        or lookup_genre(conn, artist, title, entry.get("tag_album") or "", now, api)
+
+    original = row["original_mtime"] if row is not None and row["original_mtime"] else None
+    if original is None:
         try:
-            written = write(path, new_bpm, new_genre)
-        except (WriteRefused, OSError) as e:
-            error = str(e)[:200]
-            logger.info("Could not tag %s: %s", path, e)
+            original = Path(path).stat().st_mtime
+        except OSError:
+            original = None
+    added_bpm = row["added_bpm"] if row is not None else None
+    added_genre = row["added_genre"] if row is not None else None
+
+    new_bpm, new_genre = (bpm if not tag_bpm else None), (genre if not tag_genre else None)
+    state, error = IN_FILE, ""
+    if new_bpm or new_genre:
+        if write_off:
+            state = OFF
+        else:
+            try:
+                state = WRITTEN if write(path, new_bpm, new_genre, conn=conn) else UNSUPPORTED
+                if state == WRITTEN:
+                    added_bpm = str(int(round(new_bpm))) if new_bpm else added_bpm
+                    added_genre = new_genre or added_genre
+            except (WriteRefused, OSError) as e:
+                state, error = FAILED, str(e)[:200]
+                logger.info("Could not tag %s: %s", path, e)
+    mtime_after = _mtime(path)
+    if mtime_after is None:
+        return {"written": False, "error": error or "The file is gone", "state": FAILED, "bpm": bpm, "genre": genre}
     conn.execute(
-        "INSERT OR REPLACE INTO track_features(path, mtime_ns, bpm, genre, analyzed_at, write_error) VALUES (?,?,?,?,?,?)",
-        (path, _mtime(path) or entry.get("mtime_ns", 0), bpm, genre, int(now), error),
+        "INSERT OR REPLACE INTO track_features(path, mtime_ns, bpm, genre, analyzed_at, write_error, write_state,"
+        " write_tried_at, original_mtime, added_bpm, added_genre) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+        (path, mtime_after, bpm, genre, int(now), error, state, int(now), original, added_bpm, added_genre),
     )
-    return {"written": written, "error": error, "bpm": bpm, "genre": genre}
+    # Each file on its own: a measure is expensive, and a brutal stop must not lose it.
+    conn.commit()
+    return {"written": state == WRITTEN, "error": error, "state": state, "bpm": bpm, "genre": genre}
 
 
 def run(conn, entries, progress=None, should_stop=None, pause=0, api=_api, write=write_tags) -> dict:
     report = {"done": 0, "written": 0, "errors": 0}
     total = len(entries)
+    write_off = writing_off(conn)
     for entry in entries:
         if should_stop and should_stop():
             break
-        result = fix_file(conn, entry, time.time(), api, write)
+        result = fix_file(conn, entry, time.time(), api, write, write_off)
         report["done"] += 1
         report["written"] += 1 if result["written"] else 0
         report["errors"] += 1 if result["error"] else 0
-        if report["done"] % COMMIT_EVERY == 0:
-            conn.commit()
-            if progress:
-                progress(report["done"], total)
+        if progress and report["done"] % 25 == 0:
+            progress(report["done"], total)
         if pause:
             time.sleep(pause)
     conn.commit()
+    return report
+
+
+def undo(conn, progress=None) -> dict:
+    """Takes back what this app added, and stops adding: the results stay in mixes.db,
+    so the mixes carry on. A value someone changed since is yours, and stays."""
+    mixes_db.set_meta(conn, "metadata_write_off", True)
+    report = {"undone": 0, "kept": 0, "errors": 0}
+    rows = conn.execute("SELECT * FROM track_features WHERE added_bpm IS NOT NULL OR added_genre IS NOT NULL").fetchall()
+    for index, row in enumerate(rows, start=1):
+        path = row["path"]
+        try:
+            audio = MutagenFile(path, easy=True)
+            keys = []
+            if row["added_bpm"] and _first((audio.tags or {}).get("bpm")) == row["added_bpm"]:
+                keys.append("bpm")
+            if row["added_genre"] and _first((audio.tags or {}).get("genre")) == row["added_genre"]:
+                keys.append("genre")
+            if keys:
+                remove_tags(path, keys, conn)
+                report["undone"] += 1
+            else:
+                report["kept"] += 1
+        except Exception as e:
+            report["errors"] += 1
+            logger.info("Could not undo %s: %s", path, e)
+            continue
+        conn.execute("UPDATE track_features SET added_bpm=NULL, added_genre=NULL, write_state=?, mtime_ns=? WHERE path=?",
+                     (OFF, _mtime(path) or row["mtime_ns"], path))
+        conn.commit()
+        if progress and index % 25 == 0:
+            progress(index, len(rows))
     return report
 
 
@@ -273,16 +489,42 @@ def features_map(conn) -> dict:
 def move_file(conn, old, new) -> None:
     """A file that moves keeps what is known about it, so it is not measured again."""
     conn.execute("UPDATE OR REPLACE track_features SET path=? WHERE path=?", (str(new), str(old)))
+    conn.execute("UPDATE OR REPLACE repair_checked SET path=? WHERE path=?", (str(new), str(old)))
     conn.commit()
 
 
 def status(conn, entries) -> dict:
+    states = dict(conn.execute("SELECT write_state, COUNT(*) FROM track_features GROUP BY write_state").fetchall())
     return {
         "total": len(entries),
         "left": len(pending(conn, entries)),
-        "write_errors": conn.execute("SELECT COUNT(*) FROM track_features WHERE write_error != ''").fetchone()[0],
+        "tagged": states.get(WRITTEN, 0),
+        "only_in_app": states.get(UNSUPPORTED, 0) + states.get(OFF, 0),
+        "write_errors": states.get(FAILED, 0),
+        "can_undo": conn.execute(
+            "SELECT COUNT(*) FROM track_features WHERE added_bpm IS NOT NULL OR added_genre IS NOT NULL").fetchone()[0],
+        "write_off": writing_off(conn),
     }
 
+
+# --- What Repair downloads needs to know --------------------------------------
+
+def original_mtimes(conn) -> dict:
+    """path -> the file's date before this app first tagged it."""
+    return {r["path"]: r["original_mtime"] for r in conn.execute(
+        "SELECT path, original_mtime FROM track_features WHERE original_mtime IS NOT NULL")}
+
+
+def repair_checked(conn) -> set:
+    return {r["path"] for r in conn.execute("SELECT path FROM repair_checked")}
+
+
+def mark_repair_checked(conn, path) -> None:
+    conn.execute("INSERT OR REPLACE INTO repair_checked(path, checked_at) VALUES (?,?)", (str(path), int(time.time())))
+    conn.commit()
+
+
+# --- Running it ---------------------------------------------------------------
 
 def is_running() -> bool:
     return _running.locked()
@@ -294,8 +536,8 @@ def _refresh_library() -> None:
     refresh_library_cache_incremental_with_progress(progress_cb=lambda **kw: None)
 
 
-def start_background(load_entries, task_id=None) -> bool:
-    """One pass at a time. Survives a restart: what was done stays done."""
+def _background(work, task_id):
+    """One job at a time, in the background, followed in Activity when it has a task."""
     if not _running.acquire(blocking=False):
         return False
 
@@ -308,18 +550,8 @@ def start_background(load_entries, task_id=None) -> bool:
 
         conn = mixes_db.connect()
         try:
-            if not available():
-                say("Tempo analysis is not available in this install.", stage="error", done=True, error=True)
-                return
-            todo = pending(conn, load_entries())
-            report = run(conn, todo, pause=PAUSE_SECONDS,
-                         progress=lambda done, total: say(f"{done}/{total} files", stage="fix", progress=round(done * 100 / total)))
-            if report["written"]:
-                _refresh_library()
-            summary = f"{report['done']} files checked, {report['written']} tagged"
-            if report["errors"]:
-                summary += f", {report['errors']} could not be written (is the folder mounted read-only?)"
-            say(summary, stage="done", progress=100, done=True)
+            recover(conn)
+            work(conn, say)
         except Exception as e:
             logger.error("Fix Missing Metadata stopped: %s", e)
             say(f"Stopped: {e}", stage="error", done=True, error=True)
@@ -329,3 +561,51 @@ def start_background(load_entries, task_id=None) -> bool:
 
     threading.Thread(target=runner, daemon=True, name="metadata-fix").start()
     return True
+
+
+def start_background(load_entries, task_id=None) -> bool:
+    """Survives a restart: what was done stays done. Waits for a running repair, which
+    needs the files to itself; the next check picks up from there."""
+
+    def work(conn, say):
+        from core.download_repair import is_running as repairing
+
+        if not available():
+            say("Tempo analysis is not available in this install.", stage="error", done=True, error=True)
+            return
+        todo = pending(conn, load_entries())
+        report = run(conn, todo, pause=PAUSE_SECONDS, should_stop=repairing,
+                     progress=lambda done, total: say(f"{done}/{total} files", stage="fix", progress=round(done * 100 / total)))
+        if report["written"]:
+            _refresh_library()
+        summary = f"{report['done']} files checked, {report['written']} tagged"
+        if report["errors"]:
+            summary += f", {report['errors']} could not be written: kept in the app, tried again tomorrow"
+        say(summary, stage="done", progress=100, done=True)
+
+    return _background(work, task_id)
+
+
+def start_undo(task_id) -> bool:
+    def work(conn, say):
+        report = undo(conn, progress=lambda done, total: say(f"{done}/{total} files", stage="undo", progress=round(done * 100 / total)))
+        if report["undone"]:
+            _refresh_library()
+        summary = f"Removed from {report['undone']} files"
+        if report["kept"]:
+            summary += f", {report['kept']} left as they had changed since"
+        if report["errors"]:
+            summary += f", {report['errors']} could not be changed"
+        say(summary, stage="done", progress=100, done=True)
+
+    return _background(work, task_id)
+
+
+def recover_at_start() -> None:
+    conn = mixes_db.connect()
+    try:
+        cleared = recover(conn)
+        if cleared:
+            logger.info("Cleared %s temporary files left by a brutal stop", cleared)
+    finally:
+        conn.close()

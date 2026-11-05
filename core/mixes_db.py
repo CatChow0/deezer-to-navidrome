@@ -42,7 +42,21 @@ CREATE TABLE IF NOT EXISTS track_features (
     bpm REAL,
     genre TEXT,
     analyzed_at INTEGER NOT NULL,
-    write_error TEXT NOT NULL DEFAULT ''
+    write_error TEXT NOT NULL DEFAULT '',
+    write_state TEXT NOT NULL DEFAULT '',
+    write_tried_at INTEGER NOT NULL DEFAULT 0,
+    original_mtime REAL,
+    added_bpm TEXT,
+    added_genre TEXT
+);
+CREATE TABLE IF NOT EXISTS write_journal (
+    temp TEXT PRIMARY KEY,
+    path TEXT NOT NULL,
+    started_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS repair_checked (
+    path TEXT PRIMARY KEY,
+    checked_at INTEGER NOT NULL
 );
 CREATE TABLE IF NOT EXISTS album_genres (
     key TEXT PRIMARY KEY,

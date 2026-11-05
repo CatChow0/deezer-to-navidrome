@@ -83,6 +83,23 @@ class Api(unittest.TestCase):
         self.addCleanup(conn.close)
         self.assertTrue(mixes_db.get_meta(conn, "metadata_fix_on"))
 
+    def test_the_button_turns_writing_back_on_after_an_undo(self):
+        conn = mixes_db.connect()
+        self.addCleanup(conn.close)
+        mixes_db.set_meta(conn, "metadata_write_off", True)
+        self.post("/api/metadata/fix")
+        self.assertFalse(mixes_db.get_meta(conn, "metadata_write_off"))
+
+    def test_undo_starts_a_task(self):
+        with mock.patch("core.metadata_fix.start_undo") as start:
+            data = self.post("/api/metadata/undo").get_json()
+        start.assert_called_once_with(data["task_id"])
+
+    def test_status_is_in_the_state(self):
+        analysis = self.get()["analysis"]
+        for key in ("tagged", "only_in_app", "write_errors", "can_undo", "write_off"):
+            self.assertIn(key, analysis)
+
     def test_nothing_is_tagged_until_asked(self):
         from core import metadata_fix
         self.client.get("/api/mixes")
