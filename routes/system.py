@@ -27,7 +27,10 @@ from core.config import (
     follow_task,
     kept_config_keys,
     mark_whats_new_seen,
+    cancel_requested,
+    finish_cancelled,
     list_tasks,
+    request_cancel,
     push_task_event,
     push_task_payload,
     push_task_row_update,
@@ -98,11 +101,25 @@ def task_stream(task_id):
             if event is None:
                 yield ": keepalive\n\n"
             else:
-                yield f"id: {index}\ndata: {json.dumps(event, ensure_ascii=False)}\n\n"
+                # The page's clock may differ from the server's: elapsed time and speed
+                # are worked out from these, also when a reload replays the events.
+                task = TASKS.get(task_id) or {}
+                enriched = {**event, "server_now": time.time(), "created_at": task.get("created_at"),
+                            "finished_at": task.get("finished_at"), "cancellable": task.get("cancellable", False)}
+                yield f"id: {index}\ndata: {json.dumps(enriched, ensure_ascii=False)}\n\n"
             if time.monotonic() > deadline:
                 return
 
     return Response(generate(), mimetype="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
+@system_bp.post("/api/tasks/<task_id>/cancel")
+def cancel_task_route(task_id):
+    if task_id not in TASKS:
+        return jsonify({"ok": False, "error": "Unknown task"}), 404
+    if not request_cancel(task_id):
+        return jsonify({"ok": False, "error": "This task cannot be stopped"}), 409
+    return jsonify({"ok": True})
 
 
 @system_bp.get("/api/tasks")
@@ -141,6 +158,7 @@ def config_view():
         match_workers = max(1, int(request.form.get("match_workers", "4") or "4"))
         release_refresh_hours = max(0, int(request.form.get("release_refresh_hours", "24") or "24"))
         download_workers = max(1, int(request.form.get("download_workers", "4") or "4"))
+        metadata_workers = max(1, int(request.form.get("metadata_workers", "4") or "4"))
 
         cfg = {
             "scan_dirs": scan_dirs,
@@ -154,6 +172,7 @@ def config_view():
             "match_workers": match_workers,
             "release_refresh_hours": release_refresh_hours,
             "download_workers": download_workers,
+            "metadata_workers": metadata_workers,
             **kept_config_keys(),
         }
         save_config(cfg)
@@ -322,17 +341,21 @@ def repair_downloads_start():
         return jsonify({"ok": False, "error": "Connect a Deezer account first: the files are downloaded again"}), 400
     if download_repair.is_running():
         return jsonify({"ok": False, "error": "A repair is already running"}), 409
-    task_id = create_task("Repair downloads", kind="download")
+    task_id = create_task("Repair downloads", kind="download", cancellable=True)
 
     def runner():
         try:
             summary = download_repair.repair_downloads(
-                progress=lambda message, percent: push_task_event(task_id, message, stage="repair", progress=percent)
+                progress=lambda message, percent: push_task_event(task_id, message, stage="repair", progress=percent, check_cancel=False),
+                should_stop=lambda: cancel_requested(task_id),
             )
         except Exception as e:
             push_task_event(task_id, f"Repair failed: {e}", stage="error", done=True, error=True)
             return
         repaired, unknown, errors = summary["repaired"], summary["unknown"], summary["errors"]
+        if summary.get("cancelled"):
+            finish_cancelled(task_id, f"Cancelled: {summary['fine'] + len(repaired)} files checked, {len(repaired)} repaired. Click again to go on from there")
+            return
         parts = [f"{len(repaired)} repaired", f"{summary['fine']} already fine"]
         if unknown:
             parts.append(f"{len(unknown)} not found on Deezer")

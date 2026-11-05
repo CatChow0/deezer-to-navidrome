@@ -163,8 +163,11 @@ def progress(conn) -> dict:
 
 
 def start_background_batch() -> bool:
-    """Starts a batch unless one, or a rebuild, is already running."""
-    if stats_import.import_running() or not _busy.acquire(blocking=False):
+    """Starts a batch unless one, or a rebuild, is already running. It also waits for
+    Fix Missing Metadata: both use the same Deezer quota, per address."""
+    from core.metadata_fix import is_running as fixing_metadata
+
+    if stats_import.import_running() or fixing_metadata() or not _busy.acquire(blocking=False):
         return False
 
     def work():

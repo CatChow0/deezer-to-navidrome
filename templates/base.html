@@ -7,7 +7,7 @@
   <title>{% block title %}Deezer → Navidrome{% endblock %}</title>
   <link rel="preload" href="{{ url_for('static', filename='fonts/unbounded-latin-wght-normal.woff2') }}" as="font" type="font/woff2" crossorigin>
   <link rel="preload" href="{{ url_for('static', filename='fonts/instrument-sans-latin-wght-normal.woff2') }}" as="font" type="font/woff2" crossorigin>
-  {% for sheet in ['tokens', 'layers', 'cells', 'components', 'views', 'home', 'config', 'drawer', 'player', 'stats', 'stats-story', 'help'] %}
+  {% for sheet in ['tokens', 'layers', 'cells', 'components', 'views', 'home', 'config', 'drawer', 'player', 'stats', 'stats-story', 'help', 'made-for-you'] %}
   <link rel="stylesheet" href="{{ url_for('static', filename='css/' ~ sheet ~ '.css') }}">
   {% endfor %}
 </head>

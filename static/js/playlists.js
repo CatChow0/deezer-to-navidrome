@@ -436,7 +436,9 @@ function drawerHtml(tile) {
   const cover = tile.dataset.cover;
   const settings = settingsFromTile(tile);
   const imported = tile.dataset.kind === 'xp';
+  const generated = tile.dataset.kind === 'auto';
   let kindLine = `Deezer playlist ${escapeHtml(id)}`;
+  if (generated) kindLine = `Made for you. ${escapeHtml(tile.dataset.subtitle)}`;
   if (tile.dataset.kind === 'mix') kindLine = 'Mix made for you by Deezer, refreshed at each scan';
   if (imported) {
     kindLine = tile.dataset.source === 'spotify'
@@ -453,7 +455,7 @@ function drawerHtml(tile) {
         <div class="chips detail-chips" data-drawer-chips>${automationChips(id, settings)}</div>
         <div class="breakdown" data-breakdown></div>
         ${imported ? '<div class="xp-summary" data-xp-summary></div>' : ''}
-        <div class="detail-actions">
+        <div class="detail-actions" ${generated ? 'hidden' : ''}>
           <button type="button" class="btn" data-action="scan" data-mode="quick" title="Re-match only tracks that are missing or not checked yet">Quick scan</button>
           <button type="button" class="btn btn--ghost" data-action="scan" data-mode="full" title="Re-match every track from scratch">Full scan</button>
           <button type="button" class="btn btn--ghost" data-action="download-missing">Download missing</button>
@@ -465,13 +467,13 @@ function drawerHtml(tile) {
       </div>
     </header>
 
-    <section class="detail-section">
+    <section class="detail-section" ${generated ? 'hidden' : ''}>
       <h3 class="section-title">Automation</h3>
       ${automationSection(id, settings)}
     </section>
 
     <section class="detail-section">
-      <div class="track-filter segmented" role="group" aria-label="Show tracks">
+      <div class="track-filter segmented" role="group" aria-label="Show tracks" ${generated ? 'hidden' : ''}>
         <button type="button" data-filter="all" aria-pressed="true">All</button>
         <button type="button" data-filter="missing" aria-pressed="false">Missing</button>
         <button type="button" data-filter="found" aria-pressed="false">In library</button>
@@ -483,8 +485,8 @@ function drawerHtml(tile) {
           <thead>
             <tr>
               <th class="num">#</th>
-              <th>Deezer track</th>
-              <th>Matched file</th>
+              <th>${generated ? 'Track' : 'Deezer track'}</th>
+              <th>${generated ? 'File' : 'Matched file'}</th>
               <th>Status</th>
               <th class="actions"><span class="sr-only">Download</span></th>
             </tr>

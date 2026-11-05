@@ -63,7 +63,7 @@ def _run_playlist(pl, cfg):
     from core.deezer import convert_playlist, submit_missing_downloads
 
     pid = pl["id"]
-    task_id = create_task(f"Auto scan: {pl.get('title') or pid}", kind="scan", playlist_id=pid)
+    task_id = create_task(f"Auto scan: {pl.get('title') or pid}", kind="scan", playlist_id=pid, cancellable=True)
 
     def on_progress(message=None, progress=None, stage=None, row_update=None):
         if row_update is not None:
@@ -103,7 +103,7 @@ def _refresh_library_after_scans(count):
     from core.library import refresh_library_cache_incremental_with_progress
 
     logger.info(f"[auto-scan] {count} playlist(s) processed — running incremental cache refresh")
-    task_id = create_task("Library refresh (after auto scan)", kind="library")
+    task_id = create_task("Library refresh (after auto scan)", kind="library", cancellable=True)
     try:
         refresh_library_cache_incremental_with_progress(
             progress_cb=lambda message=None, progress=None, stage=None: push_task_event(
@@ -118,6 +118,8 @@ def _refresh_library_after_scans(count):
         push_task_event(task_id, f"Library refresh failed: {e}", stage="error", done=True, error=True)
 
 
+_last_mix_check = 0.0
+MIX_CHECK_SECONDS = 600
 _last_release_attempt = 0.0
 RELEASE_RETRY_SECONDS = 3600
 
@@ -159,6 +161,17 @@ def _scheduler_loop():
 
         _refresh_releases_if_stale()
 
+        # Reading the library index is not free: every few minutes is plenty.
+        global _last_mix_check
+        if time.time() - _last_mix_check >= MIX_CHECK_SECONDS:
+            _last_mix_check = time.time()
+            try:
+                from core import mix_builder
+
+                mix_builder.tick()
+            except Exception as e:
+                logger.error(f"[mixes] Could not check the generated playlists: {e}")
+
         now = int(time.time())
         due = []
         with _lock:
@@ -187,6 +200,12 @@ def _scheduler_loop():
 
 def start():
     global _scheduler_thread, _stop_event
+    try:
+        from core.metadata_fix import recover_at_start
+
+        recover_at_start()
+    except Exception as e:
+        logger.error(f"[metadata] Could not clear temporary files: {e}")
     _stop_event = threading.Event()
     _scheduler_thread = threading.Thread(
         target=_scheduler_loop, daemon=True, name="auto-scan-scheduler"

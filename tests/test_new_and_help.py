@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parent.parent
 NOTES = ROOT / "templates" / "notes"
 HELP = ROOT / "templates" / "help"
 HELP_SECTIONS = ("getting-started", "playlists", "other-platforms", "search-player", "downloads", "library",
-                 "releases", "stats", "settings", "sign-in", "troubleshooting")
+                 "releases", "stats", "made-for-you", "settings", "sign-in", "troubleshooting")
 
 
 def version_key(version):
@@ -111,7 +111,7 @@ class Pages(unittest.TestCase):
         self.assertNotIn('class="new-dot"', self.page())
 
     def test_older_install_has_the_dot_until_opened(self):
-        self.set_config({"notes_seen": "1.12.0"})
+        self.set_config({"notes_seen": "1.0.0"})
         self.assertIn('class="new-dot"', self.page())
         self.assertEqual(self.client.post("/api/whats-new/seen", json={}).status_code, 200)
         self.assertNotIn('class="new-dot"', self.page())

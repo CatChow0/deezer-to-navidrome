@@ -1,0 +1,23 @@
+<p>Turn on playlists built from what you listen to, under <b>Made for you</b> on the Dashboard. Everything is off until you choose <b>Manage</b>.</p>
+
+<ul class="help-list">
+  <li><strong>Daily Mix.</strong> Up to 4 mixes a day, only with music you already have, each around a track, an album or an artist that keeps coming back in your listening. Seeds change every day.</li>
+  <li><strong>Daily Mix+.</strong> The same idea, with a share of tracks you do not have yet, a third by default. One switch chooses Off, Daily Mix or Daily Mix+.</li>
+  <li><strong>Discover.</strong> Every week, only new releases and tracks you never heard, chosen from your habits. It has its own switch.</li>
+  <li><strong>Limits.</strong> <b>Manage</b> sets how often they refresh, their length, the share of new tracks in Daily Mix+, and when downloads stop.</li>
+  <li><strong>How mixes choose.</strong> A track mix looks for the same tempo and genre, an album mix also favors the artists on the album, and an artist mix adds what you barely played of that artist.</li>
+  <li><strong>Fix missing metadata.</strong> Finds the tempo and genre your files lack and adds them to their tags, in <b>Your library</b> or <b>Settings → Library index</b>. Tempo is measured from the audio, genre comes from Deezer. Existing values are kept. A FLAC with room in its header only has that header rewritten, saved first so a brutal stop can put it back, and its audio is not touched. Other files are written on a copy that replaces them only once its audio bytes are found identical. A file that cannot take tags keeps its results in the app, and <b>Undo metadata fix</b> in <b>Manage</b> takes back what was added. New downloads now carry their genre too.</li>
+  <li><strong>Activity.</strong> Each task shows its elapsed time, speed and time left, and its log says when each step happened. Long tasks can now be stopped with <b>Cancel</b>. Buttons waiting for a second click now stand out.</li>
+  <li><strong>Quarantine.</strong> What these playlists download stays on trial for 30 days. Play it twice, or star it or rate it 4 or 5 in Navidrome, and it is kept. Otherwise it waits under <b>To review</b>, and nothing leaves without your decision.</li>
+  <li><strong>Trash.</strong> A removed track waits 30 days in the trash, then its file is deleted and it is never proposed again.</li>
+</ul>
+
+<h4 class="help-h">Before you turn it on</h4>
+<ul class="help-todo">
+  <li>Nothing touches your files until you click <b>Fix missing metadata</b> or turn on a mix. From then on, new files are handled on their own.</li>
+  <li>The first pass takes a while: it reads and tags each file, and Navidrome then reads them again at its next scan. <b>Settings → Performance</b> sets how many files are handled at once. Mixes start once most of it is done.</li>
+  <li>Your music folders must be mounted writable for tags to be added. Otherwise the results still count for the mixes, writing is tried again every day, and Manage tells you.</li>
+  <li>Stars and ratings need Navidrome's database mounted at <code>/import/navidrome</code>, as for the history import. Without it, only plays count.</li>
+  <li>By default, Daily Mix+ can download up to 40 tracks per refresh, until 100 tracks are unheard or quarantine reaches 20 GB. Lower these in <b>Manage</b> first if that is too much.</li>
+  <li>The Docker image is about 110 MB larger, for the tempo measure.</li>
+</ul>

@@ -20,6 +20,10 @@ class Genres(unittest.TestCase):
             self.assertEqual(genre_group(raw), "Rap & Hip-Hop")
         for raw in ("Films/Games", "Film Scores", "Games"):
             self.assertEqual(genre_group(raw), "Film & Game Music")
+        # Deezer answered in French before it was asked for English: old histories hold both.
+        self.assertEqual(genre_group("Films/Jeux vidéo"), "Film & Game Music")
+        self.assertEqual(genre_group("Musique asiatique"), "Asian")
+        self.assertEqual(genre_group("Latino"), "Latin")
         self.assertEqual(genre_group("Antilles"), "Antilles")   # unknown names stay as tagged
         for junk in ("125", "<unknown>", "", None):
             self.assertIsNone(genre_group(junk))

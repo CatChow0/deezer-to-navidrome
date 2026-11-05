@@ -44,8 +44,16 @@ def parse_xp_id(playlist_id: str):
     return parse(playlist_id)
 
 
+# Playlists this app generates from your listening (core/mix_builder.py).
+AUTO_ID = re.compile(r"^auto-(daily|blend)-[1-9]$|^auto-(discover|trial)$")
+
+
+def is_auto_id(playlist_id: str) -> bool:
+    return bool(AUTO_ID.match(str(playlist_id)))
+
+
 def _valid_playlist_id(pid: str) -> bool:
-    return pid.isdigit() or parse_mix_id(pid) is not None or parse_xp_id(pid) is not None
+    return pid.isdigit() or parse_mix_id(pid) is not None or parse_xp_id(pid) is not None or is_auto_id(pid)
 
 
 def _playlist_sort_key(p):
@@ -64,6 +72,8 @@ def playlist_kind(pid: str) -> str:
         return "mix"
     if parse_xp_id(pid):
         return "xp"
+    if is_auto_id(pid):
+        return "auto"
     return "playlist"
 
 
@@ -126,6 +136,8 @@ def save_playlists(playlists):
             entry["auto_download_after_scan"] = bool(item["auto_download_after_scan"])
         if item.get("source"):
             entry["source"] = str(item["source"])
+        if item.get("subtitle"):
+            entry["subtitle"] = str(item["subtitle"])
         cleaned.append(entry)
         seen.add(pid)
 
@@ -168,6 +180,7 @@ def load_playlists():
                 "id": pid,
                 "kind": playlist_kind(pid),
                 "source": str(item.get("source") or (parse_xp_id(pid) or ("", ""))[0]),
+                "subtitle": str(item.get("subtitle") or ""),
                 "title": title or "Mix",
                 "picture": picture,
                 "auto_scan_enabled": bool(item.get("auto_scan_enabled", False)),
@@ -301,6 +314,11 @@ def relative_m3u_path(playlist_dir_host: Path, audio_file_host: Path, mappings) 
 
 
 def build_playlist_preview(playlist_id: str):
+    if is_auto_id(playlist_id):
+        return get_preview_state(playlist_id) or {
+            "playlist_id": playlist_id, "playlist_title": playlist_title(playlist_id), "rows": [],
+            "matched_count": 0, "unmatched_count": 0, "unchecked_count": 0,
+        }
     playlist_title, deezer_tracks = fetch_deezer_playlist_tracks(playlist_id)
     saved_state = get_preview_state(playlist_id) or {}
 
@@ -785,7 +803,10 @@ def _public_api(path, params=None):
             if wait > 0:
                 time.sleep(wait)
             _api_last[0] = time.time()
-        data = requests.get(f"https://api.deezer.com{path}", params=params, timeout=30).json()
+        # English names: genres end up in file tags, and Deezer otherwise follows the
+        # server's country ("Films/Jeux vidéo").
+        data = requests.get(f"https://api.deezer.com{path}", params=params, timeout=30,
+                            headers={"Accept-Language": "en"}).json()
         error = data.get("error") if isinstance(data, dict) else None
         if error and error.get("code") == 4 and attempt < 2:
             time.sleep(1.5)  # quota exceeded: wait for the window to pass

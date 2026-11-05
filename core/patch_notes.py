@@ -3,6 +3,7 @@ templates/notes/<version>.html; a test fails if VERSION has none, so a release
 cannot ship without one."""
 
 RELEASES = [
+    {"version": "1.14.0", "date": "2026-11-06", "title": "Playlists made from your listening"},
     {"version": "1.13.0", "date": "2026-11-05", "title": "Your listening stats are built in"},
     {"version": "1.12.0", "date": "2026-11-03", "title": "Playlists from Spotify and CSV files"},
     {"version": "1.11.2", "date": "2026-10-22", "title": "Clearer setup, exact album badges"},

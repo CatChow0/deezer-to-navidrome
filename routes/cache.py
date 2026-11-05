@@ -39,7 +39,7 @@ def cache_rebuild_route():
 
 @cache_bp.post("/cache/full/start")
 def cache_full_start():
-    task_id = create_task("Full library rebuild", kind="library")
+    task_id = create_task("Full library rebuild", kind="library", cancellable=True)
 
     def runner():
         try:
@@ -66,7 +66,7 @@ def cache_full_start():
 
 @cache_bp.post("/cache/incremental/start")
 def cache_incremental_start():
-    task_id = create_task("Library refresh", kind="library")
+    task_id = create_task("Library refresh", kind="library", cancellable=True)
 
     def runner():
         try:

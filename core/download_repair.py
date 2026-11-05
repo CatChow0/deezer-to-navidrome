@@ -19,9 +19,10 @@ import requests
 from Crypto.Cipher import Blowfish
 from mutagen import File as MutagenFile
 
-from core import deezer_dl
+from core import deezer_dl, metadata_fix, mixes_db
 from core.deezer_account import API_URL
 from core.normalization import normalize_text
+from core.utils import FILES_LOCK
 
 # The built-in downloader shipped on 2026-10-21; older files cannot be broken.
 # A day of margin covers the time zones.
@@ -179,20 +180,27 @@ def _replace(path, payload, song, is_flac):
     temporary.write_bytes(payload)
     try:
         deezer_dl._write_tags(temporary, song, is_flac)
-        os.replace(temporary, path)
+        with FILES_LOCK:
+            os.replace(temporary, path)
     finally:
         if temporary.exists():
             temporary.unlink()
 
 
-def suspect_files(root):
-    """Audio files the faulty downloader may have written."""
+def suspect_files(root, original_mtimes=None, checked=frozenset()):
+    """Audio files the faulty downloader may have written. Adding tags gives a file a
+    new date, so `original_mtimes` holds the date it had before, and an old file stays
+    out. `checked` are files already found fine: checking one again means downloading
+    it again, for an answer that cannot have changed."""
+    original_mtimes = original_mtimes or {}
     files = []
     for path in sorted(root.rglob("*")):
         if path.suffix.lower() not in AUDIO_EXTENSIONS or not path.is_file():
             continue
         try:
-            if path.stat().st_mtime < BROKEN_SINCE:
+            if str(path) in checked:
+                continue
+            if (original_mtimes.get(str(path)) or path.stat().st_mtime) < BROKEN_SINCE:
                 continue
         except OSError:
             continue
@@ -200,20 +208,24 @@ def suspect_files(root):
     return files
 
 
-def repair_downloads(progress=None):
+def repair_downloads(progress=None, should_stop=None):
     """Checks every recent file of the downloads folder and repairs the broken
     ones. `progress(message, percent)` follows it. Returns a summary."""
     if not _running.acquire(blocking=False):
         raise RuntimeError("A repair is already running")
+    conn = mixes_db.connect()
     try:
         root = deezer_dl.download_dir()
-        files = suspect_files(root)
-        summary = {"checked": len(files), "repaired": [], "fine": 0, "unknown": [], "errors": []}
+        files = suspect_files(root, metadata_fix.original_mtimes(conn), metadata_fix.repair_checked(conn))
+        summary = {"checked": len(files), "repaired": [], "fine": 0, "unknown": [], "errors": [], "cancelled": False}
         finder = _Finder()
         say = progress or (lambda message, percent: None)
         say(f"{len(files)} file{'s' if len(files) != 1 else ''} saved since 1.10.0 to check", 0)
 
         for index, path in enumerate(files, start=1):
+            if should_stop and should_stop():
+                summary["cancelled"] = True
+                break
             name = path.relative_to(root).as_posix()
             percent = round(index * 100 / len(files)) if files else 100
             is_flac = AUDIO_EXTENSIONS[path.suffix.lower()]
@@ -221,6 +233,7 @@ def repair_downloads(progress=None):
                 tags = _read_tags(path)
                 if tags["deezer_id"]:
                     # Only the fixed downloader writes this tag.
+                    metadata_fix.mark_repair_checked(conn, path)
                     summary["fine"] += 1
                     say(f"{index}/{len(files)}: {name}: fine", percent)
                     continue
@@ -235,10 +248,12 @@ def repair_downloads(progress=None):
                     summary["unknown"].append(name)
                     say(f"{index}/{len(files)}: {name}: not found on Deezer, left as it is", percent)
                 elif result[0] == "fine":
+                    metadata_fix.mark_repair_checked(conn, path)
                     summary["fine"] += 1
                     say(f"{index}/{len(files)}: {name}: fine", percent)
                 else:
                     _replace(path, result[1], song, is_flac)
+                    metadata_fix.mark_repair_checked(conn, path)
                     summary["repaired"].append(name)
                     say(f"{index}/{len(files)}: {name}: repaired", percent)
             except Exception as e:
@@ -246,4 +261,5 @@ def repair_downloads(progress=None):
                 say(f"{index}/{len(files)}: {name}: error: {e}", percent)
         return summary
     finally:
+        conn.close()
         _running.release()

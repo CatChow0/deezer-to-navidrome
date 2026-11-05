@@ -1,0 +1,86 @@
+<section data-doc-section="made-for-you" hidden>
+  <h3 class="doc-title">Made for you</h3>
+
+  <div class="doc-block">
+    <h4>The three versions</h4>
+    <table>
+      <thead><tr><th>Version</th><th>What it holds</th><th>Refreshed</th></tr></thead>
+      <tbody>
+        <tr><td><b>Daily Mix</b></td><td>Only music you already have</td><td>Every day</td></tr>
+        <tr><td><b>Daily Mix+</b></td><td>Your music, plus a share of tracks to download, a third by default</td><td>Every day</td></tr>
+        <tr><td><b>Discover</b></td><td>Only new releases and tracks you never heard, to download</td><td>Every week</td></tr>
+      </tbody>
+    </table>
+    <p>All are off until you turn them on with <b>Manage</b>. One switch chooses Off, Daily Mix or Daily Mix+, and Discover has its own. Daily Mix needs no Deezer account; the other two download, so they do. Going from one mix to the other keeps the old playlists until the new ones are ready. Off removes them, and tracks on trial stay on trial.</p>
+  </div>
+
+  <div class="doc-block">
+    <h4>How a mix is built</h4>
+    <p>At each refresh the app picks up to 4 seeds among what keeps coming back in your listening: at least a track, an album and an artist, never one artist twice, and not the same seed as the last time.</p>
+    <table>
+      <tbody>
+        <tr><td><b>Around a track</b></td><td>Tracks with a close tempo and the same genre, 2 at most per artist</td></tr>
+        <tr><td><b>Around an album</b></td><td>The same, with the artists on the album first, guests included</td></tr>
+        <tr><td><b>All about an artist</b></td><td>That artist only: what you play, and what you barely played</td></tr>
+      </tbody>
+    </table>
+    <p>About two thirds are tracks you come back to, and one third tracks you own and barely played. Versions of one song, like a live take, count once, and skits and interludes stay out unless you really play them. A mix can be shorter than the length you chose rather than include tracks that do not belong.</p>
+  </div>
+
+  <div class="doc-block">
+    <h4>Fix missing metadata</h4>
+    <p>Almost no file carries its tempo, and many have no genre. <b>Fix missing metadata</b>, in <b>Your library</b> or <b>Settings → Library index</b>, finds what each file lacks: the tempo is measured from the audio, the genre comes from Deezer, one search per album. Both are added to the file's tags, so Navidrome sees them too.</p>
+    <ul>
+      <li><strong>Your files are safe.</strong> A value already there is never replaced. A FLAC with room in its header only has that header rewritten: it is saved first, so a brutal stop can put it back, and the audio is neither moved nor read. Other files are written on a copy, which replaces them only if its audio bytes and its other tags are found identical, and if nothing else changed the file meanwhile.</li>
+      <li><strong>Formats.</strong> FLAC, MP3, OGG and Opus take tags. Other formats, like WAV and M4A, keep their results in the app.</li>
+      <li><strong>Undo.</strong> <b>Undo metadata fix</b> in <b>Manage</b> removes what the app added, except values changed since, and stops writing. Results stay in the app, so the mixes carry on. <b>Fix missing metadata</b> turns writing back on.</li>
+      <li><strong>Each file is done once.</strong> Results are kept in the file and in the app's data, and the pass resumes after a restart. A file is looked at again only if it changes. A genre Deezer did not have is tried again after a month.</li>
+      <li><strong>Speed.</strong> <b>Settings → Performance → Fix missing metadata threads</b> sets how many files are handled at once. A file waiting for its genre steps aside while the others go on, so Deezer's limit of about 8 requests a second does not hold the rest back. The final message in Activity says how long each step took. Stats genre lookups wait until the pass is done, and the speed shown changes as files need Deezer more or less.</li>
+      <li><strong>Cancel.</strong> <b>Cancel</b> in Activity stops it after the files in progress. What is done stays done, and it does not restart on its own until you click the button or turn on a version. It then goes on from where it stopped.</li>
+      <li><strong>When it runs.</strong> Nothing touches your files until you click it or turn on a mix. After that, new files are handled on their own. Automatic mixes wait until most of the library is done.</li>
+      <li><strong>Read-only folders.</strong> A file that cannot be written still counts for the mixes. <b>Manage</b> says how many there are, and writing is tried again every day, without measuring again.</li>
+      <li><strong>Genres are per album.</strong> Deezer gives the genre of an album, so one single can be mislabelled.</li>
+    </ul>
+    <p>After the first pass, Navidrome reads the changed files again at its next scan.</p>
+    <p>An album's tempo is not its average: a candidate is compared with each track, weighted by your plays. A rarely played track that stands out barely counts, and an album with two tempos keeps both. A tempo and its double, like 90 and 180, count as the same.</p>
+    <p>A track without a known tempo is not excluded. A track without a known genre only joins mixes around its own artists.</p>
+  </div>
+
+  <div class="doc-block">
+    <h4>Quarantine</h4>
+    <p>Tracks these playlists download go to the <code>trial</code> folder inside your downloads folder, so Navidrome can play them. The <b>On trial</b> playlist has all of them, and Daily Mix+ replays unheard ones before fetching more.</p>
+    <table>
+      <tbody>
+        <tr><td>Kept</td><td>Played twice, starred or rated 4-5 in Navidrome, added to one of your playlists, or also in your library. It moves to <code>songs</code></td></tr>
+        <tr><td>To review</td><td>30 days without any of that, or rated 1-2. It stays playable until you decide</td></tr>
+        <tr><td>Trash</td><td>You chose <b>Remove</b>. Restorable for 30 days, then the file is deleted and the track is never proposed again</td></tr>
+      </tbody>
+    </table>
+    <p>The trash is the only thing deleted automatically. The app only ever moves or deletes files in the <code>trial</code> folder and its trash, at <code>/data/trial_trash/</code>.</p>
+  </div>
+
+  <div class="doc-block">
+    <h4>Limits</h4>
+    <p>All of these are in <b>Manage</b>:</p>
+    <table>
+      <tbody>
+        <tr><td><b>Refresh Rate</b></td><td>Daily Mix or Daily Mix+ every 24 hours, Discover every 7 days</td></tr>
+        <tr><td><b>Length</b></td><td>30 tracks in each mix, and 30 in Discover</td></tr>
+        <tr><td><b>New tracks percent</b></td><td>33% of each Daily Mix+. Unheard tracks on trial take these places first, so at most 40 tracks are downloaded per refresh with 4 mixes of 30</td></tr>
+        <tr><td><b>Disk Limit</b></td><td>Downloads stop at 100 unheard tracks or 20 GB in quarantine, and Activity says so</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="doc-block">
+    <h4>When something looks wrong</h4>
+    <ul>
+      <li><strong>No mix appears.</strong> Fix missing metadata may still be running: see <b>Manage</b>, or use <b>Regenerate now</b>. A library or listening history with too little in it gives fewer mixes, or none.</li>
+      <li><strong>A track in the wrong mix.</strong> Genres come from your file tags and Deezer, and a wrong tag misleads the mix.</li>
+      <li><strong>"Unmapped path" in Activity.</strong> Add the folder in <b>Settings → Navidrome paths</b>. The downloads folder needs a mapping too.</li>
+      <li><strong>Plays do not keep a track.</strong> Check that plays reach the app, under <b>Stats → Recent plays</b>.</li>
+      <li><strong>Stars and ratings do nothing.</strong> Navidrome's database must be mounted at <code>/import/navidrome</code>. They are read once a day, at the next refresh.</li>
+      <li><strong>"Connect a Deezer account".</strong> Daily Mix+ and Discover need one to download.</li>
+    </ul>
+  </div>
+</section>

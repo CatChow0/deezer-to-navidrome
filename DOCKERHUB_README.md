@@ -2,7 +2,7 @@
 
 **Turn your Deezer playlists into Navidrome `.m3u8` playlists, match them against your local library, and download what is missing straight from Deezer.**
 
-[![Version](https://img.shields.io/badge/version-1.13.0-blue)](https://hub.docker.com/r/catchow/deezer-to-navidrome)
+[![Version](https://img.shields.io/badge/version-1.14.0-blue)](https://hub.docker.com/r/catchow/deezer-to-navidrome)
 [![Python 3](https://img.shields.io/badge/python-3-blue)](https://www.python.org/)
 [![Flask](https://img.shields.io/badge/flask-web%20app-brightgreen)](https://flask.palletsprojects.com/)
 [![GitHub](https://img.shields.io/badge/GitHub-source%20%26%20full%20docs-black)](https://github.com/CatChow0/deezer-to-navidrome)
@@ -10,6 +10,8 @@
 > 📖 **Full documentation:** [github.com/CatChow0/deezer-to-navidrome](https://github.com/CatChow0/deezer-to-navidrome)
 
 ---
+
+**Made for you** builds Daily Mix or Daily Mix+, and Discover, from what you listen to, with tempo and genre filled in by **Fix missing metadata**, your own limits, and a 30-day quarantine for what they download.
 
 The **New** button keeps the notes of each version, and **Help** is a full guide with a search.
 
@@ -121,6 +123,7 @@ The **Stats** tab keeps its own play history in `stats.db`. No Maloja, lb-enrich
 | `DEEZER_DL_DIR` | empty | Downloads folder; empty = the `deezer-dl` music folder |
 | `LIBRARY_WORKERS_PER_DIR` | `2` | Scan threads per folder. `2`=HDD · `4`=RAID · `8`=SSD/NVMe |
 | `MATCH_WORKERS` | `4` | Matching threads. Set to your CPU count |
+| `METADATA_WORKERS` | `4` | Files Fix missing metadata handles at once. Up to your CPU count, 2 on a spinning disk |
 | `DOWNLOAD_WORKERS` | `4` | Downloads at the same time |
 | `DEEZER_ARL` | — | Deezer account cookie (downloads, mixes, release feed) |
 | `DEEZER_ARL_PREMIUM` | — | Premium account cookie, used only for downloads |

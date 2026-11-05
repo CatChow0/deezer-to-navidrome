@@ -5,6 +5,7 @@
   data-kind="{{ playlist.kind }}"
   data-source="{{ playlist.source or '' }}"
   data-title="{{ playlist.title }}"
+  data-subtitle="{{ playlist.subtitle or '' }}"
   data-cover="{{ cover }}"
   data-delete-url="{{ url_for('playlists.delete_playlist', playlist_id=playlist.id) }}"
   data-auto-scan="{{ 'true' if playlist.auto_scan_enabled else 'false' }}"
@@ -20,5 +21,6 @@
     <span class="chips" data-tile-chips></span>
   </span>
   <span class="tile-title">{{ playlist.title }}</span>
+  {% if playlist.subtitle %}<span class="tile-sub">{{ playlist.subtitle }}</span>{% endif %}
 </button>
 {% endmacro %}

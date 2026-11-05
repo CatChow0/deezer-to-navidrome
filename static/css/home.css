@@ -375,6 +375,33 @@
   white-space: nowrap;
 }
 
+.task-cancel {
+  flex: none;
+  padding: 3px 10px;
+}
+
+.task-meta {
+  color: var(--text-soft);
+  font-size: var(--step--1);
+  font-variant-numeric: tabular-nums;
+}
+
+.task[data-state="stopping"] .progress-bar,
+.task[data-state="cancelled"] .progress-bar {
+  background: var(--partial);
+}
+
+.task[data-state="cancelled"] {
+  border-color: var(--partial-line);
+}
+
+/* The final message is the result: it is read in full. */
+.task[data-state="done"] .task-stage,
+.task[data-state="error"] .task-stage,
+.task[data-state="cancelled"] .task-stage {
+  white-space: normal;
+}
+
 .task[data-state="done"] .progress-bar {
   background: var(--ok);
 }

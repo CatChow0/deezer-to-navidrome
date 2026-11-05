@@ -76,6 +76,7 @@ DEFAULT_CONFIG = {
     "match_workers": int(os.environ.get("MATCH_WORKERS", "4") or "4"),
     # Threads downloading from Deezer at the same time.
     "download_workers": int(os.environ.get("DOWNLOAD_WORKERS", "4") or "4"),
+    "metadata_workers": int(os.environ.get("METADATA_WORKERS", "4") or "4"),
     # Hours between automatic refreshes of the release feed; 0 = manual only.
     "release_refresh_hours": 24,
     "notes_seen": WHATS_NEW_ID,
@@ -100,8 +101,13 @@ def _prune_tasks():
             TASKS.pop(task_id, None)
 
 
-def create_task(title="Task", kind="task", playlist_id=None, visible=True):
-    """`visible` tasks are listed in Activity; small ones (single downloads) are not."""
+class TaskCancelled(Exception):
+    """Raised by a task's next progress report once someone asked it to stop."""
+
+
+def create_task(title="Task", kind="task", playlist_id=None, visible=True, cancellable=False):
+    """`visible` tasks are listed in Activity; small ones (single downloads) are not.
+    `cancellable` is only for tasks known to stop cleanly at a progress report."""
     _prune_tasks()
     task_id = str(uuid.uuid4())
     with _tasks_lock:
@@ -111,6 +117,9 @@ def create_task(title="Task", kind="task", playlist_id=None, visible=True):
             "kind": kind,
             "playlist_id": str(playlist_id) if playlist_id else None,
             "visible": visible,
+            "cancellable": cancellable,
+            "cancel_requested": False,
+            "cancelled": False,
             "created_at": time.time(),
             "finished_at": None,
             "done": False,
@@ -121,6 +130,11 @@ def create_task(title="Task", kind="task", playlist_id=None, visible=True):
             "events": [],
             "cond": threading.Condition(),
         }
+    if cancellable:
+        # The page learns from the first event that it can offer Cancel: it must not
+        # have to wait for the first progress report, which can take a while.
+        push_task_payload(task_id, {"type": "status", "message": "Starting", "stage": "starting", "progress": None,
+                                    "done": False, "error": False, "timestamp": int(time.time())})
     return task_id
 
 
@@ -129,6 +143,11 @@ def push_task_payload(task_id, payload):
     if not task:
         return
     with task["cond"]:
+        if payload.get("type") == "status" and payload.get("done") and payload.get("error") and task["cancel_requested"]:
+            # The task stopped because it was asked to: that is not a failure.
+            payload = {**payload, "error": False, "cancelled": True, "message": "Cancelled", "stage": "cancelled"}
+        if payload.get("cancelled"):
+            task["cancelled"] = True
         if payload.get("type") == "status":
             for key in ("message", "stage", "progress"):
                 if payload.get(key) is not None:
@@ -141,7 +160,35 @@ def push_task_payload(task_id, payload):
         task["cond"].notify_all()
 
 
-def push_task_event(task_id, message=None, progress=None, stage=None, done=False, error=False):
+def cancel_requested(task_id) -> bool:
+    task = TASKS.get(task_id)
+    return bool(task and task["cancel_requested"])
+
+
+def request_cancel(task_id) -> bool:
+    """Asks a task to stop. False when it cannot: unknown, finished, or not stoppable."""
+    task = TASKS.get(task_id)
+    if not task or task["done"] or not task["cancellable"]:
+        return False
+    task["cancel_requested"] = True
+    push_task_payload(task_id, {
+        "type": "status", "message": "Stopping", "stage": "stopping", "progress": None,
+        "done": False, "error": False, "timestamp": int(time.time()),
+    })
+    return True
+
+
+def finish_cancelled(task_id, message="Cancelled") -> None:
+    push_task_payload(task_id, {
+        "type": "status", "message": message, "stage": "cancelled", "progress": None,
+        "done": True, "error": False, "cancelled": True, "timestamp": int(time.time()),
+    })
+
+
+def push_task_event(task_id, message=None, progress=None, stage=None, done=False, error=False, check_cancel=True):
+    """`check_cancel=False` for a report made where stopping is handled another way."""
+    if check_cancel and not done and cancel_requested(task_id):
+        raise TaskCancelled()
     push_task_payload(task_id, {
         "type": "status",
         "message": message,
@@ -160,7 +207,7 @@ def push_task_row_update(task_id, row):
 def task_summary(task):
     return {k: task[k] for k in (
         "id", "title", "kind", "playlist_id", "created_at", "finished_at",
-        "done", "error", "stage", "message", "progress",
+        "done", "error", "stage", "message", "progress", "cancellable", "cancel_requested", "cancelled",
     )}
 
 

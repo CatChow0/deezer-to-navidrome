@@ -11,7 +11,7 @@ dedup_bp = Blueprint("dedup", __name__)
 
 @dedup_bp.post("/dedup/start")
 def dedup_start():
-    task_id = create_task("Duplicate scan", kind="dedup")
+    task_id = create_task("Duplicate scan", kind="dedup", cancellable=True)
 
     def on_progress(message=None, progress=None, stage=None, payload=None):
         push_task_event(task_id, message=message, progress=progress, stage=stage)

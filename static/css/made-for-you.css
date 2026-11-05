@@ -1,0 +1,258 @@
+/* Made for you: the generated playlists and the quarantine. The panel itself uses
+   the layout of New and Help (help.css). */
+
+.mfy-modal .overlay-panel {
+  width: min(1040px, 100%);
+  height: min(88vh, 860px);
+}
+
+.mfy-modal .doc-body {
+  grid-template-columns: 170px minmax(0, 1fr);
+}
+
+/* The big switch: real radio buttons, under a thumb that slides between them. */
+.mfy-mode {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin: 0;
+  padding: 5px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-control);
+  background: rgba(4, 3, 14, 0.45);
+}
+
+.mfy-mode-thumb {
+  position: absolute;
+  top: 5px;
+  bottom: 5px;
+  left: 5px;
+  width: calc((100% - 10px) / 3);
+  border-radius: 9px;
+  background: var(--glass-hover);
+  box-shadow: 0 0 0 1px var(--line-strong) inset;
+  transition: transform var(--t-mid) var(--ease-out), background var(--t-mid);
+}
+
+.mfy-mode[data-mode="daily"] .mfy-mode-thumb,
+.mfy-mode[data-mode="blend"] .mfy-mode-thumb {
+  background: var(--mint);
+  box-shadow: none;
+}
+
+.mfy-mode[data-mode="daily"] .mfy-mode-thumb { transform: translateX(100%); }
+.mfy-mode[data-mode="blend"] .mfy-mode-thumb { transform: translateX(200%); }
+
+.mfy-mode-option {
+  position: relative;
+  display: block;
+  cursor: pointer;
+}
+
+.mfy-mode-option input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: inherit;
+}
+
+.mfy-mode-option span {
+  display: block;
+  padding: 13px 8px;
+  border-radius: 9px;
+  color: var(--muted);
+  font-weight: 600;
+  text-align: center;
+  transition: color var(--t-mid);
+}
+
+.mfy-mode-option:hover span {
+  color: var(--text);
+}
+
+.mfy-mode-option input:checked + span {
+  color: var(--text);
+}
+
+.mfy-mode:not([data-mode="off"]) .mfy-mode-option input:checked + span {
+  color: var(--ink);
+}
+
+.mfy-mode-option input:focus-visible + span {
+  outline: 2px solid var(--cyan);
+  outline-offset: 2px;
+}
+
+.mfy-mode-option input:disabled {
+  cursor: not-allowed;
+}
+
+.mfy-mode-option input:disabled + span {
+  opacity: 0.4;
+}
+
+.mfy-mode-text {
+  margin: 10px 2px 14px;
+  color: var(--text-soft);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mfy-mode-thumb {
+    transition: none;
+  }
+}
+
+.mfy-version {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 14px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-control);
+  background: var(--glass-raised);
+}
+
+.mfy-version p {
+  margin: 4px 0 0;
+  color: var(--text-soft);
+}
+
+.mfy-version .switch {
+  flex: none;
+}
+
+.mfy-limits {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.mfy-limit-group {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-control);
+  background: var(--glass-raised);
+}
+
+.mfy-limit-group h5 {
+  margin: 0 0 2px;
+  color: var(--text);
+  font-size: var(--step-0);
+  font-weight: 600;
+}
+
+.mfy-limit-group p {
+  margin: 0;
+  font-size: var(--step--1);
+}
+
+.mfy-limit {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--text-soft);
+  font-size: var(--step--1);
+}
+
+.mfy-limit input {
+  flex: none;
+  width: 84px;
+}
+
+.mfy-limits-save {
+  display: flex;
+  grid-column: 1 / -1;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 14px;
+}
+
+.mfy-limits-save p {
+  margin: 0;
+  font-size: var(--step--1);
+}
+
+.mfy-tracks {
+  display: grid;
+  gap: 2px;
+  margin-top: 12px;
+}
+
+.mfy-track {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 4px;
+  border-bottom: 1px solid var(--line);
+}
+
+.mfy-track-name {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+}
+
+.mfy-track-name > * {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mfy-track-actions {
+  display: flex;
+  flex: none;
+  gap: 6px;
+}
+
+.tile-sub {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: var(--step--1);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mfy-badge {
+  margin-right: 10px;
+  color: var(--partial);
+  font-size: var(--step--1);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+@media (max-width: 760px) {
+  .mfy-modal .overlay-panel {
+    height: calc(100dvh - 2 * var(--gap));
+  }
+
+  .mfy-modal .doc-body {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  .mfy-limits {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .mfy-track {
+    flex-wrap: wrap;
+  }
+
+  .mfy-track-name {
+    flex-basis: calc(100% - 60px);
+  }
+
+  .mfy-track-actions {
+    margin-left: auto;
+  }
+}

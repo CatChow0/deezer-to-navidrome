@@ -170,7 +170,7 @@ def start_release_refresh(title="Release feed refresh"):
     """Runs the refresh in the background unless one is already running; returns the task ID or None."""
     if not refresh_lock.acquire(blocking=False):
         return None
-    task_id = create_task(title, kind="releases")
+    task_id = create_task(title, kind="releases", cancellable=True)
 
     def runner():
         try:

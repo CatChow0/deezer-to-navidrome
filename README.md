@@ -2,7 +2,7 @@
 
 **A self-hosted web app that turns your Deezer playlists into Navidrome `.m3u8` playlists, matches them against your local library, and downloads what is missing straight from Deezer.**
 
-[![Docker Image Version](https://img.shields.io/badge/version-1.13.0-blue)](https://hub.docker.com/r/catchow/deezer-to-navidrome)
+[![Docker Image Version](https://img.shields.io/badge/version-1.14.0-blue)](https://hub.docker.com/r/catchow/deezer-to-navidrome)
 [![Python 3](https://img.shields.io/badge/python-3-blue)](https://www.python.org/)
 [![Flask](https://img.shields.io/badge/flask-web%20app-brightgreen)](https://flask.palletsprojects.com/)
 
@@ -59,6 +59,8 @@ If you self-host your music with Navidrome but discover it on Deezer, this app k
 ## ✨ Features
 
 The interface has four views: **Dashboard**, **Stats**, **Releases** and **Settings**. Long tasks (scans, downloads, library refreshes) run in the background and show their progress in the **Activity** cell, so the rest of the page stays usable.
+
+**Made for you** builds playlists from what you listen to: Daily Mix from music you already have, Daily Mix+ with a share of tracks to download (a third by default), and Discover with only tracks you never heard. Mixes form around a track, an album or an artist that keeps coming back, using tempo and genre. One switch chooses Off, Daily Mix or Daily Mix+, Discover has its own, and **Manage** sets how often they refresh, their length, the share of new tracks and the disk limits. **Fix missing metadata** finds what your files lack (tempo measured from the audio, genre from Deezer) and adds it to their tags without replacing anything: in the free space of a FLAC header, saved first so a brutal stop can put it back, or on a copy checked against the original. What these playlists download stays on trial for 30 days: played twice, or starred or well rated in Navidrome, it is kept; otherwise it waits for your decision, and nothing leaves without it. Everything is off until you turn it on.
 
 Two buttons in the topbar explain the app. **New** keeps the notes of each version, one tab each, and shows a dot after an upgrade until you open it. **Help** is a full guide with a search: how each part works, every setting, and what to do when something goes wrong, with live checks of your Deezer account and downloads folder.
 
@@ -355,6 +357,9 @@ Both back up `stats.db` first (the last 3, as `stats.db.bak-*` in `DATA_DIR`) an
 | `dedup_choices.json` | **Persistent** duplicate decisions | Survives restarts |
 | `stats.db` | Listening history | Survives **Reset data**; replaced only by Start clean |
 | `stats.db.bak-*` | Backups made before each rebuild (the last 3) | Replaced by newer ones |
+| `mixes.db` | Made for you: quarantine, mix history, settings, tempo and genre results | Survives **Reset data** and Start clean |
+| `metadata_journal/` | Saved FLAC headers while Fix missing metadata writes them | Emptied as each file is done, or at the next start |
+| `trial_trash/` | Tracks removed from quarantine | Deleted after 30 days |
 | `stats_sources/` | Saved copy of Maloja's database | Until replaced by a larger one |
 | `stats_covers/` | Cached artist, album and track covers | Survives **Reset data**; can be deleted, it fills again |
 | `covers/` | Playlist artwork | Until cleaned up |
@@ -627,6 +632,7 @@ The folder and performance variables are read **on first start** to create `conf
 | `DEEZER_DL_DIR` | empty | Downloads folder. Empty: the music folder named `deezer-dl` |
 | `LIBRARY_WORKERS_PER_DIR` | `2` | Scan threads per music folder: `2` HDD, `4` RAID, `8` SSD/NVMe |
 | `MATCH_WORKERS` | `4` | Matching threads; set it to your CPU count |
+| `METADATA_WORKERS` | `4` | Files Fix missing metadata handles at once; up to your CPU count, about 80 MB of memory each, 2 on a spinning disk |
 | `DOWNLOAD_WORKERS` | `4` | Downloads running at the same time |
 | `DEEZER_ARL` | — | `arl` cookie of the Deezer account (mixes, release feed, downloads) |
 | `DEEZER_ARL_PREMIUM` | — | `arl` of a premium account, used only for downloads |
@@ -840,6 +846,17 @@ All routes need a signed-in session, except `/health` and the three routes the A
 | `/api/releases` | GET | Release feed (API token accepted) |
 | `/api/releases/refresh`, `/api/releases/mute` | POST | Refresh the feed, mute an artist |
 
+#### Made for you
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/api/mixes` | GET | Settings, metadata status and quarantine |
+| `/api/mixes/settings` | POST | Mode (`mix_mode`: `off`, `daily`, `blend`), `discover` and limits |
+| `/api/mixes/generate` | POST | Build what is turned on now |
+| `/api/mixes/trial/<id>/keep`, `/remove`, `/restore` | POST | Decide about one track |
+| `/api/mixes/trial/remove-pending` | POST | Remove everything waiting under To review |
+| `/api/metadata/fix`, `/api/metadata/undo` | POST | Start Fix missing metadata, or undo it |
+
 #### System
 
 | Endpoint | Method | Purpose |
@@ -848,6 +865,7 @@ All routes need a signed-in session, except `/health` and the three routes the A
 | `/admin/clear/<what>` | POST | `library-cache`, `preview-state`, `playlists`, `dedup-report`, `dedup-choices`, `all` |
 | `/tasks/<id>/stream` | GET | Task progress (Server-Sent Events) |
 | `/api/tasks` | GET | Running and recent tasks |
+| `/api/tasks/<id>/cancel` | POST | Stop a task that can be cancelled |
 | `/health` | GET | Health check |
 | `/api/version`, `/api/latest-version` | GET | Current and latest version |
 | `/login`, `/logout`, `/setup` | GET/POST | Sign-in |
@@ -990,6 +1008,14 @@ core/
 ├── releases.py         # Release feed
 ├── scheduler.py        # Automatic playlist scans and release refreshes
 ├── dedup.py            # Duplicate analysis and apply
+├── stats_*.py          # Listening history, imports, recaps
+├── metadata_fix.py     # Fix missing metadata: tempo, genre, safe tag writing
+├── audio_tempo.py      # Tempo measured from the audio
+├── mix_taste.py        # Listening habits, seeds, choosing your own tracks
+├── mix_candidates.py   # Tracks to download around a seed or your habits
+├── mix_builder.py      # Daily Mix, Daily Mix+ and Discover
+├── mixes_db.py         # mixes.db
+├── trial.py            # Quarantine and its trash
 ├── webhook.py          # CatBoard webhook
 ├── utils.py            # Audio extensions, tag reading
 └── version.py          # Current and latest version
@@ -1000,6 +1026,9 @@ routes/
 ├── account.py          # /api/deezer/*, /api/releases*
 ├── cache.py            # /cache/*, /api/library/*
 ├── dedup.py            # /dedup/*
+├── stats.py            # /stats*, listening stats and recaps
+├── listenbrainz.py     # /apis/listenbrainz/1/*, plays sent by Navidrome
+├── mixes.py            # /api/mixes*, /api/metadata/*
 ├── auth.py             # /login, /setup, /api/auth/*, /api/webhook
 └── system.py           # /config, /deezer-dl/*, /tasks/*, /admin/*, /health
 
