@@ -128,6 +128,25 @@ class Api(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn(b'data-view-name="stats"', response.data)
 
+    def test_history_lives_in_the_stats_view_and_the_token_in_settings(self):
+        page = self.client.get("/stats", headers={"Accept": "text/html"}).data.decode()
+        stats = page[page.index('data-view-name="stats"'):page.index('data-view-name="releases"')]
+        settings = page[page.index('data-view-name="settings"'):]
+        self.assertIn("data-stats-history", stats)
+        self.assertNotIn("data-stats-history", settings)
+        self.assertIn("data-stats-settings", settings)
+
+    def test_settings_keeps_every_section_inside_one_form_or_group(self):
+        page = self.client.get("/config", headers={"Accept": "text/html"}).data.decode()
+        for marker in ("sources-title", "mapping-title", "dl-title", "perf-title", "feed-settings-title", "files-title",
+                       "account-title", "listening-title", "security-title", "index-title", "settings-activity-title", "danger-title"):
+            self.assertEqual(page.count(f'aria-labelledby="{marker}"'), 1, marker)
+        form = page[page.index('id="settings-form"'):page.index("</form>", page.index('id="settings-form"'))]
+        for field in ("scan_dirs", "mapping_host[]", "deezer_dl_dir", "library_workers_per_dir", "release_refresh_hours", "playlists_base_dir"):
+            self.assertIn(f'name="{field}"', form)
+        settings = page[page.index('data-view-name="settings"'):page.index("</main>")]
+        self.assertNotIn("<aside", settings)
+
     def test_reset_buttons_leave_history_alone(self):
         conn = stats_db.connect()
         stats_db.add_play(conn, stats_db.upsert_track(conn, "Song", ["A"]), None, 100, 1000, "live")

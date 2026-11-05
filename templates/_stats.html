@@ -4,14 +4,15 @@
       <p class="muted">Loading…</p>
     </div>
     <div class="st-shelf" data-stats-shelf hidden></div>
+    <a class="btn btn--ghost btn--sm st-manage" href="#st-history" data-stats-manage>Manage history</a>
   </section>
 
   <div class="span-12 st-empty" data-stats-empty hidden>
     <section class="cell">
       <div class="cell-body">
         <h2 class="cell-title">No plays yet</h2>
-        <p class="st-empty-text">Import your history from Navidrome and Maloja, or point Navidrome at this app to record new plays. Both are set up in Settings.</p>
-        <a class="btn" href="{{ url_for('system.config_view') }}" data-view-link="settings">Open Settings</a>
+        <p class="st-empty-text">Import your history from Navidrome and Maloja below, or point Navidrome at this app to record new plays. That part is set up in Settings.</p>
+        <a class="btn" href="{{ url_for('system.config_view') }}" data-view-link="settings">Set up new plays</a>
       </div>
     </section>
   </div>
@@ -74,6 +75,18 @@
     <div class="cell-body">
       <div class="table-wrap" data-stats-plays></div>
       <div class="st-pager" data-stats-pager></div>
+    </div>
+  </section>
+
+  <section class="cell span-12" id="st-history" aria-labelledby="st-history-title">
+    <div class="cell-head">
+      <div>
+        <h2 class="cell-title" id="st-history-title">Your history</h2>
+        <p class="cell-sub">What the Stats tab knows, and how to rebuild it from Navidrome and Maloja.</p>
+      </div>
+    </div>
+    <div class="cell-body st-history" data-stats-history>
+      <p class="muted">Loading…</p>
     </div>
   </section>
 </div>

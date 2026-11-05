@@ -4,8 +4,12 @@
     <p class="page-lead">Where your music lives, how Navidrome sees it, and how hard the scanner may work.</p>
   </div>
 
-  <form method="post" action="{{ url_for('system.config_view') }}" class="stack span-8" id="settings-form">
-    <section class="cell" aria-labelledby="sources-title">
+  <h2 class="settings-group span-12">Music and downloads</h2>
+
+  <form method="post" action="{{ url_for('system.config_view') }}" class="span-12 settings-form" id="settings-form">
+    <div class="settings-columns">
+      <div class="stack">
+<section class="cell" aria-labelledby="sources-title">
       <div class="cell-head">
         <div>
           <h2 class="cell-title" id="sources-title">Music folders</h2>
@@ -20,7 +24,7 @@
       </div>
     </section>
 
-    <section class="cell" aria-labelledby="mapping-title">
+<section class="cell" aria-labelledby="mapping-title">
       <div class="cell-head">
         <div>
           <h2 class="cell-title" id="mapping-title">Navidrome paths</h2>
@@ -53,8 +57,35 @@
       </div>
     </section>
 
-    <div class="bento bento--even">
-      <section class="cell span-6" aria-labelledby="dl-title">
+<section class="cell" aria-labelledby="files-title">
+      <div class="cell-head">
+        <div>
+          <h2 class="cell-title" id="files-title">Data files</h2>
+          <p class="cell-sub">Where the app keeps its state. The defaults are fine unless you moved them.</p>
+        </div>
+      </div>
+      <div class="cell-body form-grid">
+        <label class="form-field">
+          <span>Generated playlists folder</span>
+          <input class="mono" type="text" name="playlists_base_dir" value="{{ config.playlists_base_dir }}">
+        </label>
+        <label class="form-field">
+          <span>Saved playlists</span>
+          <input class="mono" type="text" name="playlist_ids_file" value="{{ config.playlist_ids_file }}">
+        </label>
+        <label class="form-field">
+          <span>Library index</span>
+          <input class="mono" type="text" name="library_cache_file" value="{{ config.library_cache_file }}">
+        </label>
+        <label class="form-field">
+          <span>Playlist match results</span>
+          <input class="mono" type="text" name="preview_state_file" value="{{ config.preview_state_file or '' }}" placeholder="/data/playlist_preview_state.json">
+        </label>
+      </div>
+    </section>
+      </div>
+      <div class="stack">
+<section class="cell" aria-labelledby="dl-title">
         <div class="cell-head">
           <h2 class="cell-title" id="dl-title">Downloads</h2>
         </div>
@@ -79,7 +110,7 @@
         </div>
       </section>
 
-      <section class="cell span-6" aria-labelledby="perf-title">
+<section class="cell" aria-labelledby="perf-title">
         <div class="cell-head">
           <h2 class="cell-title" id="perf-title">Performance</h2>
         </div>
@@ -117,9 +148,8 @@
           </label>
         </div>
       </section>
-    </div>
 
-    <section class="cell" aria-labelledby="feed-settings-title">
+<section class="cell" aria-labelledby="feed-settings-title">
       <div class="cell-head">
         <div>
           <h2 class="cell-title" id="feed-settings-title">Release feed</h2>
@@ -138,33 +168,8 @@
         </label>
       </div>
     </section>
-
-    <section class="cell" aria-labelledby="files-title">
-      <div class="cell-head">
-        <div>
-          <h2 class="cell-title" id="files-title">Data files</h2>
-          <p class="cell-sub">Where the app keeps its state. The defaults are fine unless you moved them.</p>
-        </div>
       </div>
-      <div class="cell-body form-grid">
-        <label class="form-field">
-          <span>Generated playlists folder</span>
-          <input class="mono" type="text" name="playlists_base_dir" value="{{ config.playlists_base_dir }}">
-        </label>
-        <label class="form-field">
-          <span>Saved playlists</span>
-          <input class="mono" type="text" name="playlist_ids_file" value="{{ config.playlist_ids_file }}">
-        </label>
-        <label class="form-field">
-          <span>Library index</span>
-          <input class="mono" type="text" name="library_cache_file" value="{{ config.library_cache_file }}">
-        </label>
-        <label class="form-field">
-          <span>Playlist match results</span>
-          <input class="mono" type="text" name="preview_state_file" value="{{ config.preview_state_file or '' }}" placeholder="/data/playlist_preview_state.json">
-        </label>
-      </div>
-    </section>
+    </div>
 
     <div class="cell save-bar">
       <p data-save-status>Changes apply as soon as they are saved.</p>
@@ -172,8 +177,10 @@
     </div>
   </form>
 
-  <aside class="stack span-4 side">
-    <section class="cell" aria-labelledby="account-title">
+  <h2 class="settings-group span-12">Accounts and connections</h2>
+
+  <div class="span-12 bento bento--even">
+<section class="cell span-4" aria-labelledby="account-title">
       <div class="cell-head">
         <div>
           <h2 class="cell-title" id="account-title">Deezer account</h2>
@@ -185,11 +192,11 @@
       </div>
     </section>
 
-    <section class="cell" aria-labelledby="listening-title">
+<section class="cell span-4" aria-labelledby="listening-title">
       <div class="cell-head">
         <div>
           <h2 class="cell-title" id="listening-title">Listening stats</h2>
-          <p class="cell-sub">Where the Stats tab gets your plays, and how to rebuild them.</p>
+          <p class="cell-sub">How Navidrome sends this app your new plays. Your history and rebuilds are in the Stats tab.</p>
         </div>
       </div>
       <div class="cell-body" data-stats-settings>
@@ -197,7 +204,7 @@
       </div>
     </section>
 
-    <section class="cell" aria-labelledby="security-title">
+<section class="cell span-4" aria-labelledby="security-title">
       <div class="cell-head">
         <div>
           <h2 class="cell-title" id="security-title">Sign-in and other apps</h2>
@@ -208,8 +215,12 @@
         <p class="muted">Loading…</p>
       </div>
     </section>
+  </div>
 
-    <section class="cell" aria-labelledby="index-title">
+  <h2 class="settings-group span-12">Maintenance</h2>
+
+  <div class="span-12 bento bento--even">
+<section class="cell span-4" aria-labelledby="index-title">
       <div class="cell-head">
         <h2 class="cell-title" id="index-title">Library index</h2>
       </div>
@@ -229,7 +240,7 @@
       </div>
     </section>
 
-    <section class="cell" aria-labelledby="settings-activity-title">
+<section class="cell span-4" aria-labelledby="settings-activity-title">
       <div class="cell-head">
         <h2 class="cell-title" id="settings-activity-title">Activity</h2>
       </div>
@@ -239,7 +250,7 @@
       </div>
     </section>
 
-    <section class="cell cell--danger" aria-labelledby="danger-title">
+<section class="cell span-4 cell--danger" aria-labelledby="danger-title">
       <div class="cell-head">
         <div>
           <h2 class="cell-title" id="danger-title">Reset data</h2>
@@ -268,5 +279,5 @@
         {% endfor %}
       </div>
     </section>
-  </aside>
+  </div>
 </div>

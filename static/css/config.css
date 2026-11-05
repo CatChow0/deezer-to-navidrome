@@ -12,6 +12,31 @@
   letter-spacing: -0.04em;
 }
 
+.settings-group {
+  margin: 14px 6px 0;
+  color: var(--text-soft);
+  font-size: var(--step-0);
+  font-weight: 600;
+}
+
+.settings-form {
+  display: grid;
+  gap: var(--gap);
+}
+
+.settings-columns {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: var(--gap);
+}
+
+@media (max-width: 900px) {
+  .settings-columns {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 .page-lead {
   margin: 6px 0 0;
   color: var(--muted);
@@ -241,4 +266,9 @@
 
 .dl-folder--warn {
   color: var(--miss);
+}
+
+/* Stretched to match its row: the actions stay together at the top. */
+.cache-actions {
+  align-content: start;
 }

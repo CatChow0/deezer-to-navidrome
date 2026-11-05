@@ -148,13 +148,15 @@
           <button type="button" data-story-pause>Pause</button>
           <button type="button" data-story-mute>Mute</button>
           <input type="range" min="0" max="100" step="1" data-story-volume aria-label="Volume">
+          <span class="st-paused" data-story-paused role="img" aria-label="Paused" hidden>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5h3.5v14H7zM13.5 5H17v14h-3.5z" fill="currentColor"/></svg>
+          </span>
           <span class="st-story-count" data-story-count></span>
         </div>
       </div>
       <button type="button" class="icon-btn overlay-close" data-overlay-close aria-label="Close the recap">×</button>
-      <span class="st-paused" data-story-paused hidden>Paused</span>
-      <button type="button" class="st-skip-link" data-story-prev aria-label="Previous slide">‹</button>
-      <button type="button" class="st-skip-link" data-story-next aria-label="Next slide">›</button>
+      <button type="button" class="st-skip-link" data-story-prev aria-label="Previous slide"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15.5 5l-7 7 7 7"/></svg></button>
+      <button type="button" class="st-skip-link" data-story-next aria-label="Next slide"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8.5 5l7 7-7 7"/></svg></button>
     </div>
   </section>
 </div>

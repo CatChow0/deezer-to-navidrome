@@ -309,7 +309,7 @@ The route checks this token itself, even with `DISABLE_AUTH`.
 
 ### Importing your history
 
-Mount the sources read-only, then choose **Rebuild (merge)** in **Settings → Listening stats**:
+Mount the sources read-only, then choose **Rebuild (merge)** under **Stats → Your history**:
 
 ```yaml
 volumes:

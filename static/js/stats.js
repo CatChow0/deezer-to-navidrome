@@ -419,6 +419,14 @@ export function initStats(drawer) {
     }, 250);
   });
 
+  on(root, 'click', '[data-stats-manage]', event => {
+    event.preventDefault();
+    document.getElementById('st-history').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+
+  // A rebuild changed what there is to show.
+  document.addEventListener('stats:changed', refresh);
+
   onViewShown(name => {
     if (name === 'stats') refresh();
   });

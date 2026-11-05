@@ -444,6 +444,7 @@ function closed() {
   pointer = null;
   held = false;
   document.removeEventListener('keydown', onKey);
+  document.removeEventListener('keyup', onKeyUp);
   document.removeEventListener('visibilitychange', onVisibility);
   stopPreview();
   setPlayerHidden(false);
@@ -455,17 +456,26 @@ function onVisibility() {
 }
 
 function onKey(event) {
-  if (event.target.matches?.('input')) return;
+  // Space always means pause, wherever the last click left the focus. Taken
+  // here, it must not also press a focused button; Enter still does that.
+  if (event.code === 'Space') {
+    event.preventDefault();
+    if (!event.repeat) setPaused(!paused);
+    return;
+  }
+  if (event.target.matches?.('input')) return; // arrow keys move the volume there
   if (event.key === 'ArrowRight') {
     event.preventDefault();
     show(current + 1);
   } else if (event.key === 'ArrowLeft') {
     event.preventDefault();
     show(current - 1);
-  } else if (event.key === ' ' && !event.target.closest?.('button')) {
-    event.preventDefault();
-    setPaused(!paused);
   }
+}
+
+// Some browsers press a focused button when Space is released.
+function onKeyUp(event) {
+  if (event.code === 'Space') event.preventDefault();
 }
 
 function start() {
@@ -491,6 +501,7 @@ async function openRecap(kind, key) {
   setPlayerHidden(true);
   syncAudioControls();
   document.addEventListener('keydown', onKey);
+  document.addEventListener('keyup', onKeyUp);
   document.addEventListener('visibilitychange', onVisibility);
   story.open({ label: 'Recap', closeHandler: closed });
 
