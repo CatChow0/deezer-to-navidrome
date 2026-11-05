@@ -121,6 +121,27 @@ select option {
   background: rgba(244, 63, 94, 0.22);
 }
 
+/* Waiting for a second click: it has to catch the eye. */
+.btn[data-armed="true"] {
+  background: var(--partial);
+  border-color: var(--partial);
+  color: var(--ink);
+  font-weight: 600;
+  animation: btn-armed 1.1s ease-in-out infinite;
+}
+
+.btn[data-armed="true"]:hover:not(:disabled) {
+  background: var(--partial);
+}
+
+@keyframes btn-armed {
+  50% { box-shadow: 0 0 0 4px var(--partial-bg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .btn[data-armed="true"] { animation: none; }
+}
+
 .btn--danger[data-armed="true"] {
   background: var(--danger);
   border-color: var(--danger);

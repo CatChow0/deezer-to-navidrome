@@ -19,7 +19,7 @@ from pathlib import Path
 
 from mutagen import File as MutagenFile
 
-from core import audio_tempo, mixes_db, stats_db
+from core import audio_tempo, config, mixes_db, stats_db
 from core.utils import FILES_LOCK
 
 logger = logging.getLogger(__name__)
@@ -37,6 +37,9 @@ CHUNK = 1024 * 1024
 
 _running = threading.Lock()
 _lookup_lock = threading.Lock()
+_current_task = None
+PROGRESS_EVERY_FILES = 25
+PROGRESS_EVERY_SECONDS = 5
 
 
 class WriteRefused(Exception):
@@ -364,6 +367,11 @@ def _mtime(path):
         return None
 
 
+def paused(conn) -> bool:
+    """Cancelled by hand: no automatic pass until it is asked for again."""
+    return bool(mixes_db.get_meta(conn, "metadata_fix_paused"))
+
+
 def writing_off(conn) -> bool:
     return bool(mixes_db.get_meta(conn, "metadata_write_off"))
 
@@ -461,6 +469,7 @@ def run(conn, entries, progress=None, should_stop=None, pause=0, api=_api, write
     write_off = writing_off(conn)
     queue = iter(entries)
     lock = threading.Lock()
+    last_report = [time.monotonic()]
 
     def work(thread_conn):
         while True:
@@ -480,9 +489,12 @@ def run(conn, entries, progress=None, should_stop=None, pause=0, api=_api, write
                 report["done"] += 1
                 report["written"] += 1 if result["written"] else 0
                 report["errors"] += 1 if result["error"] else 0
-                done = report["done"]
-            if progress and done % 25 == 0:
-                progress(done, total)
+                due = report["done"] % PROGRESS_EVERY_FILES == 0 or time.monotonic() - last_report[0] >= PROGRESS_EVERY_SECONDS
+                if due:
+                    last_report[0] = time.monotonic()
+                snapshot = dict(report)
+            if progress and due:
+                progress(snapshot["done"], total, snapshot["written"], snapshot["errors"])
             if pause:
                 time.sleep(pause)
 
@@ -505,13 +517,15 @@ def run(conn, entries, progress=None, should_stop=None, pause=0, api=_api, write
     return report
 
 
-def undo(conn, progress=None) -> dict:
+def undo(conn, progress=None, should_stop=None) -> dict:
     """Takes back what this app added, and stops adding: the results stay in mixes.db,
     so the mixes carry on. A value someone changed since is yours, and stays."""
     mixes_db.set_meta(conn, "metadata_write_off", True)
     report = {"undone": 0, "kept": 0, "errors": 0}
     rows = conn.execute("SELECT * FROM track_features WHERE added_bpm IS NOT NULL OR added_genre IS NOT NULL").fetchall()
     for index, row in enumerate(rows, start=1):
+        if should_stop and should_stop():
+            break
         path = row["path"]
         try:
             audio = MutagenFile(path, easy=True)
@@ -560,6 +574,7 @@ def status(conn, entries) -> dict:
         "can_undo": conn.execute(
             "SELECT COUNT(*) FROM track_features WHERE added_bpm IS NOT NULL OR added_genre IS NOT NULL").fetchone()[0],
         "write_off": writing_off(conn),
+        "paused": paused(conn),
     }
 
 
@@ -592,59 +607,87 @@ def _refresh_library() -> None:
     refresh_library_cache_incremental_with_progress(progress_cb=lambda **kw: None)
 
 
+def current_task():
+    return _current_task
+
+
 def _background(work, task_id):
-    """One job at a time, in the background, followed in Activity when it has a task."""
+    """One job at a time, in the background, always visible in Activity once it has
+    something to do: nothing should write to your files out of sight."""
+    global _current_task
     if not _running.acquire(blocking=False):
         return False
+    _current_task = task_id
 
     def runner():
-        from core.config import push_task_event
-
-        def say(message, **kw):
-            if task_id:
-                push_task_event(task_id, message, **kw)
-
+        global _current_task
         conn = mixes_db.connect()
         try:
             recover(conn)
-            work(conn, say)
+            work(conn)
         except Exception as e:
             logger.error("Fix Missing Metadata stopped: %s", e)
-            say(f"Stopped: {e}", stage="error", done=True, error=True)
+            if _current_task:
+                config.push_task_event(_current_task, f"Stopped: {e}", stage="error", done=True, error=True)
         finally:
             conn.close()
+            _current_task = None
             _running.release()
 
     threading.Thread(target=runner, daemon=True, name="metadata-fix").start()
     return True
 
 
+def _say(message, **kw):
+    if _current_task:
+        config.push_task_event(_current_task, message, check_cancel=False, **kw)
+
+
+def _cancelled() -> bool:
+    return bool(_current_task and config.cancel_requested(_current_task))
+
+
 def start_background(load_entries, task_id=None) -> bool:
     """Survives a restart: what was done stays done. Waits for a running repair, which
     needs the files to itself; the next check picks up from there."""
 
-    def work(conn, say):
+    def work(conn):
+        global _current_task
         from core.download_repair import is_running as repairing
 
         if not available():
-            say("Tempo analysis is not available in this install.", stage="error", done=True, error=True)
+            _say("Tempo analysis is not available in this install.", stage="error", done=True, error=True)
             return
         todo = pending(conn, load_entries())
-        report = run(conn, todo, pause=PAUSE_SECONDS, should_stop=repairing, workers=workers_setting(),
-                     progress=lambda done, total: say(f"{done}/{total} files", stage="fix", progress=round(done * 100 / total)))
+        if not todo:
+            _say("Nothing to do: every file is up to date", stage="done", progress=100, done=True)
+            return
+        if not _current_task:
+            _current_task = config.create_task("Fix missing metadata", kind="metadata", cancellable=True)
+
+        def progress(done, total, written, errors):
+            _say(f"{done}/{total} files, {written} tagged, {errors} errors", stage="fix", progress=round(done * 100 / total))
+
+        report = run(conn, todo, pause=PAUSE_SECONDS, should_stop=lambda: repairing() or _cancelled(),
+                     workers=workers_setting(), progress=progress)
         if report["written"]:
             _refresh_library()
         summary = f"{report['done']} files checked, {report['written']} tagged"
         if report["errors"]:
             summary += f", {report['errors']} could not be written: kept in the app, tried again tomorrow"
-        say(summary, stage="done", progress=100, done=True)
+        if _cancelled():
+            mixes_db.set_meta(conn, "metadata_fix_paused", True)
+            config.finish_cancelled(_current_task, f"Cancelled: {summary}. Those stay done, and it goes on from there when you ask again")
+            return
+        _say(summary, stage="done", progress=100, done=True)
 
     return _background(work, task_id)
 
 
 def start_undo(task_id) -> bool:
-    def work(conn, say):
-        report = undo(conn, progress=lambda done, total: say(f"{done}/{total} files", stage="undo", progress=round(done * 100 / total)))
+    def work(conn):
+        report = undo(conn, should_stop=_cancelled,
+                      progress=lambda done, total: _say(f"{done}/{total} files", stage="undo", progress=round(done * 100 / total)))
         if report["undone"]:
             _refresh_library()
         summary = f"Removed from {report['undone']} files"
@@ -652,7 +695,10 @@ def start_undo(task_id) -> bool:
             summary += f", {report['kept']} left as they had changed since"
         if report["errors"]:
             summary += f", {report['errors']} could not be changed"
-        say(summary, stage="done", progress=100, done=True)
+        if _cancelled():
+            config.finish_cancelled(_current_task, f"Cancelled: {summary}. Undo again to finish")
+            return
+        _say(summary, stage="done", progress=100, done=True)
 
     return _background(work, task_id)
 

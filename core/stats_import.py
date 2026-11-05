@@ -689,7 +689,7 @@ def start_import_task(mode: str) -> str:
         raise ImportRefused("A rebuild is already running.")
     title = "Stats history: start clean" if mode == "clean" else "Stats history: merge"
     try:
-        task_id = config.create_task(title, kind="stats")
+        task_id = config.create_task(title, kind="stats", cancellable=True)
 
         def work():
             try:
@@ -698,6 +698,9 @@ def start_import_task(mode: str) -> str:
                 if report["removed"]:
                     summary += f", {report['removed']} removed"
                 config.push_task_event(task_id, f"Done: {summary}", stage="done", progress=100, done=True)
+            except config.TaskCancelled:
+                # The whole rebuild is one transaction: it was rolled back.
+                config.finish_cancelled(task_id, "Cancelled: your history is unchanged")
             except ImportRefused as e:
                 config.push_task_event(task_id, str(e), stage="error", done=True, error=True)
             except Exception as e:

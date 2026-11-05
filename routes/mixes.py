@@ -75,6 +75,7 @@ def settings():
                 return jsonify({"ok": False, "error": mix_builder.downloads_possible()}), 400
             mix_builder.set_enabled(conn, name, bool(enabled))
         if any(toggles.values()):
+            mixes_db.set_meta(conn, "metadata_fix_paused", False)
             metadata_fix.start_background(mix_builder.library_entries)
         return jsonify({"ok": True, **_state(conn)})
     finally:
@@ -86,15 +87,16 @@ def fix_metadata():
     """Asked for once, it then also takes care of new files on its own."""
     from core.config import create_task
 
-    if metadata_fix.is_running():
-        return jsonify({"ok": False, "error": "Already running"}), 409
+    if metadata_fix.is_running() and metadata_fix.current_task():
+        return jsonify({"ok": True, "task_id": metadata_fix.current_task()})
     conn = mixes_db.connect()
     try:
         mixes_db.set_meta(conn, "metadata_fix_on", True)
         mixes_db.set_meta(conn, "metadata_write_off", False)
+        mixes_db.set_meta(conn, "metadata_fix_paused", False)
     finally:
         conn.close()
-    task_id = create_task("Fix missing metadata", kind="metadata")
+    task_id = create_task("Fix missing metadata", kind="metadata", cancellable=True)
     metadata_fix.start_background(mix_builder.library_entries, task_id=task_id)
     return jsonify({"ok": True, "task_id": task_id})
 
@@ -105,7 +107,7 @@ def undo_metadata():
 
     if metadata_fix.is_running():
         return jsonify({"ok": False, "error": "Fix missing metadata is running: wait for it to finish"}), 409
-    task_id = create_task("Undo metadata fix", kind="metadata")
+    task_id = create_task("Undo metadata fix", kind="metadata", cancellable=True)
     metadata_fix.start_undo(task_id)
     return jsonify({"ok": True, "task_id": task_id})
 

@@ -144,6 +144,8 @@ export function on(root, type, selector, handler) {
 }
 
 // Destructive buttons need a second click within a few seconds.
+const ARMED_MS = 6000;
+
 export function armed(button, label = 'Click again to confirm') {
   if (button.dataset.armed === 'true') {
     button.dataset.armed = 'false';
@@ -158,7 +160,7 @@ export function armed(button, label = 'Click again to confirm') {
       button.dataset.armed = 'false';
       button.textContent = button.dataset.label;
     }
-  }, 4000);
+  }, ARMED_MS);
   return false;
 }
 

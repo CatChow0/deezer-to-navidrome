@@ -1,7 +1,7 @@
 // Made for you: turn the generated playlists on, and decide about the tracks they
 // downloaded. Nothing leaves the quarantine without a click here.
 
-import { escapeHtml, fetchJSON, on, toast } from './core.js';
+import { armed, escapeHtml, fetchJSON, on, toast } from './core.js';
 import { runServerTask } from './activity.js';
 import { playButton } from './player.js';
 
@@ -40,6 +40,7 @@ function versionsHtml(state) {
       : `Tempo and genre checked for all ${analysis.total} files.`}</p>
     <p class="muted">${plural(analysis.tagged, 'file')} tagged${analysis.only_in_app ? `, ${analysis.only_in_app} kept only in the app (format without tags, or writing turned off)` : ''}.</p>
     ${analysis.write_errors ? `<p class="help-live help-live--warn">${plural(analysis.write_errors, 'file')} could not be tagged. Is the folder mounted read-only? Their results still count for the mixes, and writing is tried again every day.</p>` : ''}
+    ${analysis.paused ? '<p class="muted">Fix missing metadata was cancelled, so it does not run on its own. <b>Fix missing metadata</b> or turning a version on starts it again, from where it stopped.</p>' : ''}
     ${analysis.write_off ? '<p class="muted">Writing to your files is off since the last undo. <b>Fix missing metadata</b> turns it back on.</p>' : ''}
     ${lastRun?.notes?.length ? `<p class="help-live help-live--warn">${lastRun.notes.map(escapeHtml).join(' ')}</p>` : ''}
     <div class="button-row">
@@ -200,32 +201,16 @@ export function initMadeForYou(modal) {
     send(`/api/mixes/trial/${encodeURIComponent(button.dataset.mfyId)}/${button.dataset.mfyAction}`);
   });
   on(root, 'click', '[data-mfy-undo]', async (_, button) => {
-    if (button.dataset.armed !== '1') {
-      button.dataset.armed = '1';
-      button.textContent = `Click again: removes what was added to ${state.analysis.can_undo} files`;
-      return;
-    }
+    if (!armed(button, `Click again: removes what was added to ${state.analysis.can_undo} files`)) return;
     button.disabled = true;
     await runServerTask('Undo metadata fix', '/api/metadata/undo');
     load();
   });
   on(root, 'click', '[data-mfy-remove-all]', (_, button) => {
-    if (button.dataset.armed) {
-      send('/api/mixes/trial/remove-pending');
-      return;
-    }
-    button.dataset.armed = '1';
-    button.textContent = `Click again to remove ${state.pending.length} tracks`;
+    if (armed(button, `Click again to remove ${state.pending.length} tracks`)) send('/api/mixes/trial/remove-pending');
   });
   on(document, 'click', '[data-action="fix-metadata"]', async (_, button) => {
-    if (button.dataset.armed !== '1') {
-      button.dataset.label = button.textContent;
-      button.dataset.armed = '1';
-      button.textContent = 'Click again: this adds tags to your files';
-      return;
-    }
-    button.dataset.armed = '';
-    button.textContent = button.dataset.label;
+    if (!armed(button, 'Click again: adds tags to your files')) return;
     button.disabled = true;
     await runServerTask('Fix missing metadata', '/api/metadata/fix');
     button.disabled = false;

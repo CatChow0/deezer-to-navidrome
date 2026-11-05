@@ -208,7 +208,7 @@ def suspect_files(root, original_mtimes=None, checked=frozenset()):
     return files
 
 
-def repair_downloads(progress=None):
+def repair_downloads(progress=None, should_stop=None):
     """Checks every recent file of the downloads folder and repairs the broken
     ones. `progress(message, percent)` follows it. Returns a summary."""
     if not _running.acquire(blocking=False):
@@ -217,12 +217,15 @@ def repair_downloads(progress=None):
     try:
         root = deezer_dl.download_dir()
         files = suspect_files(root, metadata_fix.original_mtimes(conn), metadata_fix.repair_checked(conn))
-        summary = {"checked": len(files), "repaired": [], "fine": 0, "unknown": [], "errors": []}
+        summary = {"checked": len(files), "repaired": [], "fine": 0, "unknown": [], "errors": [], "cancelled": False}
         finder = _Finder()
         say = progress or (lambda message, percent: None)
         say(f"{len(files)} file{'s' if len(files) != 1 else ''} saved since 1.10.0 to check", 0)
 
         for index, path in enumerate(files, start=1):
+            if should_stop and should_stop():
+                summary["cancelled"] = True
+                break
             name = path.relative_to(root).as_posix()
             percent = round(index * 100 / len(files)) if files else 100
             is_flac = AUDIO_EXTENSIONS[path.suffix.lower()]

@@ -63,7 +63,7 @@ def _run_playlist(pl, cfg):
     from core.deezer import convert_playlist, submit_missing_downloads
 
     pid = pl["id"]
-    task_id = create_task(f"Auto scan: {pl.get('title') or pid}", kind="scan", playlist_id=pid)
+    task_id = create_task(f"Auto scan: {pl.get('title') or pid}", kind="scan", playlist_id=pid, cancellable=True)
 
     def on_progress(message=None, progress=None, stage=None, row_update=None):
         if row_update is not None:
@@ -103,7 +103,7 @@ def _refresh_library_after_scans(count):
     from core.library import refresh_library_cache_incremental_with_progress
 
     logger.info(f"[auto-scan] {count} playlist(s) processed — running incremental cache refresh")
-    task_id = create_task("Library refresh (after auto scan)", kind="library")
+    task_id = create_task("Library refresh (after auto scan)", kind="library", cancellable=True)
     try:
         refresh_library_cache_incremental_with_progress(
             progress_cb=lambda message=None, progress=None, stage=None: push_task_event(

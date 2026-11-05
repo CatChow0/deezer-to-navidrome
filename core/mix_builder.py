@@ -215,6 +215,7 @@ class _Run:
         )
         self.notes = []
         self.downloaded = 0
+        self.emit = lambda message: None
         self.ids = mix_candidates.artist_ids(stats_conn)
 
     def exclusions(self, **kw):
@@ -256,6 +257,7 @@ def build_daily(run) -> list:
     built = []
     recent = run.recent("daily")
     for slot, seed in enumerate(run.choose("daily"), start=1):
+        run.emit(f"Daily Mix {slot}: {seed.label}")
         picks = mix_taste.pick_for_seed(run.taste, seed, run.owned, recent=recent, rng=run.rng)
         if not picks:
             continue
@@ -279,6 +281,8 @@ def build_blend(run) -> list:
     budget = run.download_room(run.settings["blend_new_per_run"])
     new_slots = round(MIX_SIZE * BLEND_NEW_SHARE)
     for index, seed in enumerate(seeds):
+        # Between mixes: every file already downloaded has been registered on trial.
+        run.emit(f"Daily Mix+ {index + 1}: {seed.label}")
         picks = mix_taste.pick_for_seed(run.taste, seed, run.owned, recent=recent, size=MIX_SIZE - new_slots, rng=run.rng)
         if not picks:
             continue
@@ -374,6 +378,7 @@ def generate(versions=None, progress=None, now=None) -> dict:
         emit("Checking the tracks on trial")
         report = review_trial(conn, stats_conn, now)
         run = _Run(conn, stats_conn, now, f"{now // DAY}")
+        run.emit = emit
         built = {}
         blocked = downloads_possible()
         for name, build, downloads in (("daily", build_daily, False), ("blend", build_blend, True),
@@ -451,7 +456,8 @@ def tick(now=None) -> None:
             return
         entries = library_entries()
         state = metadata_fix.status(conn, entries)
-        if state["left"]:
+        # Cancelled by hand: it stays stopped until you ask for it again.
+        if state["left"] and not metadata_fix.paused(conn):
             metadata_fix.start_background(library_entries)
         if not mixes_on:
             return
@@ -467,7 +473,7 @@ def start_task(versions, title="Generating your mixes"):
     """In the background, followed in Activity."""
     from core.config import create_task, push_task_event
 
-    task_id = create_task(title, kind="mixes")
+    task_id = create_task(title, kind="mixes", cancellable=True)
 
     def runner():
         try:
@@ -477,6 +483,15 @@ def start_task(versions, title="Generating your mixes"):
             if result["notes"]:
                 summary += ". " + " ".join(result["notes"])
             push_task_event(task_id, summary, stage="done", progress=100, done=True)
+        except config.TaskCancelled:
+            # Its turn counts as taken, or the next check would start it again at once.
+            conn = mixes_db.connect()
+            try:
+                for name in versions:
+                    mixes_db.set_meta(conn, f"last_{name}", int(time.time()))
+            finally:
+                conn.close()
+            config.finish_cancelled(task_id, "Cancelled: the playlists already built stay. The next refresh runs as planned")
         except Exception as e:
             logger.error("Could not generate the mixes: %s", e)
             push_task_event(task_id, f"Could not generate the mixes: {e}", stage="error", done=True, error=True)

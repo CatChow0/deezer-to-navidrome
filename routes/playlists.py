@@ -174,6 +174,7 @@ def _start_scan(playlist_id, quick, title=None):
         title or f"{'Quick' if quick else 'Full'} scan: {playlist_title(playlist_id)}",
         kind="scan",
         playlist_id=playlist_id,
+        cancellable=True,
     )
 
     def on_progress(message=None, progress=None, stage=None, row_update=None):
