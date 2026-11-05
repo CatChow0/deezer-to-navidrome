@@ -1,3 +1,4 @@
+import shutil
 import tempfile
 import unittest
 from pathlib import Path
@@ -8,7 +9,7 @@ import soundfile as sf
 from mutagen.flac import FLAC, Picture
 from mutagen.id3 import APIC, ID3, TIT2, TPE1, TXXX
 
-from core import metadata_fix as fix, mixes_db
+from core import metadata_fix as fix, mixes_db, stats_db
 
 NOW = 1_800_000_000
 DAY = 86400
@@ -25,6 +26,10 @@ class Base(unittest.TestCase):
         self.root = Path(folder.name)
         for suffix in ("", "-wal", "-shm"):
             Path(f"{mixes_db.db_path()}{suffix}").unlink(missing_ok=True)
+        shutil.rmtree(fix._journal_dir(), ignore_errors=True)
+        history = mock.patch("core.metadata_fix._genre_from_history", return_value=None)
+        history.start()
+        self.addCleanup(history.stop)
         self.conn = mixes_db.connect()
         self.addCleanup(self.conn.close)
 
@@ -54,6 +59,16 @@ class Base(unittest.TestCase):
     def entry(self, path):
         return {"path": str(path), "mtime_ns": Path(path).stat().st_mtime_ns,
                 "tag_artist": "Vald", "tag_title": "Song", "tag_album": "Album"}
+
+
+class CopyPath(Base):
+    """A file with no room in its header goes the long way, on a copy."""
+
+    def setUp(self):
+        super().setUp()
+        patcher = mock.patch("core.metadata_fix._in_place_flac", side_effect=fix.NoRoom)
+        patcher.start()
+        self.addCleanup(patcher.stop)
 
 
 class Writing(Base):
@@ -104,7 +119,7 @@ class Writing(Base):
         self.assertEqual([p.name for p in self.root.iterdir()], ["a.flac"])
 
 
-class WritingFails(Base):
+class WritingFails(CopyPath):
     def assertUntouched(self, path, before):
         self.assertEqual(path.read_bytes(), before)
         self.assertEqual([p.name for p in self.root.iterdir()], [path.name])
@@ -112,7 +127,7 @@ class WritingFails(Base):
     def test_audio_that_differs_refuses_and_leaves_the_original(self):
         path = self.flac()
         before = path.read_bytes()
-        with mock.patch("core.metadata_fix.audio_fingerprint", side_effect=["a", "b"]):
+        with mock.patch("core.metadata_fix._same_audio", return_value=False):
             with self.assertRaises(fix.WriteRefused):
                 fix.write_tags(path, 120, "Rap")
         self.assertUntouched(path, before)
@@ -188,10 +203,20 @@ class Fingerprint(Base):
             real_save(audio, *a, **k)
             self.flip(Path(audio.filename))
 
-        with mock.patch("mutagen.flac.FLAC.save", damaging):
+        with mock.patch("core.metadata_fix._in_place_flac", side_effect=fix.NoRoom), \
+                mock.patch("mutagen.flac.FLAC.save", damaging):
             with self.assertRaises(fix.WriteRefused):
                 fix.write_tags(path, 120, "Rap")
         self.assertEqual(path.read_bytes(), before)
+
+    def test_direct_comparison_sees_one_flipped_audio_byte(self):
+        for path in (self.flac(), self.mp3()):
+            other = path.with_name("other" + path.suffix)
+            shutil.copy2(path, other)
+            self.assertTrue(fix._same_audio(path, other))
+            self.flip(other)
+            self.assertFalse(fix._same_audio(path, other))
+            other.unlink()
 
     def test_ogg_is_compared_once_decoded(self):
         path = self.root / "a.ogg"
@@ -208,7 +233,7 @@ class Fingerprint(Base):
         self.assertEqual(path.read_bytes(), b"pretend")
 
 
-class BrutalStop(Base):
+class BrutalStop(CopyPath):
     def test_recover_clears_a_copy_the_journal_names(self):
         path = self.flac()
         temp = path.with_name(path.name + fix.TEMP_SUFFIX)
@@ -261,7 +286,7 @@ class BrutalStop(Base):
         self.assertEqual(order[:2], ["sync", "swap"])
 
 
-class Conflicts(Base):
+class Conflicts(CopyPath):
     def test_a_file_changed_during_the_write_is_not_replaced(self):
         path = self.flac()
         real_sync = fix._sync
@@ -449,7 +474,7 @@ class Threads(Base):
     def test_every_file_is_done_once_with_nothing_left_behind(self):
         entries = self.many()
         report = self.run_all(entries)
-        self.assertEqual(report, {"done": 12, "written": 12, "errors": 0})
+        self.assertEqual({k: report[k] for k in ("done", "written", "errors")}, {"done": 12, "written": 12, "errors": 0})
         self.assertEqual(fix.pending(self.conn, entries), [])
         self.assertEqual(self.conn.execute("SELECT COUNT(*) FROM write_journal").fetchone()[0], 0)
         self.assertFalse([p for p in self.root.iterdir() if p.name.endswith(fix.TEMP_SUFFIX)])
@@ -530,6 +555,272 @@ class Threads(Base):
             self.assertEqual(fix.workers_setting(), fix.DEFAULT_WORKERS)
         with mock.patch("core.config.load_config", return_value={}):
             self.assertEqual(fix.workers_setting(), fix.DEFAULT_WORKERS)
+
+
+class InPlace(Base):
+    def audio_bytes(self, path):
+        with open(path, "rb") as handle:
+            start, end = fix._audio_range(handle, "flac")
+            handle.seek(start)
+            return start, handle.read()
+
+    def test_the_audio_does_not_move_and_only_the_header_is_written(self):
+        path = self.flac()
+        before = self.audio_bytes(path)
+        size = path.stat().st_size
+        with mock.patch("shutil.copy2") as copy:
+            fix.write_tags(path, 120, "Rap")
+        copy.assert_not_called()
+        self.assertEqual(self.audio_bytes(path), before)
+        self.assertEqual(path.stat().st_size, size)
+        self.assertEqual(fix.read_tags(path), (120.0, "Rap"))
+
+    def test_other_tags_and_cover_stay(self):
+        path = self.flac()
+        before = FLAC(path)
+        tags = {k: before[k] for k in before.keys()}
+        fix.write_tags(path, 120, "Rap")
+        after = FLAC(path)
+        for key, value in tags.items():
+            self.assertEqual(after[key], value)
+        self.assertEqual(after.pictures[0].data, b"cover")
+
+    def fill_header(self, path):
+        audio = FLAC(path)
+        audio["comment"] = "x" * 10
+        audio.save(padding=lambda info: 0)
+        self.assertEqual(sum(b.length for b in FLAC(path).metadata_blocks if b.code == 1), 0)
+
+    def test_no_room_uses_a_copy_instead(self):
+        path = self.flac()
+        self.fill_header(path)
+        with open(path, "rb") as handle:
+            start, end = fix._audio_range(handle, "flac")
+            handle.seek(start)
+            audio = handle.read()
+        self.assertTrue(fix.write_tags(path, 120, "Rap"))
+        self.assertEqual(fix.read_tags(path), (120.0, "Rap"))
+        with open(path, "rb") as handle:
+            start, end = fix._audio_range(handle, "flac")
+            handle.seek(start)
+            self.assertEqual(handle.read(), audio)
+
+    def test_no_room_leaves_the_file_as_it_was_before_the_copy(self):
+        path = self.flac()
+        self.fill_header(path)
+        before = path.read_bytes()
+        with self.assertRaises(fix.NoRoom):
+            fix._in_place_flac(path, lambda audio: audio.update({"genre": "Rap"}), ["genre"])
+        self.assertEqual(path.read_bytes(), before)
+        self.assertEqual(list(fix._journal_dir().glob("*.hdr")), [])
+
+    def test_a_file_changed_meanwhile_is_left_alone(self):
+        path = self.flac()
+        real = fix._save_header
+
+        def someone_writes(*args):
+            result = real(*args)
+            path.write_bytes(path.read_bytes() + b"x")
+            return result
+
+        with mock.patch("core.metadata_fix._save_header", side_effect=someone_writes):
+            with self.assertRaises(fix.FileChanged):
+                fix.write_tags(path, 120, "Rap")
+        self.assertEqual(fix.read_tags(path), (None, None))
+        self.assertEqual(list(fix._journal_dir().glob("*.hdr")), [])
+
+    def test_a_write_that_damages_anything_is_undone(self):
+        path = self.flac()
+        before = path.read_bytes()
+        real = FLAC.save
+
+        def loses_a_tag(audio, *a, **k):
+            del audio["deezer_track_id"]
+            real(audio, *a, **k)
+
+        with mock.patch("mutagen.flac.FLAC.save", loses_a_tag):
+            with self.assertRaises(fix.WriteRefused):
+                fix.write_tags(path, 120, "Rap")
+        self.assertEqual(path.read_bytes(), before)
+
+    def test_journal_is_gone_after_a_write(self):
+        fix.write_tags(self.flac(), 120, "Rap")
+        self.assertEqual(list(fix._journal_dir().glob("*.hdr")), [])
+
+    def test_recover_puts_the_header_back_after_a_stop_in_the_middle(self):
+        path = self.flac()
+        before = path.read_bytes()
+        with open(path, "rb") as handle:
+            start = fix._flac_audio_start(handle)
+        backup = fix._save_header(path, len(before), before[:start])
+        with open(path, "r+b") as handle:
+            handle.write(b"\xff" * 64)     # a torn header
+        self.assertEqual(fix.recover(self.conn), 1)
+        self.assertEqual(path.read_bytes(), before)
+        self.assertFalse(backup.exists())
+
+    def test_recover_leaves_a_file_replaced_since(self):
+        path = self.flac()
+        data = path.read_bytes()
+        backup = fix._save_header(path, len(data) + 5, data[:100])
+        self.assertEqual(fix.recover(self.conn), 0)
+        self.assertEqual(path.read_bytes(), data)
+        self.assertFalse(backup.exists())
+
+    def test_a_stop_while_saving_the_header_leaves_nothing_to_restore(self):
+        path = self.flac()
+        before = path.read_bytes()
+        with mock.patch("core.metadata_fix.os.replace", side_effect=KeyboardInterrupt):
+            with self.assertRaises(KeyboardInterrupt):
+                fix._save_header(path, len(before), before[:100])
+        self.assertEqual(list(fix._journal_dir().glob("*.hdr")), [])
+        self.assertEqual(len(list(fix._journal_dir().glob("*.part"))), 1)
+        self.assertEqual(fix.recover(self.conn), 0)
+        self.assertEqual(list(fix._journal_dir().iterdir()), [])
+        self.assertEqual(path.read_bytes(), before)
+
+    def test_recover_ignores_a_gone_file_and_a_damaged_backup(self):
+        gone = self.root / "gone.flac"
+        backup = fix._save_header(gone, 10, b"abc")
+        junk = fix._journal_dir() / "junk.hdr"
+        junk.write_bytes(b"not json")
+        self.assertEqual(fix.recover(self.conn), 0)
+        self.assertFalse(backup.exists())
+        junk.unlink()
+
+    def test_undo_also_works_in_place(self):
+        path = self.flac()
+        before = self.audio_bytes(path)
+        fix.write_tags(path, 120, "Rap")
+        fix.remove_tags(path, ["bpm", "genre"])
+        self.assertEqual(self.audio_bytes(path), before)
+        self.assertEqual(fix.read_tags(path), (None, None))
+
+
+class StepAside(Base):
+    def albums(self, count=6):
+        return [{**self.entry(self.flac(f"{i}.flac")), "tag_album": f"Album {i}"} for i in range(count)]
+
+    def test_workers_go_on_while_deezer_is_answering(self):
+        import threading
+        release = threading.Event()
+        needs = [{**self.entry(self.flac(f"n{i}.flac")), "tag_album": f"Album {i}"} for i in range(3)]
+        ready_files = [self.entry(self.flac(f"r{i}.flac", genre="Pop")) for i in range(5)]
+        order = []
+
+        def api(path, params=None):
+            release.wait(10)    # Deezer takes its time
+            return {"data": []}
+
+        def tempo(path):
+            order.append(Path(path).name)
+            if len(order) == 5:
+                release.set()   # only reached if the others did not wait for Deezer
+            return 100.0
+
+        with mock.patch("core.audio_tempo.file_tempo", side_effect=tempo):
+            report = fix.run(self.conn, needs + ready_files, api=api, workers=1)
+        self.assertEqual(report["done"], 8)
+        self.assertEqual(set(order[:5]), {f"r{i}.flac" for i in range(5)})
+
+    def test_every_file_of_an_album_waits_for_one_search(self):
+        entries = self.many_of_one_album(6)
+        calls = []
+
+        def api(path, params=None):
+            calls.append(path)
+            if path == "/search/album":
+                return {"data": [{"id": 7, "title": "Album", "artist": {"name": "Vald"}}]}
+            return {"genres": {"data": [{"name": "Rap"}]}}
+
+        with mock.patch("core.audio_tempo.file_tempo", return_value=100.0):
+            report = fix.run(self.conn, entries, api=api, workers=3)
+        self.assertEqual(report["done"], 6)
+        self.assertEqual(calls.count("/search/album"), 1)
+        for entry in entries:
+            self.assertEqual(fix.read_tags(entry["path"]), (100.0, "Rap"))
+
+    def many_of_one_album(self, count):
+        return [self.entry(self.flac(f"{i}.flac")) for i in range(count)]
+
+    def test_no_file_is_handled_twice(self):
+        entries = self.albums(10)
+        seen = []
+
+        def tempo(path):
+            seen.append(path)
+            return 100.0
+
+        with mock.patch("core.audio_tempo.file_tempo", side_effect=tempo), \
+                mock.patch("core.metadata_fix.lookup_genre", return_value="Rap"):
+            report = fix.run(self.conn, entries, workers=4)
+        self.assertEqual(report["done"], 10)
+        self.assertEqual(sorted(seen), sorted(e["path"] for e in entries))
+
+    def test_a_failed_search_still_finishes_the_file(self):
+        entries = self.albums(4)
+
+        def api(path, params=None):
+            raise RuntimeError("Deezer is down")
+
+        with mock.patch("core.audio_tempo.file_tempo", return_value=100.0):
+            report = fix.run(self.conn, entries, api=api, workers=2)
+        self.assertEqual(report["done"], 4)
+        self.assertEqual(fix.read_tags(entries[0]["path"]), (100.0, None))
+
+    def test_a_search_is_not_repeated_after_a_failure_in_the_same_pass(self):
+        entries = self.albums(3)
+        calls = []
+
+        def api(path, params=None):
+            calls.append(params["q"])
+            raise RuntimeError("down")
+
+        with mock.patch("core.audio_tempo.file_tempo", return_value=100.0):
+            fix.run(self.conn, entries, api=api, workers=1)
+        self.assertEqual(len(calls), 3)
+
+    def test_a_cancel_during_a_search_stops_and_leaves_files_for_later(self):
+        import threading
+        entries = self.albums(6)
+        stop = threading.Event()
+
+        def api(path, params=None):
+            stop.set()
+            return {"data": []}
+
+        with mock.patch("core.audio_tempo.file_tempo", return_value=100.0):
+            report = fix.run(self.conn, entries, api=api, workers=2, should_stop=stop.is_set)
+        self.assertLess(report["done"], 6)
+        self.assertGreater(len(fix.pending(self.conn, entries)), 0)
+        for thread in threading.enumerate():
+            self.assertFalse(thread.name.startswith("metadata-search"), thread.name)
+
+    def test_the_summary_says_where_the_time_went(self):
+        entries = self.albums(2)
+        with mock.patch("core.audio_tempo.file_tempo", return_value=100.0):
+            report = fix.run(self.conn, entries, api=lambda p, q=None: {"data": []}, workers=2)
+        self.assertEqual(report["workers"], 2)
+        for step in ("tempo", "deezer"):
+            self.assertIn(step, report["timing"])
+
+    def test_known_history_saves_the_search(self):
+        mock.patch.stopall()
+        stats = stats_db.connect()
+        self.addCleanup(stats.close)
+        stats_db.upsert_track(stats, "History song", ["Known Artist"], genre="Rap", genre_source="deezer")
+        stats.commit()
+        api = mock.Mock(side_effect=AssertionError("Deezer should not be asked"))
+        self.assertEqual(fix.lookup_genre(self.conn, "Known Artist", "History song", "Album", NOW, api), "Rap")
+        api.assert_not_called()
+        self.assertEqual(fix.lookup_genre(self.conn, "Known Artist", "Other song", "Album", NOW, api), "Rap")
+
+
+class StatsWaits(unittest.TestCase):
+    def test_stats_lookups_wait_for_fix(self):
+        from core import stats_enrich
+        with mock.patch("core.metadata_fix.is_running", return_value=True):
+            self.assertFalse(stats_enrich.start_background_batch())
 
 
 class Reading(Base):
@@ -673,9 +964,14 @@ class Once(Base):
         paths = [self.flac(f"{i}.flac") for i in range(4)]
         entries = [self.entry(p) for p in paths]
         seen = []
-        with mock.patch("core.audio_tempo.file_tempo", return_value=None), \
+
+        def tempo(path):
+            seen.append(path)
+            return None
+
+        with mock.patch("core.audio_tempo.file_tempo", side_effect=tempo), \
                 mock.patch("core.metadata_fix.lookup_genre", return_value=None):
-            report = fix.run(self.conn, entries, should_stop=lambda: seen.append(1) or len(seen) > 2)
+            report = fix.run(self.conn, entries, should_stop=lambda: len(seen) >= 2)
         self.assertEqual(report["done"], 2)
         self.assertEqual(len(fix.pending(self.conn, entries)), 2)
 
