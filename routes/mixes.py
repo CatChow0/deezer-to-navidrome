@@ -63,18 +63,25 @@ def settings():
     body = request.get_json(silent=True)
     if not isinstance(body, dict):
         return jsonify({"ok": False, "error": "Expected settings"}), 400
+    mode = body.pop("mix_mode", None)
+    discover = body.pop("discover", None)
+    if mode is not None and mode not in mix_builder.MIX_MODES:
+        return jsonify({"ok": False, "error": "Choose off, Daily Mix or Daily Mix+"}), 400
+    if mode == "blend" or discover:
+        blocked = mix_builder.downloads_possible()
+        if blocked:
+            return jsonify({"ok": False, "error": blocked}), 400
     conn = mixes_db.connect()
     try:
-        toggles = {k: body.pop(k) for k in ("daily", "blend", "discover") if k in body}
         try:
             mix_builder.save_settings(conn, body)
         except (TypeError, ValueError):
             return jsonify({"ok": False, "error": "Limits must be numbers"}), 400
-        for name, enabled in toggles.items():
-            if enabled and name != "daily" and mix_builder.downloads_possible():
-                return jsonify({"ok": False, "error": mix_builder.downloads_possible()}), 400
-            mix_builder.set_enabled(conn, name, bool(enabled))
-        if any(toggles.values()):
+        if mode is not None:
+            mix_builder.set_mix_mode(conn, mode)
+        if discover is not None:
+            mix_builder.set_discover(conn, bool(discover))
+        if mode in ("daily", "blend") or discover:
             mixes_db.set_meta(conn, "metadata_fix_paused", False)
             metadata_fix.start_background(mix_builder.library_entries)
         return jsonify({"ok": True, **_state(conn)})
@@ -121,7 +128,7 @@ def generate():
         current = mix_builder.load_settings(conn)
     finally:
         conn.close()
-    versions = [v for v in ("daily", "blend", "discover") if current[v]]
+    versions = mix_builder.enabled_versions(current)
     if not versions:
         return jsonify({"ok": False, "error": "Turn on at least one version first"}), 400
     return jsonify({"ok": True, "task_id": mix_builder.start_task(versions)})

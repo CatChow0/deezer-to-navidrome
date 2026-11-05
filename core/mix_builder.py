@@ -1,6 +1,7 @@
-"""Builds the generated playlists. Daily Mix uses what you own, Daily Mix+ adds about
-a third of tracks to download, Discover is only tracks you never heard. What they
-download goes through the quarantine (core/trial.py).
+"""Builds the generated playlists. Daily Mix uses what you own, Daily Mix+ adds a chosen
+share of tracks to download, Discover is only tracks you never heard. What they
+download goes through the quarantine (core/trial.py). One mode is on at a time: off,
+Daily Mix or Daily Mix+. Discover has its own switch.
 
 The previous playlist stays in place until the new one is ready."""
 import logging
@@ -13,7 +14,7 @@ from pathlib import Path
 
 from core import config, deezer_dl, mix_candidates, metadata_fix, mix_taste, mixes_db, stats_db, trial
 from core.library import load_library_cache
-from core.mix_taste import MIX_COUNT, MIX_SIZE
+from core.mix_taste import MIN_MIX_SIZE, MIX_COUNT, MIX_SIZE
 
 logger = logging.getLogger(__name__)
 
@@ -21,37 +22,54 @@ DAY = 86400
 DAILY_EVERY = DAY
 DISCOVER_EVERY = 7 * DAY
 RECENT_DAYS = 3
-BLEND_NEW_SHARE = 1 / 3
 MIN_ANALYSED_SHARE = 0.9        # Automatic mixes wait for most of the tempo analysis.
 DOWNLOAD_TIMEOUT = 600
 
+MIX_MODES = ("off", "daily", "blend")
 DEFAULTS = {
-    "daily": False,
-    "blend": False,
+    "mix_mode": "off",
     "discover": False,
     "daily_hours": 24,
     "discover_days": 7,
-    "blend_new_per_run": 10,
+    "mix_size": MIX_SIZE,
     "discover_size": 30,
+    "blend_new_percent": 33,
     "max_unheard": 100,
     "max_trial_gb": 20,
 }
+BOUNDS = {"mix_size": (MIN_MIX_SIZE, 100), "blend_new_percent": (1, 90)}
 _run_lock = threading.Lock()
 
 
 def load_settings(conn) -> dict:
-    return {**DEFAULTS, **(mixes_db.get_meta(conn, "settings") or {})}
+    saved = mixes_db.get_meta(conn, "settings") or {}
+    settings = {**DEFAULTS, **{k: v for k, v in saved.items() if k in DEFAULTS}}
+    if "mix_mode" not in saved:
+        # Saved when Daily Mix and Daily Mix+ were two separate switches.
+        settings["mix_mode"] = "blend" if saved.get("blend") else "daily" if saved.get("daily") else "off"
+    return settings
 
 
 def save_settings(conn, changes) -> dict:
     settings = load_settings(conn)
     for key, value in changes.items():
-        if key in ("daily", "blend", "discover"):
+        if key == "mix_mode":
+            if value not in MIX_MODES:
+                raise ValueError(f"Unknown mode: {value}")
+            settings[key] = value
+        elif key == "discover":
             settings[key] = bool(value)
         elif key in DEFAULTS:
-            settings[key] = max(1, int(value))
+            low, high = BOUNDS.get(key, (1, None))
+            number = max(low, int(value))
+            settings[key] = min(high, number) if high else number
     mixes_db.set_meta(conn, "settings", settings)
     return settings
+
+
+def enabled_versions(settings) -> list:
+    """What runs, in build order."""
+    return ([settings["mix_mode"]] if settings["mix_mode"] != "off" else []) + (["discover"] if settings["discover"] else [])
 
 
 def is_running() -> bool:
@@ -258,7 +276,7 @@ def build_daily(run) -> list:
     recent = run.recent("daily")
     for slot, seed in enumerate(run.choose("daily"), start=1):
         run.emit(f"Daily Mix {slot}: {seed.label}")
-        picks = mix_taste.pick_for_seed(run.taste, seed, run.owned, recent=recent, rng=run.rng)
+        picks = mix_taste.pick_for_seed(run.taste, seed, run.owned, recent=recent, size=run.settings["mix_size"], rng=run.rng)
         if not picks:
             continue
         publish(f"auto-daily-{len(built) + 1}", f"Daily Mix {len(built) + 1}", _subtitle(seed), [_as_track(p) for p in picks],
@@ -270,7 +288,7 @@ def build_daily(run) -> list:
 
 def build_blend(run) -> list:
     """Your tracks, then tracks on trial you have not heard yet, then new ones: a
-    track gets its chance before more are fetched. The new ones for the run are
+    track gets its chance before more are fetched. What the disk limits allow is
     shared between the mixes."""
     built = []
     recent = run.recent("blend")
@@ -278,14 +296,18 @@ def build_blend(run) -> list:
     unheard = [r for r in trial.active(run.conn) if r["state"] == trial.ON_TRIAL and not plays.get(r["deezer_id"])]
     run.rng.shuffle(unheard)
     seeds = run.choose("blend")
-    budget = run.download_room(run.settings["blend_new_per_run"])
-    new_slots = round(MIX_SIZE * BLEND_NEW_SHARE)
+    size, share_new = run.settings["mix_size"], run.settings["blend_new_percent"] / 100
+    new_slots = max(1, round(size * share_new))
+    budget = run.download_room(new_slots * len(seeds))
+    # Your own tracks are only part of this mix: the bar for "worth a playlist" follows.
+    minimum = max(1, round(MIN_MIX_SIZE * (1 - share_new)))
     for index, seed in enumerate(seeds):
         # Between mixes: every file already downloaded has been registered on trial.
         run.emit(f"Daily Mix+ {index + 1}: {seed.label}")
-        picks = mix_taste.pick_for_seed(run.taste, seed, run.owned, recent=recent, size=MIX_SIZE - new_slots, rng=run.rng)
-        if not picks:
+        ranked = mix_taste.pick_for_seed(run.taste, seed, run.owned, recent=recent, size=size, rng=run.rng, minimum=minimum)
+        if not ranked:
             continue
+        picks, spare = ranked[:size - new_slots], ranked[size - new_slots:]
         slot = f"auto-blend-{len(built) + 1}"
         trial_tracks = [_trial_track(row) for row in unheard[:new_slots]]
         unheard = unheard[new_slots:]
@@ -298,6 +320,8 @@ def build_blend(run) -> list:
             new_tracks = download_to_trial(run.conn, chosen, share, slot, run.now)
             budget -= len(new_tracks)
             run.downloaded += len(new_tracks)
+        # Nothing new to fetch, or a disk limit reached: your own tracks take those places.
+        picks += spare[:new_slots - len(trial_tracks) - len(new_tracks)]
         tracks = [_as_track(p) for p in picks] + trial_tracks + new_tracks
         run.rng.shuffle(tracks)
         publish(slot, f"Daily Mix+ {len(built) + 1}", _subtitle(seed), tracks, cover=seed_cover(run.stats, seed))
@@ -373,7 +397,7 @@ def generate(versions=None, progress=None, now=None) -> dict:
     conn, stats_conn = mixes_db.connect(), stats_db.connect()
     try:
         settings = load_settings(conn)
-        wanted = versions if versions is not None else [v for v in ("daily", "blend", "discover") if settings[v]]
+        wanted = versions if versions is not None else enabled_versions(settings)
         mixes_db.set_meta(conn, "seeds_today", [])
         emit("Checking the tracks on trial")
         report = review_trial(conn, stats_conn, now)
@@ -392,6 +416,7 @@ def generate(versions=None, progress=None, now=None) -> dict:
             built[name] = build(run)
             mixes_db.set_meta(conn, f"last_{name}", now)
             _drop_stale(name, built[name])
+            _drop_replaced_mode(conn, name, built[name])
         if run.downloaded:
             emit("Refreshing the library")
             _refresh_library(emit)
@@ -417,28 +442,46 @@ def _drop_stale(name, kept) -> None:
             unpublish(playlist["id"])
 
 
-def set_enabled(conn, name, enabled) -> None:
-    """Turning a version off removes its playlists. Files on trial stay on trial."""
+def _remove_playlists(prefix) -> None:
     from core.deezer import load_playlists
 
-    save_settings(conn, {name: enabled})
+    for playlist in load_playlists():
+        if playlist["id"].startswith(prefix):
+            unpublish(playlist["id"])
+
+
+def _drop_replaced_mode(conn, name, built) -> None:
+    """Switching between the two mixes: the old ones leave once the new ones exist."""
+    if built and name in ("daily", "blend") and load_settings(conn)["mix_mode"] == name:
+        _remove_playlists("auto-blend-" if name == "daily" else "auto-daily-")
+
+
+def set_mix_mode(conn, mode) -> None:
+    """Off removes the mixes. Files on trial stay on trial. Another mode is due at once,
+    whenever it last ran: nothing else would bring its playlists back."""
+    previous = load_settings(conn)["mix_mode"]
+    save_settings(conn, {"mix_mode": mode})
+    if mode == "off":
+        _remove_playlists("auto-daily-")
+        _remove_playlists("auto-blend-")
+    elif mode != previous:
+        mixes_db.set_meta(conn, f"last_{mode}", 0)
+
+
+def set_discover(conn, enabled) -> None:
+    was_on = load_settings(conn)["discover"]
+    save_settings(conn, {"discover": enabled})
     if not enabled:
-        prefix = "auto-discover" if name == "discover" else f"auto-{name}-"
-        for playlist in load_playlists():
-            if playlist["id"].startswith(prefix):
-                unpublish(playlist["id"])
+        _remove_playlists("auto-discover")
+    elif not was_on:
+        mixes_db.set_meta(conn, "last_discover", 0)
 
 
 def due_versions(conn, now) -> list:
     settings = load_settings(conn)
-    due = []
-    if settings["daily"] and now - mixes_db.get_meta(conn, "last_daily", 0) >= settings["daily_hours"] * 3600:
-        due.append("daily")
-    if settings["blend"] and now - mixes_db.get_meta(conn, "last_blend", 0) >= settings["daily_hours"] * 3600:
-        due.append("blend")
-    if settings["discover"] and now - mixes_db.get_meta(conn, "last_discover", 0) >= settings["discover_days"] * DAY:
-        due.append("discover")
-    return due
+    every = {"daily": settings["daily_hours"] * 3600, "blend": settings["daily_hours"] * 3600,
+             "discover": settings["discover_days"] * DAY}
+    return [name for name in enabled_versions(settings) if now - mixes_db.get_meta(conn, f"last_{name}", 0) >= every[name]]
 
 
 def tick(now=None) -> None:
@@ -450,7 +493,7 @@ def tick(now=None) -> None:
     conn = mixes_db.connect()
     try:
         settings = load_settings(conn)
-        mixes_on = any(settings[v] for v in ("daily", "blend", "discover"))
+        mixes_on = bool(enabled_versions(settings))
         # Files are only tagged once you asked for it: the button, or turning on a mix.
         if not mixes_on and not mixes_db.get_meta(conn, "metadata_fix_on"):
             return

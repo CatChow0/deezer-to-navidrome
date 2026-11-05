@@ -341,14 +341,14 @@ def _suitability(track, taste, seed, seed_genres, seed_tempos):
     return factor
 
 
-def pick_for_seed(taste, seed, owned, recent=frozenset(), size=MIX_SIZE, rng=None) -> list:
+def pick_for_seed(taste, seed, owned, recent=frozenset(), size=MIX_SIZE, rng=None, minimum=MIN_MIX_SIZE) -> list:
     """The mix around one seed. An artist mix is that artist: what you play, and
     what you barely played. A track or album mix looks for the same genre and
     tempo, with few tracks per artist, and an album's own artists first.
 
     About two thirds are tracks you come back to and one third tracks you own and
     barely played. A mix can be shorter than asked: better that than filling it
-    with tracks that do not belong. Under MIN_MIX_SIZE it returns nothing."""
+    with tracks that do not belong. Under `minimum` it returns nothing."""
     by_key = {track.key: track for track in owned}
     if seed.kind == "artist":
         candidates = [(t, 1.0) for t in owned if t.artist_key == seed.artist_key]
@@ -387,6 +387,6 @@ def pick_for_seed(taste, seed, owned, recent=frozenset(), size=MIX_SIZE, rng=Non
     # Short of tracks: first the other kind, then what was recently proposed.
     mix.fill(not_recent(familiar_order), size - len(mix.tracks))
     mix.fill(familiar_order + fresh_order, size - len(mix.tracks))
-    if len(mix.tracks) < MIN_MIX_SIZE:
+    if len(mix.tracks) < minimum:
         return []
     return _spread(list(mix.tracks.values()), rng, first=first)

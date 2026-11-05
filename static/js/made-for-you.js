@@ -5,36 +5,48 @@ import { armed, escapeHtml, fetchJSON, on, toast } from './core.js';
 import { runServerTask } from './activity.js';
 import { playButton } from './player.js';
 
-const VERSIONS = [
-  ['daily', 'Daily Mix', 'Up to 4 mixes a day around a track, an album or an artist you keep coming back to, only with music you already have.', false],
-  ['blend', 'Daily Mix+', 'The same idea, with about a third of tracks you do not have yet. They are downloaded and go on trial.', true],
-  ['discover', 'Discover', 'Every week, only new releases and tracks you never heard, chosen from your habits. They are downloaded and go on trial.', true],
+const MODES = [
+  ['off', 'Off', () => 'No Daily Mix. Turning it off removes these playlists, and tracks on trial stay on trial.'],
+  ['daily', 'Daily Mix', () => 'Up to 4 mixes around a track, an album or an artist you keep coming back to, only with music you already have.'],
+  ['blend', 'Daily Mix+', settings => `The same idea as Daily Mix, with ${settings.blend_new_percent}% of tracks you do not have yet. They are downloaded and go on trial.`],
 ];
+
+const MODE_SLIDE_MS = 280;
+const modeText = (mode, settings) => MODES.find(([key]) => key === mode)[2](settings);
 
 const plural = (count, word) => `${count} ${word}${count === 1 ? '' : 's'}`;
 
 function versionsHtml(state) {
   const { settings, analysis, usage, last_run: lastRun } = state;
   const measured = analysis.total - analysis.left;
-  const rows = VERSIONS.map(([key, title, text, downloads]) => {
-    const blocked = downloads && !settings[key] ? state.downloads_blocked : '';
-    return `
-      <div class="mfy-version">
-        <div>
-          <strong>${title}</strong>
-          <p>${text}</p>
-          ${blocked ? `<p class="help-live help-live--warn">${escapeHtml(blocked)}</p>` : ''}
-        </div>
-        <label class="switch" title="${title}">
-          <input type="checkbox" data-mfy-version="${key}" aria-label="${title}" ${settings[key] ? 'checked' : ''} ${blocked ? 'disabled' : ''}>
-          <span class="switch-slider"></span>
-        </label>
-      </div>`;
-  }).join('');
-  const anyOn = VERSIONS.some(([key]) => settings[key]);
+  const mode = settings.mix_mode;
+  const blendBlocked = mode !== 'blend' ? state.downloads_blocked : '';
+  const discoverBlocked = !settings.discover ? state.downloads_blocked : '';
+  const anyOn = mode !== 'off' || settings.discover;
+  const positions = MODES.map(([key, label]) => `
+        <label class="mfy-mode-option">
+          <input type="radio" name="mfy-mode" value="${key}" data-mfy-mode ${key === mode ? 'checked' : ''} ${key === 'blend' && blendBlocked ? 'disabled' : ''}>
+          <span>${label}</span>
+        </label>`).join('');
   return `
     <h3 class="doc-title">Versions</h3>
-    <div class="mfy-versions">${rows}</div>
+    <fieldset class="mfy-mode" data-mode="${mode}">
+      <legend class="sr-only">Daily mixes</legend>
+      <span class="mfy-mode-thumb" aria-hidden="true"></span>${positions}
+    </fieldset>
+    <p class="mfy-mode-text">${modeText(mode, settings)}</p>
+    ${blendBlocked ? `<p class="help-live help-live--warn">Daily Mix+ cannot be chosen. ${escapeHtml(blendBlocked)}</p>` : ''}
+    <div class="mfy-version">
+      <div>
+        <strong>Discover</strong>
+        <p>Only new releases and tracks you never heard, chosen from your habits. They are downloaded and go on trial.</p>
+        ${discoverBlocked ? `<p class="help-live help-live--warn">${escapeHtml(discoverBlocked)}</p>` : ''}
+      </div>
+      <label class="switch" title="Discover">
+        <input type="checkbox" data-mfy-discover aria-label="Discover" ${settings.discover ? 'checked' : ''} ${discoverBlocked ? 'disabled' : ''}>
+        <span class="switch-slider"></span>
+      </label>
+    </div>
     <p class="muted" data-mfy-analysis>${analysis.left
       ? `Missing metadata: ${measured} of ${analysis.total} files done. ${anyOn ? 'Mixes start once most of it is done.' : 'Turning a version on starts it: it adds the missing tempo and genre to your files\' tags.'}`
       : `Tempo and genre checked for all ${analysis.total} files.`}</p>
@@ -49,15 +61,36 @@ function versionsHtml(state) {
     </div>
     <h4 class="help-h">Limits</h4>
     <form class="mfy-limits" data-mfy-limits>
-      <label><span>Refresh Daily Mixes every (hours)</span><input type="number" min="1" name="daily_hours" value="${settings.daily_hours}"></label>
-      <label><span>Refresh Discover every (days)</span><input type="number" min="1" name="discover_days" value="${settings.discover_days}"></label>
-      <label><span>New tracks per Daily Mix+ refresh</span><input type="number" min="1" name="blend_new_per_run" value="${settings.blend_new_per_run}"></label>
-      <label><span>Tracks in Discover</span><input type="number" min="1" name="discover_size" value="${settings.discover_size}"></label>
-      <label><span>Stop downloading at this many unheard tracks</span><input type="number" min="1" name="max_unheard" value="${settings.max_unheard}"></label>
-      <label><span>Stop downloading at this quarantine size (GB)</span><input type="number" min="1" name="max_trial_gb" value="${settings.max_trial_gb}"></label>
-      <div class="button-row"><button type="submit" class="btn btn--ghost btn--sm">Save limits</button></div>
-    </form>
-    <p class="muted">In quarantine now: ${(usage.bytes / 1024 ** 3).toFixed(1)} GB, ${plural(usage.unheard, 'unheard track')}.</p>`;
+      <div class="mfy-limit-group">
+        <h5>Refresh Rate</h5>
+        ${limitField(settings, 'daily_hours', 'Daily Mix / Daily Mix+ every (hours)')}
+        ${limitField(settings, 'discover_days', 'Discover every (days)')}
+      </div>
+      <div class="mfy-limit-group">
+        <h5>Length</h5>
+        ${limitField(settings, 'mix_size', 'Tracks in each Daily Mix / Daily Mix+', 12, 100)}
+        ${limitField(settings, 'discover_size', 'Tracks in Discover')}
+      </div>
+      <div class="mfy-limit-group">
+        <h5>New tracks percent</h5>
+        ${limitField(settings, 'blend_new_percent', 'New tracks in each Daily Mix+ (%)', 1, 90)}
+        <p class="muted">Daily Mix+ only. Unheard tracks on trial take these places before anything new is downloaded.</p>
+      </div>
+      <div class="mfy-limit-group">
+        <h5>Disk Limit</h5>
+        ${limitField(settings, 'max_unheard', 'Stop downloading at this many unheard tracks')}
+        ${limitField(settings, 'max_trial_gb', 'Stop downloading at this quarantine size (GB)')}
+        <p class="muted">In quarantine now: ${(usage.bytes / 1024 ** 3).toFixed(1)} GB, ${plural(usage.unheard, 'unheard track')}.</p>
+      </div>
+      <div class="mfy-limits-save">
+        <p class="muted">New values apply from the next refresh.</p>
+        <button type="submit" class="btn btn--ghost btn--sm">Save limits</button>
+      </div>
+    </form>`;
+}
+
+function limitField(settings, name, label, min = 1, max = null) {
+  return `<label class="mfy-limit"><span>${label}</span><input type="number" min="${min}" ${max ? `max="${max}"` : ''} name="${name}" value="${settings[name]}"></label>`;
 }
 
 function trackRow(track, detail, actions) {
@@ -121,8 +154,33 @@ export function initMadeForYou(modal) {
     return root.querySelector(`[data-mfy-panel="${name}"]`);
   }
 
-  function render() {
-    panel('versions').innerHTML = versionsHtml(state);
+  // What the panel holds that is not saved yet, and where the keyboard was.
+  function renderVersions(keepDrafts) {
+    const target = panel('versions');
+    const drafts = keepDrafts
+      ? [...target.querySelectorAll('[data-mfy-limits] input')].filter(input => input.value !== input.defaultValue)
+      : [];
+    const active = target.contains(document.activeElement) ? document.activeElement : null;
+    const focus = active?.matches('[data-mfy-mode]') ? `[data-mfy-mode][value="${active.value}"]`
+      : active?.matches('[data-mfy-discover]') ? '[data-mfy-discover]'
+        : active?.matches('[data-mfy-limits] input') ? `[name="${active.name}"]` : '';
+
+    target.innerHTML = versionsHtml(state);
+
+    drafts.forEach(input => {
+      target.querySelector(`[name="${input.name}"]`).value = input.value;
+    });
+    if (focus) target.querySelector(focus)?.focus();
+  }
+
+  function showMode(mode) {
+    root.querySelector('.mfy-mode').dataset.mode = mode;
+    root.querySelector(`[data-mfy-mode][value="${mode}"]`).checked = true;
+    root.querySelector('.mfy-mode-text').textContent = modeText(mode, state.settings);
+  }
+
+  function render({ keepDrafts = true } = {}) {
+    renderVersions(keepDrafts);
     panel('review').innerHTML = reviewHtml(state);
     panel('trial').innerHTML = trialHtml(state);
     panel('trash').innerHTML = trashHtml(state);
@@ -141,17 +199,17 @@ export function initMadeForYou(modal) {
     const { ok, data } = await fetchJSON('/api/mixes');
     if (!ok) return;
     state = data;
-    render();
+    render({ keepDrafts: false });
   }
 
-  async function send(url, options = { method: 'POST' }) {
+  async function send(url, options = { method: 'POST' }, renderOptions = {}) {
     const { ok, data } = await fetchJSON(url, options);
     if (!ok) {
       toast(data?.error || 'That did not work', { tone: 'error' });
       return false;
     }
     state = data;
-    render();
+    render(renderOptions);
     return true;
   }
 
@@ -181,14 +239,21 @@ export function initMadeForYou(modal) {
     showTab(tabs[(index + tabs.length) % tabs.length].dataset.mfyTab, { focus: true });
   });
 
-  on(root, 'change', '[data-mfy-version]', async (_, box) => {
-    const done = await send('/api/mixes/settings', { json: { [box.dataset.mfyVersion]: box.checked } });
+  on(root, 'change', '[data-mfy-mode]', async (_, radio) => {
+    // The switch answers at once. Saving rewrites the panel, so it waits for the slide.
+    showMode(radio.value);
+    await new Promise(resolve => setTimeout(resolve, MODE_SLIDE_MS));
+    const done = await send('/api/mixes/settings', { json: { mix_mode: radio.value } });
+    if (!done) showMode(state.settings.mix_mode);
+  });
+  on(root, 'change', '[data-mfy-discover]', async (_, box) => {
+    const done = await send('/api/mixes/settings', { json: { discover: box.checked } });
     if (!done) box.checked = !box.checked;
   });
   on(root, 'submit', '[data-mfy-limits]', async (event, form) => {
     event.preventDefault();
     const values = Object.fromEntries(new FormData(form));
-    if (await send('/api/mixes/settings', { json: values })) toast('Limits saved');
+    if (await send('/api/mixes/settings', { json: values }, { keepDrafts: false })) toast('Limits saved');
   });
   on(root, 'click', '[data-mfy-generate]', async (_, button) => {
     button.disabled = true;

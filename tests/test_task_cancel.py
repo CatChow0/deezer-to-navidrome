@@ -178,7 +178,7 @@ class FixCancel(unittest.TestCase):
                 mock.patch("core.metadata_fix.start_background") as start:
             mixes_db.set_meta(self.conn, "metadata_fix_on", True)
             mb.tick(1_800_000_000)
-            mb.save_settings(self.conn, {"daily": True})
+            mb.save_settings(self.conn, {"mix_mode": "daily"})
             mb.tick(1_800_000_000)
         start.assert_not_called()
 
@@ -239,7 +239,7 @@ class Api(unittest.TestCase):
 
     def test_turning_a_mix_on_resumes_after_a_cancel(self):
         mixes_db.set_meta(self.conn, "metadata_fix_paused", True)
-        self.client.post("/api/mixes/settings", json={"daily": True})
+        self.client.post("/api/mixes/settings", json={"mix_mode": "daily"})
         self.assertFalse(fix.paused(self.conn))
 
     def test_while_running_the_button_follows_the_running_task(self):

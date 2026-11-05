@@ -58,21 +58,49 @@ class Api(unittest.TestCase):
 
     def test_everything_is_off_at_first(self):
         data = self.get()
-        self.assertFalse(data["settings"]["daily"])
+        self.assertEqual(data["settings"]["mix_mode"], "off")
+        self.assertFalse(data["settings"]["discover"])
         self.assertEqual(data["on_trial"], [])
 
     def test_turning_on_starts_the_tempo_analysis(self):
         from core import metadata_fix
-        response = self.post("/api/mixes/settings", {"daily": True})
-        self.assertTrue(response.get_json()["settings"]["daily"])
+        response = self.post("/api/mixes/settings", {"mix_mode": "daily"})
+        self.assertEqual(response.get_json()["settings"]["mix_mode"], "daily")
         metadata_fix.start_background.assert_called_once()
+
+    def test_choosing_off_does_not_start_it(self):
+        from core import metadata_fix
+        self.post("/api/mixes/settings", {"mix_mode": "off"})
+        metadata_fix.start_background.assert_not_called()
+
+    def test_an_unknown_mode_is_refused(self):
+        self.assertEqual(self.post("/api/mixes/settings", {"mix_mode": "both"}).status_code, 400)
+        self.assertEqual(self.get()["settings"]["mix_mode"], "off")
 
     def test_download_versions_refuse_without_an_account(self):
         with mock.patch("core.deezer_dl.download_arl", return_value=""):
             response = self.post("/api/mixes/settings", {"discover": True})
             self.assertEqual(response.status_code, 400)
             self.assertFalse(self.get()["settings"]["discover"])
-            self.assertEqual(self.post("/api/mixes/settings", {"daily": True}).status_code, 200)
+            response = self.post("/api/mixes/settings", {"mix_mode": "blend"})
+            self.assertEqual(response.status_code, 400)
+            self.assertEqual(self.get()["settings"]["mix_mode"], "off")
+            self.assertEqual(self.post("/api/mixes/settings", {"mix_mode": "daily"}).status_code, 200)
+
+    def test_a_refused_change_saves_nothing(self):
+        with mock.patch("core.deezer_dl.download_arl", return_value=""):
+            self.post("/api/mixes/settings", {"mix_mode": "blend", "max_unheard": 7})
+        self.assertNotEqual(self.get()["settings"]["max_unheard"], 7)
+        self.post("/api/mixes/settings", {"mix_mode": "both", "max_unheard": 7})
+        self.assertNotEqual(self.get()["settings"]["max_unheard"], 7)
+
+    def test_limits_are_saved_and_bounded(self):
+        settings = self.post("/api/mixes/settings", {"mix_size": "50", "blend_new_percent": "500"}).get_json()["settings"]
+        self.assertEqual((settings["mix_size"], settings["blend_new_percent"]), (50, 90))
+
+    def test_the_old_switches_do_nothing(self):
+        settings = self.post("/api/mixes/settings", {"daily": True}).get_json()["settings"]
+        self.assertEqual(settings["mix_mode"], "off")
 
     def test_fix_metadata_button_starts_a_task_and_stays_on(self):
         from core import metadata_fix
@@ -119,11 +147,17 @@ class Api(unittest.TestCase):
         self.assertEqual(self.post("/api/mixes/generate").status_code, 400)
 
     def test_generate_starts_a_task(self):
-        self.post("/api/mixes/settings", {"daily": True})
+        self.post("/api/mixes/settings", {"mix_mode": "daily"})
         with mock.patch("core.mix_builder.start_task", return_value="t1") as start:
             response = self.post("/api/mixes/generate")
         self.assertEqual(response.get_json()["task_id"], "t1")
         start.assert_called_once_with(["daily"])
+
+    def test_generate_builds_the_chosen_mode_and_discover(self):
+        self.post("/api/mixes/settings", {"mix_mode": "blend", "discover": True})
+        with mock.patch("core.mix_builder.start_task", return_value="t1") as start:
+            self.post("/api/mixes/generate")
+        start.assert_called_once_with(["blend", "discover"])
 
     def test_keep_and_remove_and_restore(self):
         path = self.add("1")

@@ -228,6 +228,11 @@ class TrackMix(Base):
         library = owned(("Men I Trust", "Show Me How", 100, "Pop"), *[(f"M{i}", "S", 100, "Metal") for i in range(50)])
         self.assertEqual(self.pick(library), [])
 
+    def test_the_minimum_can_be_lowered_for_a_mix_that_adds_new_tracks(self):
+        library = owned(("Men I Trust", "Show Me How", 100, "Pop"), *self.similar(count=7))
+        self.assertEqual(self.pick(library), [])
+        self.assertEqual(len(self.pick(library, minimum=6)), 8)
+
     def test_shorter_mix_rather_than_tracks_that_do_not_belong(self):
         library = owned(("Men I Trust", "Show Me How", 100, "Pop"), *self.similar(count=15),
                         *[(f"M{i}", "S", 100, "Metal") for i in range(50)])
