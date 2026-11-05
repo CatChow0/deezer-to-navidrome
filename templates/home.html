@@ -56,13 +56,36 @@
         </div>
       </div>
       <div class="cell-body">
-        {% set regular = playlists | rejectattr('kind', 'equalto', 'mix') | list %}
+        {% set regular = playlists | rejectattr('kind', 'in', ['mix', 'auto']) | list %}
         {% if regular %}
         <div class="tiles">
           {% for playlist in regular %}{{ tile(playlist) }}{% endfor %}
         </div>
         {% else %}
         <p class="empty">No playlists yet. Paste a Deezer or Spotify playlist link above, or import a CSV.</p>
+        {% endif %}
+      </div>
+    </section>
+
+    <section class="cell" aria-labelledby="mfy-section-title">
+      <div class="cell-head">
+        <div>
+          <h2 class="cell-title" id="mfy-section-title">Made for you</h2>
+          <p class="cell-sub">Playlists built from what you listen to. New tracks they download stay on trial until you decide.</p>
+        </div>
+        <div>
+          <span class="mfy-badge" data-mfy-badge hidden></span>
+          <button type="button" class="btn btn--ghost" data-action="made-for-you" aria-haspopup="dialog">Manage</button>
+        </div>
+      </div>
+      <div class="cell-body">
+        {% set generated = playlists | selectattr('kind', 'equalto', 'auto') | list %}
+        {% if generated %}
+        <div class="tiles">
+          {% for playlist in generated %}{{ tile(playlist) }}{% endfor %}
+        </div>
+        {% else %}
+        <p class="empty">Nothing yet. Choose Manage to turn on Daily Mix, Daily Mix+ or Discover.</p>
         {% endif %}
       </div>
     </section>
@@ -136,6 +159,7 @@
 {% endblock %}
 
 {% block overlays %}
+{% include '_made_for_you.html' %}
 {% include '_new.html' %}
 {% include '_help.html' %}
 

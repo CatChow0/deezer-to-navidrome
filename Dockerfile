@@ -5,6 +5,9 @@ ENV PYTHONUNBUFFERED=1
 
 WORKDIR /app
 
+# Decodes audio for the tempo analysis. The link is the name the Python binding looks for.
+RUN apk add --no-cache libsndfile && ln -s "$(ls /usr/lib/libsndfile.so.* | head -1)" /usr/lib/libsndfile.so
+
 COPY requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r /app/requirements.txt
 

@@ -12,6 +12,7 @@ from routes.auth import auth_bp
 from routes.cache import cache_bp
 from routes.dedup import dedup_bp
 from routes.listenbrainz import listenbrainz_bp
+from routes.mixes import mixes_bp
 from routes.playlists import playlists_bp
 from routes.search import search_bp
 from routes.stats import stats_bp
@@ -36,6 +37,7 @@ app.register_blueprint(auth_bp)
 app.register_blueprint(cache_bp)
 app.register_blueprint(dedup_bp)
 app.register_blueprint(listenbrainz_bp)
+app.register_blueprint(mixes_bp)
 app.register_blueprint(search_bp)
 app.register_blueprint(stats_bp)
 app.register_blueprint(system_bp)

@@ -118,6 +118,8 @@ def _refresh_library_after_scans(count):
         push_task_event(task_id, f"Library refresh failed: {e}", stage="error", done=True, error=True)
 
 
+_last_mix_check = 0.0
+MIX_CHECK_SECONDS = 600
 _last_release_attempt = 0.0
 RELEASE_RETRY_SECONDS = 3600
 
@@ -158,6 +160,17 @@ def _scheduler_loop():
         _sync_state_from_playlists(playlists)
 
         _refresh_releases_if_stale()
+
+        # Reading the library index is not free: every few minutes is plenty.
+        global _last_mix_check
+        if time.time() - _last_mix_check >= MIX_CHECK_SECONDS:
+            _last_mix_check = time.time()
+            try:
+                from core import mix_builder
+
+                mix_builder.tick()
+            except Exception as e:
+                logger.error(f"[mixes] Could not check the generated playlists: {e}")
 
         now = int(time.time())
         due = []

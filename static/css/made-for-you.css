@@ -1,0 +1,137 @@
+/* Made for you: the generated playlists and the quarantine. The panel itself uses
+   the layout of New and Help (help.css). */
+
+.mfy-modal .overlay-panel {
+  width: min(1040px, 100%);
+  height: min(88vh, 860px);
+}
+
+.mfy-modal .doc-body {
+  grid-template-columns: 170px minmax(0, 1fr);
+}
+
+.mfy-versions {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.mfy-version {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-control);
+  background: var(--glass-raised);
+}
+
+.mfy-version p {
+  margin: 4px 0 0;
+  color: var(--text-soft);
+}
+
+.mfy-version .switch {
+  flex: none;
+}
+
+.mfy-limits {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px 20px;
+  margin-bottom: 12px;
+}
+
+.mfy-limits label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--text-soft);
+  font-size: var(--step--1);
+}
+
+.mfy-limits input {
+  flex: none;
+  width: 84px;
+}
+
+.mfy-limits .button-row {
+  grid-column: 1 / -1;
+}
+
+.mfy-tracks {
+  display: grid;
+  gap: 2px;
+  margin-top: 12px;
+}
+
+.mfy-track {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 4px;
+  border-bottom: 1px solid var(--line);
+}
+
+.mfy-track-name {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+}
+
+.mfy-track-name > * {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mfy-track-actions {
+  display: flex;
+  flex: none;
+  gap: 6px;
+}
+
+.tile-sub {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: var(--step--1);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mfy-badge {
+  margin-right: 10px;
+  color: var(--partial);
+  font-size: var(--step--1);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+@media (max-width: 760px) {
+  .mfy-modal .overlay-panel {
+    height: calc(100dvh - 2 * var(--gap));
+  }
+
+  .mfy-modal .doc-body {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  .mfy-limits {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .mfy-track {
+    flex-wrap: wrap;
+  }
+
+  .mfy-track-name {
+    flex-basis: calc(100% - 60px);
+  }
+
+  .mfy-track-actions {
+    margin-left: auto;
+  }
+}

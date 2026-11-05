@@ -1,0 +1,66 @@
+<section data-doc-section="made-for-you" hidden>
+  <h3 class="doc-title">Made for you</h3>
+
+  <div class="doc-block">
+    <h4>The three versions</h4>
+    <table>
+      <thead><tr><th>Version</th><th>What it holds</th><th>Refreshed</th></tr></thead>
+      <tbody>
+        <tr><td><b>Daily Mix</b></td><td>Only music you already have</td><td>Every day</td></tr>
+        <tr><td><b>Daily Mix+</b></td><td>Your music, plus about a third of tracks to download</td><td>Every day</td></tr>
+        <tr><td><b>Discover</b></td><td>Only new releases and tracks you never heard, to download</td><td>Every week</td></tr>
+      </tbody>
+    </table>
+    <p>All are off until you turn them on with <b>Manage</b>. Daily Mix needs no Deezer account; the other two download, so they do. Turning a version off removes its playlists, and tracks on trial stay on trial.</p>
+  </div>
+
+  <div class="doc-block">
+    <h4>How a mix is built</h4>
+    <p>Each day the app picks up to 4 seeds among what keeps coming back in your listening: at least a track, an album and an artist, never one artist twice, and not the same seed as the day before.</p>
+    <table>
+      <tbody>
+        <tr><td><b>Around a track</b></td><td>Tracks with a close tempo and the same genre, 2 at most per artist</td></tr>
+        <tr><td><b>Around an album</b></td><td>The same, with the artists on the album first, guests included</td></tr>
+        <tr><td><b>All about an artist</b></td><td>That artist only: what you play, and what you barely played</td></tr>
+      </tbody>
+    </table>
+    <p>About two thirds are tracks you come back to, and one third tracks you own and barely played. Versions of one song, like a live take, count once, and skits and interludes stay out unless you really play them. A mix can be shorter than 30 tracks rather than include tracks that do not belong.</p>
+  </div>
+
+  <div class="doc-block">
+    <h4>Tempo and genre</h4>
+    <p>Almost no file carries its tempo, so the app measures it, one file at a time in the background. It resumes after a restart, and files are only read. <b>Manage</b> shows the progress, and automatic mixes wait until most of it is done.</p>
+    <p>An album's tempo is not its average: a candidate is compared with each track, weighted by your plays. A rarely played track that stands out barely counts, and an album with two tempos keeps both. A tempo and its double, like 90 and 180, count as the same.</p>
+    <p>A track without a known tempo is not excluded. A track without a known genre only joins mixes around its own artists.</p>
+  </div>
+
+  <div class="doc-block">
+    <h4>Quarantine</h4>
+    <p>Tracks these playlists download go to the <code>trial</code> folder inside your downloads folder, so Navidrome can play them. The <b>On trial</b> playlist has all of them, and Daily Mix+ replays unheard ones before fetching more.</p>
+    <table>
+      <tbody>
+        <tr><td>Kept</td><td>Played twice, starred or rated 4-5 in Navidrome, added to one of your playlists, or also in your library. It moves to <code>songs</code></td></tr>
+        <tr><td>To review</td><td>30 days without any of that, or rated 1-2. It stays playable until you decide</td></tr>
+        <tr><td>Trash</td><td>You chose <b>Remove</b>. Restorable for 30 days, then the file is deleted and the track is never proposed again</td></tr>
+      </tbody>
+    </table>
+    <p>The trash is the only thing deleted automatically. The app only ever moves or deletes files in the <code>trial</code> folder and its trash, at <code>/data/trial_trash/</code>.</p>
+  </div>
+
+  <div class="doc-block">
+    <h4>Limits</h4>
+    <p>Daily Mix+ fetches 10 new tracks per refresh in all, and Discover 30 per week. Downloads stop at 100 unheard tracks or 20 GB in quarantine, and Activity says so. All of this can be changed in <b>Manage</b>. At these defaults in FLAC, quarantine can reach about 14 GB.</p>
+  </div>
+
+  <div class="doc-block">
+    <h4>When something looks wrong</h4>
+    <ul>
+      <li><strong>No mix appears.</strong> The tempo measure may still be running: see <b>Manage</b>, or use <b>Regenerate now</b>. A library or listening history with too little in it gives fewer mixes, or none.</li>
+      <li><strong>A track in the wrong mix.</strong> Genres come from your file tags and Deezer, and a wrong tag misleads the mix.</li>
+      <li><strong>"Unmapped path" in Activity.</strong> Add the folder in <b>Settings → Navidrome paths</b>. The downloads folder needs a mapping too.</li>
+      <li><strong>Plays do not keep a track.</strong> Check that plays reach the app, under <b>Stats → Recent plays</b>.</li>
+      <li><strong>Stars and ratings do nothing.</strong> Navidrome's database must be mounted at <code>/import/navidrome</code>. They are read once a day, at the next refresh.</li>
+      <li><strong>"Connect a Deezer account".</strong> Daily Mix+ and Discover need one to download.</li>
+    </ul>
+  </div>
+</section>

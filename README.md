@@ -2,7 +2,7 @@
 
 **A self-hosted web app that turns your Deezer playlists into Navidrome `.m3u8` playlists, matches them against your local library, and downloads what is missing straight from Deezer.**
 
-[![Docker Image Version](https://img.shields.io/badge/version-1.13.0-blue)](https://hub.docker.com/r/catchow/deezer-to-navidrome)
+[![Docker Image Version](https://img.shields.io/badge/version-1.14.0-blue)](https://hub.docker.com/r/catchow/deezer-to-navidrome)
 [![Python 3](https://img.shields.io/badge/python-3-blue)](https://www.python.org/)
 [![Flask](https://img.shields.io/badge/flask-web%20app-brightgreen)](https://flask.palletsprojects.com/)
 
@@ -59,6 +59,8 @@ If you self-host your music with Navidrome but discover it on Deezer, this app k
 ## ✨ Features
 
 The interface has four views: **Dashboard**, **Stats**, **Releases** and **Settings**. Long tasks (scans, downloads, library refreshes) run in the background and show their progress in the **Activity** cell, so the rest of the page stays usable.
+
+**Made for you** builds playlists from what you listen to: Daily Mix from music you already have, Daily Mix+ with about a third of tracks to download, and Discover with only tracks you never heard. Mixes form around a track, an album or an artist that keeps coming back, using a tempo the app measures from your files (never changing them) and their genre. What these playlists download stays on trial for 30 days: played twice, or starred or well rated in Navidrome, it is kept; otherwise it waits for your decision, and nothing leaves without it. Everything is off until you turn it on.
 
 Two buttons in the topbar explain the app. **New** keeps the notes of each version, one tab each, and shows a dot after an upgrade until you open it. **Help** is a full guide with a search: how each part works, every setting, and what to do when something goes wrong, with live checks of your Deezer account and downloads folder.
 

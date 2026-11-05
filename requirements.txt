@@ -6,3 +6,5 @@ gunicorn
 rapidfuzz
 tzdata
 Pillow
+numpy
+soundfile

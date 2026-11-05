@@ -23,8 +23,9 @@ FAILED = "failed"
 
 
 class DownloadTask:
-    def __init__(self, description, kind, music_id, on_done=None, on_progress=None):
+    def __init__(self, description, kind, music_id, on_done=None, on_progress=None, base_dir=None):
         self.id = id(self)
+        self.base_dir = base_dir
         self.description = description
         self.kind = kind
         self.music_id = str(music_id)
@@ -89,8 +90,8 @@ class DownloadQueue:
                 thread.start()
                 self.threads.append(thread)
 
-    def enqueue(self, description, kind, music_id, on_done=None, on_progress=None):
-        task = DownloadTask(description, kind, music_id, on_done=on_done, on_progress=on_progress)
+    def enqueue(self, description, kind, music_id, on_done=None, on_progress=None, base_dir=None):
+        task = DownloadTask(description, kind, music_id, on_done=on_done, on_progress=on_progress, base_dir=base_dir)
         with self.lock:
             active = sum(1 for t in self.tasks if t.state == ACTIVE)
             ahead = len(self.queue)
@@ -168,7 +169,7 @@ class DownloadQueue:
         def on_note(note):
             summary["note"] = note
 
-        path = deezer_dl.download_track(task.music_id, on_start=on_start, on_bytes=on_bytes, on_note=on_note)
+        path = deezer_dl.download_track(task.music_id, base_dir=task.base_dir, on_start=on_start, on_bytes=on_bytes, on_note=on_note)
         summary.update({"saved": 1, "path": str(path)})
         return summary
 
@@ -263,10 +264,11 @@ def get_queue():
         return _queue
 
 
-def enqueue_download(kind, music_id, on_done=None, on_progress=None):
-    """Puts a download in the queue and returns the task."""
+def enqueue_download(kind, music_id, on_done=None, on_progress=None, base_dir=None):
+    """Puts a download in the queue and returns the task. `base_dir`: another folder
+    for a single track, instead of the usual songs folder."""
     description = f"Downloading {kind} {music_id}"
-    return get_queue().enqueue(description, kind, music_id, on_done=on_done, on_progress=on_progress)
+    return get_queue().enqueue(description, kind, music_id, on_done=on_done, on_progress=on_progress, base_dir=base_dir)
 
 
 def queue_snapshot():
