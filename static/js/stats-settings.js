@@ -61,13 +61,16 @@ function renderToken(host, status) {
   const token = status.token || '';
   host.innerHTML = `
     <div class="security-block">
-      <h3>Record new plays</h3>
-      <p class="muted">In Navidrome, set this and restart it, then link ListenBrainz in your Navidrome personal settings using the token below.</p>
+      <h3>Point Navidrome at this app</h3>
+      <p class="muted">Set this in Navidrome and restart it, then link ListenBrainz in your Navidrome personal settings using the token.</p>
       <div class="secret-row">
         <input class="mono" type="text" readonly value="ND_LISTENBRAINZ_BASEURL=${escapeHtml(status.base_url_hint)}" aria-label="Navidrome setting" data-stats-setting>
         <button type="button" class="btn btn--ghost btn--sm" data-stats-copy="setting">Copy</button>
       </div>
       <p class="muted">Change the host if Navidrome reaches this app under another name.</p>
+    </div>
+    <div class="security-block">
+      <h3>Token for Navidrome</h3>
       ${token ? `
         <div class="secret-row">
           <input type="password" class="mono" value="${escapeHtml(token)}" readonly data-stats-token aria-label="Token for Navidrome">

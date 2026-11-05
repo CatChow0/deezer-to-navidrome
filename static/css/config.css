@@ -19,22 +19,74 @@
   font-weight: 600;
 }
 
-.settings-form {
+/* Settings: rows of cards of one height, each card as wide as its content
+   needs. Long content runs in columns inside its card, not down the page. */
+.set-rows {
   display: grid;
   gap: var(--gap);
 }
 
-.settings-columns {
+.set-row {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  align-items: start;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  align-items: stretch;
   gap: var(--gap);
 }
 
-@media (max-width: 900px) {
-  .settings-columns {
-    grid-template-columns: minmax(0, 1fr);
+.set-4 { grid-column: span 4; }
+.set-5 { grid-column: span 5; }
+.set-7 { grid-column: span 7; }
+.set-8 { grid-column: span 8; }
+.set-12 { grid-column: 1 / -1; }
+
+@media (max-width: 1150px) {
+  .set-row > .cell {
+    grid-column: 1 / -1;
   }
+}
+
+.set-columns {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(230px, 100%), 1fr));
+  align-content: start;
+  gap: 16px 24px;
+}
+
+.set-columns--two {
+  grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr));
+}
+
+/* The one field of the card takes all its height. */
+.set-fill {
+  display: flex;
+}
+
+.set-fill .form-field {
+  flex: 1;
+  grid-template-rows: 1fr;
+}
+
+.set-fill textarea {
+  height: 100%;
+  min-height: 120px;
+}
+
+.set-security {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr));
+  align-items: start;
+  gap: 16px 28px;
+}
+
+.set-security .security-block + .security-block {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
+}
+
+/* Loading and "turned off" messages take the whole width. */
+.set-security > p {
+  grid-column: 1 / -1;
 }
 
 .page-lead {
@@ -97,17 +149,26 @@
   visibility: hidden;
 }
 
+/* Only there when something is waiting to be saved. */
 .save-bar {
-  position: sticky;
+  position: fixed;
   bottom: var(--gap);
+  left: 50%;
   z-index: 40;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: 16px;
   flex-direction: row;
-  padding: 12px 12px 12px 22px;
+  width: min(520px, calc(100vw - 2 * var(--gap)));
+  padding: 10px 10px 10px 22px;
   border-radius: var(--r-chip);
+  background: var(--glass-strong);
+  transform: translateX(-50%);
+}
+
+body.has-player .save-bar {
+  bottom: 110px;
 }
 
 .save-bar p {
@@ -116,9 +177,31 @@
   font-size: var(--step--1);
 }
 
-.danger-list {
+.danger-list.set-columns {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 2px 28px;
+}
+
+@media (max-width: 1000px) {
+  .danger-list.set-columns {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .danger-list.set-columns {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.account-status {
   display: grid;
-  gap: 2px;
+  justify-items: start;
+  gap: 10px;
+}
+
+.account-status p {
+  margin: 0;
 }
 
 .danger-item {
@@ -129,7 +212,7 @@
   padding: 12px 0;
 }
 
-.danger-item + .danger-item {
+.danger-item {
   border-top: 1px solid rgba(244, 63, 94, 0.18);
 }
 
@@ -144,8 +227,7 @@
 }
 
 .cache-actions {
-  display: grid;
-  gap: 10px;
+  gap: 10px 20px;
 }
 
 .cache-action p {
@@ -268,7 +350,6 @@
   color: var(--miss);
 }
 
-/* Stretched to match its row: the actions stay together at the top. */
-.cache-actions {
+.set-columns > .form-field {
   align-content: start;
 }

@@ -146,6 +146,8 @@ class Api(unittest.TestCase):
             self.assertIn(f'name="{field}"', form)
         settings = page[page.index('data-view-name="settings"'):page.index("</main>")]
         self.assertNotIn("<aside", settings)
+        self.assertNotIn("settings-columns", settings)
+        self.assertIn("data-save-bar hidden", form)
 
     def test_reset_buttons_leave_history_alone(self):
         conn = stats_db.connect()
