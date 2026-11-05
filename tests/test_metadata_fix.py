@@ -733,6 +733,70 @@ class GenreLookup(Base):
         api = self.api(tracks=[self.track(artist="Someone else"), self.track(title="Nothing alike")])
         self.assertIsNone(self.look(api))
 
+    def test_the_genre_given_by_the_search_saves_a_call(self):
+        fix._genre_names.clear()
+        self.addCleanup(fix._genre_names.clear)
+        calls = []
+
+        def api(path, params=None):
+            calls.append(path)
+            if path == "/genre":
+                return {"data": [{"id": 116, "name": "Rap/Hip Hop"}]}
+            return {"data": [{**self.album(), "genre_id": 116}]}
+
+        self.assertEqual(self.look(api), "Rap/Hip Hop")
+        self.assertEqual(calls, ["/search/album", "/genre"])
+        calls.clear()
+        fix.lookup_genre(self.conn, "Vald", "Song 2", "Album", NOW, api)
+        self.assertEqual(calls, [])
+
+    def test_genre_list_is_only_asked_once(self):
+        fix._genre_names.clear()
+        self.addCleanup(fix._genre_names.clear)
+        calls = []
+
+        def api(path, params=None):
+            calls.append(path)
+            if path == "/genre":
+                return {"data": [{"id": 116, "name": "Rap/Hip Hop"}]}
+            album = params["q"].split('album:"')[1].rstrip('"')
+            return {"data": [{**self.album(title=album), "genre_id": 116}]}
+
+        self.look(api, album="One")
+        self.look(api, album="Two")
+        self.assertEqual(calls.count("/genre"), 1)
+
+    def test_minus_one_means_no_genre_and_no_more_calls(self):
+        calls = []
+
+        def api(path, params=None):
+            calls.append(path)
+            return {"data": [{**self.album(), "genre_id": -1}]}
+
+        self.assertIsNone(self.look(api))
+        self.assertEqual(calls, ["/search/album"])
+
+    def test_an_id_missing_from_the_list_asks_the_album(self):
+        fix._genre_names.clear()
+        self.addCleanup(fix._genre_names.clear)
+        calls = []
+
+        def api(path, params=None):
+            calls.append(path)
+            if path == "/search/album":
+                return {"data": [{**self.album(), "genre_id": 999}]}
+            if path == "/genre":
+                return {"data": [{"id": 116, "name": "Rap/Hip Hop"}]}
+            return {"genres": {"data": [{"name": "Rock"}]}}
+
+        self.assertEqual(self.look(api), "Rock")
+        self.assertIn("/album/7", calls)
+
+    def test_a_track_found_without_genre_asks_the_album(self):
+        api = self.api(tracks=[self.track()])
+        self.assertEqual(self.look(api), "Rap/Hip Hop")
+        self.assertIn("/album/8", api.calls)
+
     def test_one_search_per_album(self):
         api = self.api(albums=[self.album()])
         self.look(api, title="One")

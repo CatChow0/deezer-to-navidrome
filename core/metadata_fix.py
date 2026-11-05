@@ -308,7 +308,33 @@ def _album_genre(album_id, api) -> str:
     return (genres[0].get("name") or "") if genres else ""
 
 
-def _find_album_id(artist, title, album, api):
+_genre_names = {}
+
+
+def _genre_name(genre_id, api):
+    """A genre's name from Deezer's list, asked once. None when the list has no answer."""
+    if not _genre_names:
+        for item in (api("/genre") or {}).get("data") or []:
+            if item.get("id") and item.get("name"):
+                _genre_names[item["id"]] = item["name"]
+    return _genre_names.get(genre_id)
+
+
+def _genre_from(found, api) -> str:
+    """Deezer's request limit is what slows this pass down, so each call counts. An
+    album found by search already says its genre: compared on 75 real albums, it is
+    always the one its own page gives first. -1 means the album has none."""
+    genre_id = found.get("genre_id")
+    if genre_id == -1:
+        return ""
+    if genre_id is not None:
+        name = _genre_name(genre_id, api)
+        if name:
+            return name
+    return _album_genre(found["id"], api)
+
+
+def _find_album(artist, title, album, api):
     """The Deezer album, only when its artist and title really are the ones asked:
     a wrong album would give a wrong genre for good."""
     from core.stats_enrich import deezer_match
@@ -319,11 +345,11 @@ def _find_album_id(artist, title, album, api):
         for item in found.get("data") or []:
             same_artist = _close(wanted, stats_db.name_key((item.get("artist") or {}).get("name")))
             if same_artist and _close(stats_db.title_key(album), stats_db.title_key(item.get("title"))):
-                return item["id"]
+                return item
     found = api("/search/track", {"q": f"{artist} {stats_db.clean_title(title)}", "limit": 10}) or {}
     for item in found.get("data") or []:
         if deezer_match(title, [artist], item) and (item.get("album") or {}).get("id"):
-            return item["album"]["id"]
+            return item["album"]
     return None
 
 
@@ -351,8 +377,8 @@ def lookup_genre(conn, artist, title, album, now, api=_api):
         if row:
             return row["genre"] or None
         try:
-            album_id = _find_album_id(names[0], title, album, api)
-            genre = _album_genre(album_id, api) if album_id else ""
+            found = _find_album(names[0], title, album, api)
+            genre = _genre_from(found, api) if found else ""
         except Exception as e:
             logger.info("No genre for %s: %s", key, e)
             return None
