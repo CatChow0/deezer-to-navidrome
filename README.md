@@ -629,6 +629,7 @@ The folder and performance variables are read **on first start** to create `conf
 | `DEEZER_DL_DIR` | empty | Downloads folder. Empty: the music folder named `deezer-dl` |
 | `LIBRARY_WORKERS_PER_DIR` | `2` | Scan threads per music folder: `2` HDD, `4` RAID, `8` SSD/NVMe |
 | `MATCH_WORKERS` | `4` | Matching threads; set it to your CPU count |
+| `METADATA_WORKERS` | `4` | Files Fix missing metadata handles at once; up to your CPU count, about 80 MB of memory each, 2 on a spinning disk |
 | `DOWNLOAD_WORKERS` | `4` | Downloads running at the same time |
 | `DEEZER_ARL` | — | `arl` cookie of the Deezer account (mixes, release feed, downloads) |
 | `DEEZER_ARL_PREMIUM` | — | `arl` of a premium account, used only for downloads |

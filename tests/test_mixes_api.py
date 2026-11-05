@@ -100,6 +100,13 @@ class Api(unittest.TestCase):
         for key in ("tagged", "only_in_app", "write_errors", "can_undo", "write_off"):
             self.assertIn(key, analysis)
 
+    def test_settings_offer_the_threads_and_save_them(self):
+        page = self.client.get("/config", headers={"Accept": "text/html"}).data.decode()
+        self.assertIn('name="metadata_workers"', page)
+        self.client.post("/config", data={"scan_dirs": "/music/library", "playlists_base_dir": "/music/playlists",
+                                          "metadata_workers": "8"})
+        self.assertEqual(config.load_config()["metadata_workers"], 8)
+
     def test_nothing_is_tagged_until_asked(self):
         from core import metadata_fix
         self.client.get("/api/mixes")

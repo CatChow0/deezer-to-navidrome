@@ -41,6 +41,7 @@ services:
       # Parallel threads for playlist matching. rapidfuzz releases the GIL so
       # threads run on separate cores. Set to your Docker CPU count. Default: 4.
       MATCH_WORKERS: "4"
+      METADATA_WORKERS: "4"
 
       # Downloads from Deezer running at the same time. Deezer throttles the
       # requests, so a low number is safer. Default: 4.

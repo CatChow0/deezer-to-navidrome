@@ -25,6 +25,7 @@ from core.utils import FILES_LOCK
 logger = logging.getLogger(__name__)
 
 PAUSE_SECONDS = 0.05    # Leaves room for the rest of the app on a small server.
+DEFAULT_WORKERS = 4
 DAY = 86400
 LOOKUP_RETRY_DAYS = 30
 TEMP_SUFFIX = ".d2ntmp"
@@ -35,6 +36,7 @@ WRITTEN, IN_FILE, UNSUPPORTED, FAILED, OFF = "written", "in_file", "unsupported"
 CHUNK = 1024 * 1024
 
 _running = threading.Lock()
+_lookup_lock = threading.Lock()
 
 
 class WriteRefused(Exception):
@@ -328,16 +330,28 @@ def lookup_genre(conn, artist, title, album, now, api=_api):
     if not names or stats_db.name_key(names[0]) in ("unknown", "unknown artist", "various artists"):
         return None
     key = f"{stats_db.name_key(names[0])}|{stats_db.name_key(album) or stats_db.title_key(title)}"
-    row = conn.execute("SELECT genre, checked_at FROM album_genres WHERE key=?", (key,)).fetchone()
-    if row and (row["genre"] or now - row["checked_at"] < LOOKUP_RETRY_DAYS * DAY):
+
+    def known():
+        row = conn.execute("SELECT genre, checked_at FROM album_genres WHERE key=?", (key,)).fetchone()
+        return row if row and (row["genre"] or now - row["checked_at"] < LOOKUP_RETRY_DAYS * DAY) else None
+
+    row = known()
+    if row:
         return row["genre"] or None
-    try:
-        album_id = _find_album_id(names[0], title, album, api)
-        genre = _album_genre(album_id, api) if album_id else ""
-    except Exception as e:
-        logger.info("No genre for %s: %s", key, e)
-        return None
-    conn.execute("INSERT OR REPLACE INTO album_genres(key, genre, checked_at) VALUES (?,?,?)", (key, genre, int(now)))
+    # One search at a time: Deezer's limit is shared anyway, and two threads on tracks
+    # of one album must not both search. A known album never waits for this.
+    with _lookup_lock:
+        row = known()
+        if row:
+            return row["genre"] or None
+        try:
+            album_id = _find_album_id(names[0], title, album, api)
+            genre = _album_genre(album_id, api) if album_id else ""
+        except Exception as e:
+            logger.info("No genre for %s: %s", key, e)
+            return None
+        conn.execute("INSERT OR REPLACE INTO album_genres(key, genre, checked_at) VALUES (?,?,?)", (key, genre, int(now)))
+        conn.commit()
     return genre or None
 
 
@@ -430,21 +444,63 @@ def fix_file(conn, entry, now, api=_api, write=write_tags, write_off=False) -> d
     return {"written": state == WRITTEN, "error": error, "state": state, "bpm": bpm, "genre": genre}
 
 
-def run(conn, entries, progress=None, should_stop=None, pause=0, api=_api, write=write_tags) -> dict:
+def workers_setting() -> int:
+    from core.config import load_config
+
+    try:
+        return max(1, int(load_config().get("metadata_workers", DEFAULT_WORKERS)))
+    except (TypeError, ValueError):
+        return DEFAULT_WORKERS
+
+
+def run(conn, entries, progress=None, should_stop=None, pause=0, api=_api, write=write_tags, workers=1) -> dict:
+    """Files are independent, so several can be handled at once. Each thread has its
+    own database connection; a file is only ever taken by one of them."""
     report = {"done": 0, "written": 0, "errors": 0}
     total = len(entries)
     write_off = writing_off(conn)
-    for entry in entries:
-        if should_stop and should_stop():
-            break
-        result = fix_file(conn, entry, time.time(), api, write, write_off)
-        report["done"] += 1
-        report["written"] += 1 if result["written"] else 0
-        report["errors"] += 1 if result["error"] else 0
-        if progress and report["done"] % 25 == 0:
-            progress(report["done"], total)
-        if pause:
-            time.sleep(pause)
+    queue = iter(entries)
+    lock = threading.Lock()
+
+    def work(thread_conn):
+        while True:
+            with lock:
+                if should_stop and should_stop():
+                    return
+                entry = next(queue, None)
+            if entry is None:
+                return
+            try:
+                result = fix_file(thread_conn, entry, time.time(), api, write, write_off)
+            except Exception as e:
+                # One bad file must not stop the rest, nor be mistaken for done.
+                logger.warning("Could not process %s: %s", entry.get("path"), e)
+                result = {"written": False, "error": str(e)[:200]}
+            with lock:
+                report["done"] += 1
+                report["written"] += 1 if result["written"] else 0
+                report["errors"] += 1 if result["error"] else 0
+                done = report["done"]
+            if progress and done % 25 == 0:
+                progress(done, total)
+            if pause:
+                time.sleep(pause)
+
+    def thread_body():
+        thread_conn = mixes_db.connect()
+        try:
+            work(thread_conn)
+        finally:
+            thread_conn.close()
+
+    if workers <= 1:
+        work(conn)
+    else:
+        threads = [threading.Thread(target=thread_body, daemon=True, name=f"metadata-fix-{i}") for i in range(workers)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
     conn.commit()
     return report
 
@@ -574,7 +630,7 @@ def start_background(load_entries, task_id=None) -> bool:
             say("Tempo analysis is not available in this install.", stage="error", done=True, error=True)
             return
         todo = pending(conn, load_entries())
-        report = run(conn, todo, pause=PAUSE_SECONDS, should_stop=repairing,
+        report = run(conn, todo, pause=PAUSE_SECONDS, should_stop=repairing, workers=workers_setting(),
                      progress=lambda done, total: say(f"{done}/{total} files", stage="fix", progress=round(done * 100 / total)))
         if report["written"]:
             _refresh_library()

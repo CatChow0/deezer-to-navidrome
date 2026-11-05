@@ -123,6 +123,7 @@ The **Stats** tab keeps its own play history in `stats.db`. No Maloja, lb-enrich
 | `DEEZER_DL_DIR` | empty | Downloads folder; empty = the `deezer-dl` music folder |
 | `LIBRARY_WORKERS_PER_DIR` | `2` | Scan threads per folder. `2`=HDD · `4`=RAID · `8`=SSD/NVMe |
 | `MATCH_WORKERS` | `4` | Matching threads. Set to your CPU count |
+| `METADATA_WORKERS` | `4` | Files Fix missing metadata handles at once. Up to your CPU count, 2 on a spinning disk |
 | `DOWNLOAD_WORKERS` | `4` | Downloads at the same time |
 | `DEEZER_ARL` | — | Deezer account cookie (downloads, mixes, release feed) |
 | `DEEZER_ARL_PREMIUM` | — | Premium account cookie, used only for downloads |

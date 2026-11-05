@@ -76,6 +76,7 @@ DEFAULT_CONFIG = {
     "match_workers": int(os.environ.get("MATCH_WORKERS", "4") or "4"),
     # Threads downloading from Deezer at the same time.
     "download_workers": int(os.environ.get("DOWNLOAD_WORKERS", "4") or "4"),
+    "metadata_workers": int(os.environ.get("METADATA_WORKERS", "4") or "4"),
     # Hours between automatic refreshes of the release feed; 0 = manual only.
     "release_refresh_hours": 24,
     "notes_seen": WHATS_NEW_ID,

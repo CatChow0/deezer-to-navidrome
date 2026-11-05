@@ -437,6 +437,84 @@ class Undo(Base):
         self.assertEqual(fix.read_tags(kept), (None, None))
 
 
+class Threads(Base):
+    def run_all(self, entries, workers=4, **kw):
+        with mock.patch("core.audio_tempo.file_tempo", return_value=128.0), \
+                mock.patch("core.metadata_fix.lookup_genre", return_value="Rap"):
+            return fix.run(self.conn, entries, workers=workers, **kw)
+
+    def many(self, count=12):
+        return [self.entry(self.flac(f"{i}.flac")) for i in range(count)]
+
+    def test_every_file_is_done_once_with_nothing_left_behind(self):
+        entries = self.many()
+        report = self.run_all(entries)
+        self.assertEqual(report, {"done": 12, "written": 12, "errors": 0})
+        self.assertEqual(fix.pending(self.conn, entries), [])
+        self.assertEqual(self.conn.execute("SELECT COUNT(*) FROM write_journal").fetchone()[0], 0)
+        self.assertFalse([p for p in self.root.iterdir() if p.name.endswith(fix.TEMP_SUFFIX)])
+        for entry in entries:
+            self.assertEqual(fix.read_tags(entry["path"]), (128.0, "Rap"))
+
+    def test_they_really_run_at_the_same_time(self):
+        import threading
+        entries = self.many(4)
+        barrier = threading.Barrier(4, timeout=10)
+
+        def tempo(path):
+            barrier.wait()
+            return 128.0
+
+        with mock.patch("core.audio_tempo.file_tempo", side_effect=tempo), \
+                mock.patch("core.metadata_fix.lookup_genre", return_value="Rap"):
+            report = fix.run(self.conn, entries, workers=4)
+        self.assertEqual(report["errors"], 0)
+        self.assertEqual(report["done"], 4)
+
+    def test_one_album_is_searched_once_whatever_the_threads(self):
+        entries = self.many(12)
+        calls = []
+
+        def api(path, params=None):
+            calls.append(path)
+            if path == "/search/album":
+                return {"data": [{"id": 7, "title": "Album", "artist": {"name": "Vald"}}]}
+            return {"genres": {"data": [{"name": "Rap"}]}}
+
+        with mock.patch("core.audio_tempo.file_tempo", return_value=128.0):
+            fix.run(self.conn, entries, api=api, workers=6)
+        self.assertEqual(calls.count("/search/album"), 1)
+        self.assertEqual(calls.count("/album/7"), 1)
+
+    def test_one_failure_does_not_stop_the_others(self):
+        entries = self.many(8)
+
+        def tempo(path):
+            if path.endswith("3.flac"):
+                raise RuntimeError("boom")
+            return 128.0
+
+        with mock.patch("core.audio_tempo.file_tempo", side_effect=tempo), \
+                mock.patch("core.metadata_fix.lookup_genre", return_value="Rap"):
+            report = fix.run(self.conn, entries, workers=3)
+        self.assertEqual(report["done"], 8)
+        self.assertEqual(report["errors"], 1)
+        self.assertEqual([e["path"] for e in fix.pending(self.conn, entries)], [entries[3]["path"]])
+
+    def test_a_stop_is_heard_by_every_thread(self):
+        entries = self.many(12)
+        report = self.run_all(entries, should_stop=lambda: True)
+        self.assertEqual(report["done"], 0)
+
+    def test_the_setting_decides_how_many(self):
+        with mock.patch("core.config.load_config", return_value={"metadata_workers": 6}):
+            self.assertEqual(fix.workers_setting(), 6)
+        with mock.patch("core.config.load_config", return_value={"metadata_workers": "x"}):
+            self.assertEqual(fix.workers_setting(), fix.DEFAULT_WORKERS)
+        with mock.patch("core.config.load_config", return_value={}):
+            self.assertEqual(fix.workers_setting(), fix.DEFAULT_WORKERS)
+
+
 class Reading(Base):
     def test_junk_counts_as_missing(self):
         self.assertEqual(fix.read_tags(self.flac(genre="<unknown>", bpm="fast")), (None, None))

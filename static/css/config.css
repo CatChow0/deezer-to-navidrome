@@ -56,6 +56,17 @@
   grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr));
 }
 
+/* Four items: two rows of two, rather than one left alone on its row. */
+.set-columns--pairs {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+@media (max-width: 640px) {
+  .set-columns--pairs {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 /* The one field of the card takes all its height. */
 .set-fill {
   display: flex;

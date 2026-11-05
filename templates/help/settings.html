@@ -28,6 +28,7 @@
       <tbody>
         <tr><td><b>Library scan threads per folder</b></td><td>2 for a spinning disk, 4 for a fast disk or RAID, 8 for an SSD or NVMe. More than 2 on a spinning disk causes seeks and slows the scan down</td></tr>
         <tr><td><b>Download threads</b></td><td>Tracks fetched from Deezer at the same time. Deezer throttles the requests, so a low number is safer</td></tr>
+        <tr><td><b>Fix missing metadata threads</b></td><td>Files handled at the same time. Up to the CPU cores given to the container, about 80 MB of memory each, and 2 on a spinning disk. Genre searches stay one at a time, because of Deezer's limit</td></tr>
         <tr><td><b>Playlist matching threads</b></td><td>Set it to the number of CPU cores given to the container</td></tr>
       </tbody>
     </table>

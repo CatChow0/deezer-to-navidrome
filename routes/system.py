@@ -141,6 +141,7 @@ def config_view():
         match_workers = max(1, int(request.form.get("match_workers", "4") or "4"))
         release_refresh_hours = max(0, int(request.form.get("release_refresh_hours", "24") or "24"))
         download_workers = max(1, int(request.form.get("download_workers", "4") or "4"))
+        metadata_workers = max(1, int(request.form.get("metadata_workers", "4") or "4"))
 
         cfg = {
             "scan_dirs": scan_dirs,
@@ -154,6 +155,7 @@ def config_view():
             "match_workers": match_workers,
             "release_refresh_hours": release_refresh_hours,
             "download_workers": download_workers,
+            "metadata_workers": metadata_workers,
             **kept_config_keys(),
         }
         save_config(cfg)
