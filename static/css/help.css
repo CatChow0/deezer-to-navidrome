@@ -1,0 +1,291 @@
+/* New and Help: large panels with a list on the left and an article on the right. */
+
+.new-modal .overlay-panel,
+.help-modal .overlay-panel {
+  width: min(1180px, 100%);
+  height: min(88vh, 900px);
+}
+
+.new-modal .overlay-panel {
+  width: min(960px, 100%);
+}
+
+.doc-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 24px;
+  padding: 22px 72px 16px 28px;
+  border-bottom: 1px solid var(--line);
+}
+
+.doc-head .detail-title {
+  margin: 0;
+  font-size: var(--step-2);
+}
+
+.doc-search {
+  display: flex;
+  flex: 1 1 260px;
+  align-items: center;
+  gap: 12px;
+  max-width: 520px;
+}
+
+.doc-search input {
+  flex: 1;
+  min-width: 0;
+}
+
+.doc-status {
+  flex: none;
+  color: var(--muted);
+  font-size: var(--step--1);
+  white-space: nowrap;
+}
+
+.doc-body {
+  display: grid;
+  flex: 1;
+  grid-template-columns: 240px minmax(0, 1fr);
+  min-height: 0;
+}
+
+.new-modal .doc-body {
+  grid-template-columns: 170px minmax(0, 1fr);
+}
+
+/* Left: versions or contents, scrolling on their own */
+.doc-toc,
+.new-tabs {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 0;
+  padding: 14px 10px;
+  overflow-y: auto;
+  border-right: 1px solid var(--line);
+}
+
+.doc-toc a,
+.new-tab {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 9px 12px;
+  border: 0;
+  border-radius: var(--r-control);
+  background: transparent;
+  color: var(--text-soft);
+  font: inherit;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.doc-toc a:hover,
+.new-tab:hover {
+  background: var(--glass-raised);
+}
+
+.doc-toc a[aria-current],
+.new-tab[aria-selected="true"] {
+  background: var(--glass-hover);
+  color: var(--text);
+  box-shadow: 0 0 0 1px var(--line-strong) inset;
+}
+
+.doc-toc a.is-dim {
+  opacity: 0.4;
+}
+
+.doc-count {
+  flex: none;
+  min-width: 1.6em;
+  padding: 0 6px;
+  border-radius: var(--r-chip);
+  background: var(--glass-hover);
+  color: var(--text);
+  font-size: var(--step--1);
+  text-align: center;
+}
+
+.new-tab {
+  display: grid;
+  justify-content: stretch;
+  gap: 1px;
+}
+
+.new-tab strong {
+  font-family: var(--font-display);
+  font-size: var(--step-0);
+  font-weight: 500;
+}
+
+.new-tab span {
+  color: var(--muted);
+  font-size: var(--step--1);
+}
+
+.doc-select {
+  display: none;
+}
+
+/* Right: the article */
+.doc-article {
+  min-height: 0;
+  padding: 22px 32px 32px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.doc-article section:not([hidden]) ~ section:not([hidden]) {
+  margin-top: 26px;
+}
+
+.doc-title {
+  margin: 0 0 12px;
+  font-family: var(--font-display);
+  font-size: var(--step-2);
+  font-weight: 500;
+  letter-spacing: -0.02em;
+}
+
+.doc-block {
+  margin-bottom: 22px;
+  max-width: 76ch;
+}
+
+.doc-block h4 {
+  margin: 0 0 6px;
+  font-size: var(--step-1);
+  font-weight: 600;
+}
+
+.doc-block p,
+.doc-block li,
+.doc-block td,
+.doc-block th,
+.new-note p {
+  color: var(--text-soft);
+  line-height: 1.55;
+}
+
+.doc-block p {
+  margin: 0 0 8px;
+}
+
+.doc-block ul,
+.doc-block ol {
+  margin: 0 0 8px;
+  padding-left: 1.4em;
+}
+
+.doc-block li + li {
+  margin-top: 4px;
+}
+
+.doc-block code,
+.new-note code {
+  overflow-wrap: anywhere;
+}
+
+.doc-block table {
+  width: 100%;
+  margin: 4px 0 10px;
+  border-collapse: collapse;
+  font-size: var(--step--1);
+}
+
+.doc-block th,
+.doc-block td {
+  padding: 7px 10px 7px 0;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  vertical-align: top;
+}
+
+.doc-block th {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.doc-none {
+  color: var(--text-soft);
+}
+
+.doc-none p {
+  margin: 0 0 8px;
+}
+
+/* The dot on the New button */
+.new-btn {
+  position: relative;
+}
+
+.new-dot {
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--magenta);
+  box-shadow: 0 0 0 2px var(--ink-2);
+}
+
+@media (max-width: 760px) {
+  .new-modal .overlay-panel,
+  .help-modal .overlay-panel {
+    height: calc(100dvh - 2 * var(--gap));
+  }
+
+  .doc-head {
+    padding: 18px 60px 12px 18px;
+  }
+
+  .doc-search {
+    max-width: none;
+  }
+
+  .doc-body,
+  .new-modal .doc-body {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  /* Versions: a strip. Contents: a menu above the article. */
+  .new-tabs {
+    flex-direction: row;
+    gap: 4px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 8px 12px;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .new-tab {
+    flex: none;
+  }
+
+  .doc-toc {
+    display: none;
+  }
+
+  .doc-select {
+    display: block;
+    margin: 10px 18px;
+    width: calc(100% - 36px);
+  }
+
+  .doc-article {
+    padding: 16px 18px 24px;
+  }
+
+  .doc-block table {
+    display: block;
+    overflow-x: auto;
+  }
+}

@@ -60,7 +60,7 @@ If you self-host your music with Navidrome but discover it on Deezer, this app k
 
 The interface has four views: **Dashboard**, **Stats**, **Releases** and **Settings**. Long tasks (scans, downloads, library refreshes) run in the background and show their progress in the **Activity** cell, so the rest of the page stays usable.
 
-The **Help** button in the topbar opens a short guide and the notes of the current version. After an upgrade from a version before 1.10, that window opens on its own once: it explains that the separate `kmille2/deezer-downloader` container is no longer needed, and checks that your Deezer account and downloads folder are ready.
+Two buttons in the topbar explain the app. **New** keeps the notes of each version, one tab each, and shows a dot after an upgrade until you open it. **Help** is a full guide with a search: how each part works, every setting, and what to do when something goes wrong, with live checks of your Deezer account and downloads folder.
 
 ### Playlists
 - **Deezer playlist import** - Add playlists by ID or URL

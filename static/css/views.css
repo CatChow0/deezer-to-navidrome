@@ -108,8 +108,7 @@
 
 @media (max-width: 560px) {
   .view-switch {
-    flex: 1;
-    width: 100%;
+    flex: 1 1 100%;
   }
 
   .view-switch a {

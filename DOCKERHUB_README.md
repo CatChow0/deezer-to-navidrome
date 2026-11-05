@@ -11,6 +11,8 @@
 
 ---
 
+The **New** button keeps the notes of each version, and **Help** is a full guide with a search.
+
 ## What it does
 
 - Matches each track of your Deezer playlists and mixes (Flow, "made for you") against your local files

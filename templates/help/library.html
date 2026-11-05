@@ -1,0 +1,37 @@
+<section data-doc-section="library" hidden>
+  <h3 class="doc-title">Library and duplicates</h3>
+
+  <div class="doc-block">
+    <h4>The library index</h4>
+    <p>The app keeps an index of your files and their tags, so it can match playlists quickly. It only sees files in the <b>Music folders</b> set in Settings.</p>
+    <table>
+      <tbody>
+        <tr><td><b>Refresh library</b></td><td>Indexes new and changed files only. Use it after downloads</td></tr>
+        <tr><td><b>Rebuild from scratch</b></td><td>Reads every file again. Use it the first time. Slow on large libraries</td></tr>
+      </tbody>
+    </table>
+    <p>Supported formats: <code>.mp3</code>, <code>.flac</code>, <code>.m4a</code>, <code>.aac</code>, <code>.ogg</code>, <code>.opus</code>, <code>.wav</code>, <code>.wv</code> and <code>.mp4</code>.</p>
+  </div>
+
+  <div class="doc-block">
+    <h4>Finding duplicates</h4>
+    <ol>
+      <li>In <b>Your library</b> on the Dashboard, click <b>Find duplicates</b>.</li>
+      <li>Files are grouped by artist, album, title and version, so a remix or a live take is not a duplicate of the original. Groups are shown per album, with the quality of each file.</li>
+      <li>Check the files to keep. <b>Keep best copies only</b> picks the best of each group, and <b>Keep every copy</b> keeps all of them.</li>
+      <li><b>Quarantine unchecked</b> moves the others to <code>/data/dedup_quarantine/</code>. <b>Delete unchecked</b> removes them.</li>
+    </ol>
+    <p>Your decisions are saved: a group you reviewed stays hidden until a new file appears in it. <b>Last duplicate report</b> reopens the latest result without scanning again.</p>
+  </div>
+
+  <div class="doc-block">
+    <h4>Quality ranking</h4>
+    <p>The best copy of a group is chosen from its codec, file size and how complete its tags are.</p>
+  </div>
+
+  <div class="doc-block">
+    <h4>Quarantine</h4>
+    <p>Quarantined files are moved, not deleted, so they still take up disk space. Once you are sure, empty the folder:</p>
+<pre class="help-code">docker exec deezer-to-navidrome sh -c 'rm -rf /data/dedup_quarantine/*'</pre>
+  </div>
+</section>

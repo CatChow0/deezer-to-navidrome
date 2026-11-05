@@ -1,0 +1,75 @@
+<section data-doc-section="settings" hidden>
+  <h3 class="doc-title">Settings</h3>
+
+  <div class="doc-block">
+    <h4>Saving</h4>
+    <p>The <b>Save settings</b> bar appears when you change something under <b>Music and downloads</b>. Changes apply as soon as they are saved, with no restart. The other sections save on their own buttons.</p>
+    <p>Folder and performance variables like <code>SCAN_DIRS</code> are only read on first start: after that, change them here. Credentials like <code>DEEZER_ARL</code> or <code>APP_PASSWORD</code> are read on every start and take precedence over what is saved here.</p>
+  </div>
+
+  <div class="doc-block">
+    <h4>Music folders</h4>
+    <p>The folders indexed as your library, one per line. They are paths inside this container, so each must be mounted.</p>
+  </div>
+
+  <div class="doc-block">
+    <h4>Navidrome paths</h4>
+    <p>How each folder appears inside Navidrome, so generated playlists point to the right files. Every music folder needs a mapping, the downloads folder included. See <a href="#" data-doc-go="playlists">Playlists and mixes</a>.</p>
+  </div>
+
+  <div class="doc-block">
+    <h4>Downloads</h4>
+    <p>The folder for downloads, on this server and not a web address. Left empty, it is the music folder named <code>deezer-dl</code>. The line below it is green when it can be written to.</p>
+  </div>
+
+  <div class="doc-block">
+    <h4>Performance</h4>
+    <table>
+      <tbody>
+        <tr><td><b>Library scan threads per folder</b></td><td>2 for a spinning disk, 4 for a fast disk or RAID, 8 for an SSD or NVMe. More than 2 on a spinning disk causes seeks and slows the scan down</td></tr>
+        <tr><td><b>Download threads</b></td><td>Tracks fetched from Deezer at the same time. Deezer throttles the requests, so a low number is safer</td></tr>
+        <tr><td><b>Playlist matching threads</b></td><td>Set it to the number of CPU cores given to the container</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="doc-block">
+    <h4>Release feed</h4>
+    <p>How often the releases of your favorite artists are checked. It needs a connected Deezer account.</p>
+  </div>
+
+  <div class="doc-block">
+    <h4>Data files</h4>
+    <p>Where the app keeps its state, and where generated playlists are written. The defaults are fine unless you moved them. The data folder must be a persistent volume, or everything is lost with the container.</p>
+  </div>
+
+  <div class="doc-block">
+    <h4>Deezer account</h4>
+    <p>The <code>arl</code> cookie of your account, its plan and country. A free account can add a premium one for the downloads only. See <a href="#" data-doc-go="downloads">Downloads</a>.</p>
+  </div>
+
+  <div class="doc-block">
+    <h4>Listening stats</h4>
+    <p>The Navidrome setting to copy and the token it sends plays with. Your history and rebuilds are in the Stats tab. See <a href="#" data-doc-go="stats">Stats and recaps</a>.</p>
+  </div>
+
+  <div class="doc-block">
+    <h4>Library index and Repair downloads</h4>
+    <p><b>Refresh library</b> and <b>Rebuild from scratch</b> are explained in <a href="#" data-doc-go="library">Library and duplicates</a>. <b>Repair downloads</b> is only needed for files saved by versions 1.10.0 to 1.11.0: see <a href="#" data-doc-go="troubleshooting">Troubleshooting</a>.</p>
+  </div>
+
+  <div class="doc-block">
+    <h4>Reset data</h4>
+    <p>Each button needs a second click and cannot be undone.</p>
+    <table>
+      <tbody>
+        <tr><td><b>Clear library index</b></td><td>Forgets every indexed file. Refresh the library afterwards</td></tr>
+        <tr><td><b>Clear match results</b></td><td>Playlists show every track as not checked</td></tr>
+        <tr><td><b>Remove all playlists</b></td><td>Also removes their covers and match results</td></tr>
+        <tr><td><b>Clear duplicate report</b></td><td>The next duplicate scan starts fresh</td></tr>
+        <tr><td><b>Forget duplicate decisions</b></td><td>Groups you already reviewed come back</td></tr>
+        <tr><td><b>Reset everything</b></td><td>Playlists, covers, match results and the library index. Your listening history is kept</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>

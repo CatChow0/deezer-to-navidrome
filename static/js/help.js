@@ -1,21 +1,14 @@
-// Help window: what changed in this version, with live checks of the setup,
-// and a short guide. It opens on its own once after an upgrade; closing it
-// tells the server, so it does not come back. The Help button reopens it.
+// Help: the documentation of the app. A table of contents, one article at a
+// time, and a search across all of them, with live checks of the setup in
+// Getting started.
 
 import { escapeHtml, fetchJSON, on } from './core.js';
 import { planBadge } from './account.js';
 
-function showTab(modal, name) {
-  modal.el.querySelectorAll('[data-help-tab]').forEach(btn => {
-    btn.setAttribute('aria-pressed', String(btn.dataset.helpTab === name));
-  });
-  modal.el.querySelectorAll('[data-help-panel]').forEach(panel => {
-    panel.hidden = panel.dataset.helpPanel !== name;
-  });
-}
+const fold = text => text.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
 
-async function checkAccount(modal) {
-  const step = modal.el.querySelector('[data-help-account]');
+async function checkAccount(root) {
+  const step = root.querySelector('[data-help-account]');
   const line = step.querySelector('[data-help-account-status]');
   const dot = step.querySelector('.dot');
   const { ok, data } = await fetchJSON('/api/deezer/account');
@@ -30,27 +23,101 @@ async function checkAccount(modal) {
 }
 
 export function initHelp(modal) {
-  const auto = modal.el.dataset.autoOpen === 'true';
-  let markSeen = auto;
+  const root = modal.el;
+  const article = root.querySelector('[data-doc-article]');
+  const search = root.querySelector('[data-doc-search]');
+  const none = root.querySelector('[data-doc-none]');
+  const status = root.querySelector('[data-doc-status]');
+  const select = root.querySelector('[data-doc-select]');
+  const links = [...root.querySelectorAll('.doc-toc [data-doc-go]')];
+  const sections = [...root.querySelectorAll('[data-doc-section]')];
+  // Every section is made of blocks: the search shows or hides whole blocks,
+  // so an answer always keeps its heading.
+  const blocks = sections.flatMap(section => [...section.querySelectorAll('.doc-block')].map(block => ({
+    section: section.dataset.docSection,
+    el: block,
+    text: fold(block.textContent),
+  })));
+  let current = sections[0].dataset.docSection;
 
-  function open(tab = 'new') {
-    showTab(modal, tab);
-    modal.open({
-      closeHandler() {
-        if (!markSeen) return;
-        markSeen = false;
-        fetchJSON('/api/whats-new/seen', { json: {} });
-      },
+  function showSection(name) {
+    current = name;
+    sections.forEach(section => {
+      section.hidden = section.dataset.docSection !== name;
     });
-    checkAccount(modal);
+    blocks.forEach(block => {
+      block.el.hidden = false;
+    });
+    links.forEach(link => {
+      link.classList.remove('is-dim');
+      link.querySelector('.doc-count')?.remove();
+      if (link.dataset.docGo === name) link.setAttribute('aria-current', 'true');
+      else link.removeAttribute('aria-current');
+    });
+    select.value = name;
+    none.hidden = true;
+    status.textContent = '';
+    article.scrollTop = 0;
   }
 
-  on(modal.el, 'click', '[data-help-tab]', (_, btn) => showTab(modal, btn.dataset.helpTab));
-  // The view switch happens behind the window: close it first.
-  on(modal.el, 'click', '[data-help-settings]', () => modal.close());
-  // The repair runs in Activity: close the window so it can be followed.
-  on(modal.el, 'click', '[data-action="repair-downloads"]', () => modal.close());
-  on(document, 'click', '[data-action="help"]', () => open());
+  function goTo(name) {
+    search.value = '';
+    showSection(name);
+  }
 
-  if (auto) open('new');
+  function runSearch() {
+    const words = fold(search.value).split(/\s+/).filter(Boolean);
+    if (!words.length) {
+      showSection(current);
+      return;
+    }
+    const found = new Map();
+    blocks.forEach(block => {
+      const match = words.every(word => block.text.includes(word));
+      block.el.hidden = !match;
+      if (match) found.set(block.section, (found.get(block.section) || 0) + 1);
+    });
+    sections.forEach(section => {
+      section.hidden = !found.has(section.dataset.docSection);
+    });
+    links.forEach(link => {
+      const count = found.get(link.dataset.docGo) || 0;
+      link.removeAttribute('aria-current');
+      link.classList.toggle('is-dim', !count);
+      link.querySelector('.doc-count')?.remove();
+      if (count) link.insertAdjacentHTML('beforeend', `<span class="doc-count">${count}</span>`);
+    });
+    const total = [...found.values()].reduce((sum, count) => sum + count, 0);
+    none.hidden = total > 0;
+    if (!total) none.querySelector('[data-doc-word]').textContent = search.value.trim();
+    status.textContent = total ? `${total} ${total === 1 ? 'answer' : 'answers'}` : '';
+    article.scrollTop = 0;
+  }
+
+  search.addEventListener('input', runSearch);
+  search.addEventListener('keydown', event => {
+    // Escape empties the search first; pressed again it closes the panel.
+    if (event.key === 'Escape' && search.value) {
+      event.preventDefault();
+      event.stopPropagation();
+      search.value = '';
+      runSearch();
+    }
+  });
+  select.addEventListener('change', () => goTo(select.value));
+  on(root, 'click', '[data-doc-go]', (event, link) => {
+    event.preventDefault();
+    goTo(link.dataset.docGo);
+  });
+  // The view switch happens behind the panel: close it first.
+  on(root, 'click', '[data-help-settings]', () => modal.close());
+  // The repair runs in Activity: close the panel so it can be followed.
+  on(root, 'click', '[data-action="repair-downloads"]', () => modal.close());
+  on(document, 'click', '[data-action="help"]', () => {
+    modal.open({ label: 'Help' });
+    checkAccount(root);
+    search.focus();
+  });
+
+  showSection(current);
 }

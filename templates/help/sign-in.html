@@ -1,0 +1,36 @@
+<section data-doc-section="sign-in" hidden>
+  <h3 class="doc-title">Sign-in and other apps</h3>
+
+  <div class="doc-block">
+    <h4>Your account</h4>
+    <p>The first visit asks you to create one account, with a password of 8 characters or more, unless <code>APP_USERNAME</code> and <code>APP_PASSWORD</code> are set. Changing the password in <b>Settings → Sign-in and other apps</b> signs out your other browsers.</p>
+    <p><code>DISABLE_AUTH=true</code> turns sign-in off, for setups where a reverse proxy already asks for a login.</p>
+  </div>
+
+  <div class="doc-block">
+    <h4>Too many failed sign-ins</h4>
+    <p>After 5 failures in 15 minutes, the username and the address wait 30 seconds, then twice as long after each new failure, up to 15 minutes. Behind a reverse proxy every request has the proxy's address, so a burst of failures briefly blocks everyone.</p>
+  </div>
+
+  <div class="doc-block">
+    <h4>The two tokens</h4>
+    <table>
+      <thead><tr><th>Token</th><th>Used by</th><th>Opens</th></tr></thead>
+      <tbody>
+        <tr><td><b>API token</b></td><td>Other apps, like CatBoard</td><td>Only reading the release feed, checking the library and the version</td></tr>
+        <tr><td><b>Listening stats token</b></td><td>Navidrome</td><td>Only sending plays</td></tr>
+      </tbody>
+    </table>
+    <p>Each is created in Settings, or set with <code>API_TOKEN</code> and <code>SCROBBLE_TOKEN</code>. One set in the environment cannot be changed in Settings.</p>
+  </div>
+
+  <div class="doc-block">
+    <h4>CatBoard</h4>
+    <ol>
+      <li>Create an API token in <b>Settings → Sign-in and other apps</b>.</li>
+      <li>In CatBoard, <b>Settings → Integrations → Deezer to Navidrome</b>, enter this app's address and the token, then save.</li>
+      <li>Copy the webhook URL CatBoard shows and paste it under <b>CatBoard webhook</b> here. <b>Send a test</b> checks it.</li>
+    </ol>
+    <p>The app then calls the webhook when the release feed or the library index is refreshed, or when an artist is muted, so CatBoard updates at once.</p>
+  </div>
+</section>

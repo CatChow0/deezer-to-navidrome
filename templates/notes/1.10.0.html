@@ -1,0 +1,45 @@
+<p>This app now downloads from Deezer by itself. The separate <code>kmille2/deezer-downloader</code> container is no longer needed.</p>
+
+<ul class="help-list">
+  <li><strong>Download anything from the app.</strong> A track, a whole album, or an artist's discography, from search, a playlist, or the Releases view. Files are tagged with the cover included.</li>
+  <li><strong>Quality follows your account.</strong> Premium downloads FLAC, a free account MP3 128 kbps. With a free account, add the arl of a premium one in Settings for the downloads only: your mixes keep using the first.</li>
+  <li><strong>New setting.</strong> <b>Settings → Performance → Download threads</b> sets how many downloads run at the same time.</li>
+</ul>
+
+<h4 class="help-h">If you ran deezer-downloader</h4>
+<p>Your setup ran two containers, and this app sent its downloads through <code>DEEZER_DL_BASE_URL</code>. To remove the second one:</p>
+<ul class="help-todo">
+  <li>delete the whole <code>deezer-downloader</code> service, with its own volumes and settings;</li>
+  <li>in <code>deezer-to-navidrome</code>, delete <code>DEEZER_DL_BASE_URL</code>: it is no longer read;</li>
+  <li>mount your downloads folder in <code>deezer-to-navidrome</code>, writable;</li>
+  <li>paste the arl you gave deezer-downloader in <b>Settings → Deezer account</b>.</li>
+</ul>
+<div class="help-compose">
+  <figure>
+    <figcaption>Before: two containers</figcaption>
+<pre class="help-code">services:
+<span class="help-del">  deezer-downloader:
+    image: kmille2/deezer-downloader
+    volumes:
+      - …   # its settings and download folder</span>
+
+  deezer-to-navidrome:
+    image: catchow/deezer-to-navidrome:latest
+    environment:
+<span class="help-del">      DEEZER_DL_BASE_URL: "http://…"</span>
+    volumes:
+      - /path/on/host/library:/music/library</pre>
+  </figure>
+  <figure>
+    <figcaption>After: this app only</figcaption>
+<pre class="help-code">services:
+  deezer-to-navidrome:
+    image: catchow/deezer-to-navidrome:latest
+    environment:
+<span class="help-add">      # DEEZER_ARL: ""   # optional, or Settings</span>
+    volumes:
+      - /path/on/host/library:/music/library
+<span class="help-add">      - /path/on/host/deezer-dl:/music/deezer-dl</span></pre>
+  </figure>
+</div>
+<p class="help-note">Lines in red go away, lines in green are new. Keep the rest of your file as it is. Albums still go in <code>albums/Artist - Album/</code> and single tracks in <code>songs/</code>, so your Navidrome paths and playlists keep working.</p>

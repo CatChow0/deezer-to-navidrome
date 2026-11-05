@@ -1,0 +1,44 @@
+<section data-doc-section="other-platforms" hidden>
+  <h3 class="doc-title">Spotify and CSV</h3>
+
+  <div class="doc-block">
+    <h4>Importing</h4>
+    <p>Each track of an imported playlist is matched to a Deezer track. From then on it works like a Deezer playlist: previews, <b>Download missing</b>, scans, the <code>.m3u8</code> and automation.</p>
+    <table>
+      <thead><tr><th>From</th><th>How</th><th>Limits</th></tr></thead>
+      <tbody>
+        <tr><td>Spotify link</td><td>Paste an <code>open.spotify.com/playlist/…</code> link in <b>Playlists</b></td><td>Public playlists only, first 100 tracks</td></tr>
+        <tr><td>CSV file</td><td><b>Import CSV</b>, with a file from Exportify, TuneMyMusic or Soundiiz</td><td>None: any size, private playlists too</td></tr>
+      </tbody>
+    </table>
+    <p>Use a CSV for a playlist over 100 tracks. It usually carries each track's ISRC, which gives an exact match.</p>
+  </div>
+
+  <div class="doc-block">
+    <h4>What the statuses mean</h4>
+    <table>
+      <tbody>
+        <tr><td>(none)</td><td>Found on Deezer with a sure match</td></tr>
+        <tr><td><b>Review</b></td><td>The closest Deezer track, used, but worth a check. For example only the clean version exists on Deezer</td></tr>
+        <tr><td><b>Not on Deezer</b></td><td>Nothing close enough was found</td></tr>
+        <tr><td><b>Picked by hand</b></td><td>Chosen with <b>Find on Deezer</b>, and kept by every later sync</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="doc-block">
+    <h4>Correcting a match</h4>
+    <p>The <b>To review</b> filter lists the tracks to check. <b>Find on Deezer</b> on a row searches Deezer with the source's artist and title, and previews each result. Choose <b>Use this track</b>, <b>Not on Deezer</b>, or <b>Back to automatic matching</b>.</p>
+    <p>An explicit track is never traded for its censored version silently.</p>
+  </div>
+
+  <div class="doc-block">
+    <h4>Keeping it up to date</h4>
+    <ul>
+      <li>A <b>Quick scan</b> reads the Spotify playlist again and matches the tracks added since.</li>
+      <li>A <b>Full scan</b> also matches again every track not picked by hand.</li>
+      <li>With <b>Automation</b> on, new tracks are matched and can be downloaded on schedule.</li>
+      <li>A CSV import is a snapshot: import the file again to update it.</li>
+    </ul>
+  </div>
+</section>

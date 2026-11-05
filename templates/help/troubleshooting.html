@@ -1,0 +1,142 @@
+<section data-doc-section="troubleshooting" hidden>
+  <h3 class="doc-title">Troubleshooting</h3>
+
+  <div class="doc-block">
+    <h4>A download fails</h4>
+    <ol>
+      <li><b>Settings → Deezer account</b> must show a badge. Without an account, nothing can be downloaded.</li>
+      <li><b>Settings → Downloads</b> must show a green line. A red one means the folder does not exist or cannot be written to: mount it as a writable volume.</li>
+      <li>The reason of each failure is in <b>Activity</b> and in the tooltip of the <b>Retry</b> button.</li>
+    </ol>
+    <p>"Not available for your Deezer account" or "no download link for this track" usually means the track is not in your account's catalogue. Its country is shown in <b>Settings → Deezer account</b>.</p>
+  </div>
+
+  <div class="doc-block">
+    <h4>"Only the censored version is available"</h4>
+    <p>The explicit version is not in your account's catalogue. The app refuses to save the censored one in its place.</p>
+  </div>
+
+  <div class="doc-block">
+    <h4>Only MP3 128 kbps</h4>
+    <p>The account is free. Add a premium account's arl in <b>Settings → Deezer account</b> to get FLAC.</p>
+  </div>
+
+  <div class="doc-block">
+    <h4>The arl stopped working</h4>
+    <p>Deezer session cookies expire, and are revoked when you sign out of deezer.com. Copy a fresh one.</p>
+  </div>
+
+  <div class="doc-block">
+    <h4>Downloaded files play with noise, skip, or don't play in Navidrome</h4>
+    <p>Versions 1.10.0 to 1.11.0 decrypted downloads wrongly. <b>Repair downloads</b> checks every file saved since 1.10.0 against Deezer and replaces only the damaged ones, keeping their tags. Files that are fine, and files it cannot identify on Deezer, are left as they are. Then run <b>Refresh library</b>.</p>
+    <p><button type="button" class="btn btn--sm" data-action="repair-downloads">Repair downloads</button></p>
+  </div>
+
+  <div class="doc-block">
+    <h4>Downloaded tracks still show as Missing</h4>
+    <p>The library index does not know the new files yet. Run <b>Refresh library</b>, then a <b>Quick scan</b> of the playlist. With automation, the next automatic scan picks them up.</p>
+  </div>
+
+  <div class="doc-block">
+    <h4>Downloaded tracks are missing from Navidrome's playlists</h4>
+    <p>The downloads folder needs a mapping in <b>Settings → Navidrome paths</b>, and Navidrome must see that folder too.</p>
+  </div>
+
+  <div class="doc-block">
+    <h4>A track matched the wrong file</h4>
+    <p>Click <b>Fix</b> on its row and pick the right file, or choose <b>Not in my library</b>.</p>
+  </div>
+
+  <div class="doc-block">
+    <h4>No matches are found</h4>
+    <ul>
+      <li><strong>Tags.</strong> Files lack artist and title tags, and their names do not carry them either.</li>
+      <li><strong>Artist names.</strong> The artist must match closely: fix the odd ones with <b>Fix</b>.</li>
+      <li><strong>Wrong folders.</strong> The music folders are empty, not mounted, or the index was never built.</li>
+    </ul>
+  </div>
+
+  <div class="doc-block">
+    <h4>Playlists are not written</h4>
+    <ul>
+      <li>The library index is empty: build it first.</li>
+      <li>A mapping is wrong: check <b>Settings → Navidrome paths</b>.</li>
+      <li>The generated playlists folder cannot be written to.</li>
+    </ul>
+<pre class="help-code">docker logs deezer-to-navidrome
+docker exec deezer-to-navidrome ls -la /music</pre>
+  </div>
+
+  <div class="doc-block">
+    <h4>Scans or matching are slow</h4>
+    <ul>
+      <li>Set <code>cpus</code> in <code>docker-compose.yml</code> to your real core count.</li>
+      <li>Match the scan threads to your storage, and the matching threads to your CPU count.</li>
+      <li>Prefer <b>Refresh library</b> to a rebuild, and <b>Quick scan</b> to <b>Full scan</b>.</li>
+    </ul>
+  </div>
+
+  <div class="doc-block">
+    <h4>Duplicates keep coming back, or settings are lost</h4>
+    <p>The data folder is not persistent. Mount it as a volume:</p>
+<pre class="help-code">volumes:
+  - ./data:/data</pre>
+  </div>
+
+  <div class="doc-block">
+    <h4>Disk space keeps growing</h4>
+    <p>Quarantined duplicates are still on disk. See <a href="#" data-doc-go="library">Library and duplicates</a> to empty the folder.</p>
+  </div>
+
+  <div class="doc-block">
+    <h4>New plays don't appear in Stats</h4>
+    <ol>
+      <li>Check that <code>ND_LISTENBRAINZ_BASEURL</code> points at this app, and that Navidrome was restarted.</li>
+      <li>Check that a token exists in <b>Settings → Listening stats</b>, and that Navidrome holds the same one.</li>
+      <li>Play a track long enough for Navidrome to count it, then look under <b>Stats → Recent plays</b>.</li>
+      <li>Look at the logs of this app: a request answered <code>401</code> means the tokens differ, and <code>400</code> means the request was not understood. No request at all means Navidrome cannot reach this address.</li>
+    </ol>
+    <p>Plays made in the meantime are not lost as long as Navidrome keeps them: <b>Rebuild (merge)</b> picks them up.</p>
+  </div>
+
+  <div class="doc-block">
+    <h4>Stats is empty</h4>
+    <p>Nothing has been imported or recorded yet. Use <b>Rebuild (merge)</b> under <b>Your history</b> with the sources mounted, or set up new plays. See <a href="#" data-doc-go="stats">Stats and recaps</a>.</p>
+  </div>
+
+  <div class="doc-block">
+    <h4>Rebuild (merge) or Start clean is greyed out</h4>
+    <p><b>Your history</b> shows whether each source was found. Merge needs at least one source, or the saved copy of Maloja. Start clean needs Navidrome's database to be mounted, because most of your history could not be rebuilt without it.</p>
+  </div>
+
+  <div class="doc-block">
+    <h4>Covers are missing</h4>
+    <p>Right after an import they are still being found: covers fill in the background, most played first, which can take about an hour on a large library. <b>Your history</b> says how many tracks are still being checked on Deezer. A track with no art in its file and no match on Deezer shows its initials.</p>
+    <p>After upgrading from an earlier build, run <b>Rebuild (merge)</b> once, so albums can use the art in your files.</p>
+  </div>
+
+  <div class="doc-block">
+    <h4>A recap has no sound</h4>
+    <ul>
+      <li>Some browsers block sound until you interact with the page: tap once on the recap.</li>
+      <li>Check <b>Mute</b> and the volume at the top of the recap.</li>
+      <li>A track with no playable file falls back on a Deezer preview. With neither, the slide stays silent.</li>
+    </ul>
+  </div>
+
+  <div class="doc-block">
+    <h4>Listening time looks too low, or genres look incomplete</h4>
+    <p>Time only counts tracks whose length is known, and notes on the Stats tab and in recaps say what share is covered. Genres fill in as Deezer is checked. Run <b>Rebuild (merge)</b> if you imported before adding a source.</p>
+  </div>
+
+  <div class="doc-block">
+    <h4>A number in Stats looks wrong</h4>
+    <p>Every play can be checked under <b>Stats → Recent plays</b>, with its time, title, artist and album. Opening an artist, album or track shows its plays by month.</p>
+  </div>
+
+  <div class="doc-block">
+    <h4>The version shows "unknown"</h4>
+    <p>The <code>VERSION</code> file is missing from the image. Pull it again:</p>
+<pre class="help-code">docker compose pull &amp;&amp; docker compose up -d</pre>
+  </div>
+</section>

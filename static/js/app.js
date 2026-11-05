@@ -19,6 +19,7 @@ import { initStats } from './stats.js';
 import { initStory } from './stats-story.js';
 import { initStatsSettings } from './stats-settings.js';
 import { initHelp } from './help.js';
+import { initNew } from './new.js';
 
 initViews();
 initActivity();
@@ -42,3 +43,4 @@ initStory(overlay('stats-story'));
 initStatsSettings();
 initPlayer();
 initHelp(overlay('help-modal'));
+initNew(overlay('new-modal'));
