@@ -31,7 +31,7 @@ class Api(unittest.TestCase):
             mock.patch("core.deezer_dl.download_arl", return_value="arl"),
             mock.patch("core.deezer_dl.download_dir_status", return_value={"writable": True}),
             mock.patch("core.mix_builder.library_entries", return_value=[]),
-            mock.patch("core.mix_features.start_background"),
+            mock.patch("core.metadata_fix.start_background"),
         ]
         for patch in patches:
             patch.start()
@@ -62,10 +62,10 @@ class Api(unittest.TestCase):
         self.assertEqual(data["on_trial"], [])
 
     def test_turning_on_starts_the_tempo_analysis(self):
-        from core import mix_features
+        from core import metadata_fix
         response = self.post("/api/mixes/settings", {"daily": True})
         self.assertTrue(response.get_json()["settings"]["daily"])
-        mix_features.start_background.assert_called_once()
+        metadata_fix.start_background.assert_called_once()
 
     def test_download_versions_refuse_without_an_account(self):
         with mock.patch("core.deezer_dl.download_arl", return_value=""):
@@ -73,6 +73,20 @@ class Api(unittest.TestCase):
             self.assertEqual(response.status_code, 400)
             self.assertFalse(self.get()["settings"]["discover"])
             self.assertEqual(self.post("/api/mixes/settings", {"daily": True}).status_code, 200)
+
+    def test_fix_metadata_button_starts_a_task_and_stays_on(self):
+        from core import metadata_fix
+        data = self.post("/api/metadata/fix").get_json()
+        self.assertTrue(data["task_id"])
+        metadata_fix.start_background.assert_called_once()
+        conn = mixes_db.connect()
+        self.addCleanup(conn.close)
+        self.assertTrue(mixes_db.get_meta(conn, "metadata_fix_on"))
+
+    def test_nothing_is_tagged_until_asked(self):
+        from core import metadata_fix
+        self.client.get("/api/mixes")
+        metadata_fix.start_background.assert_not_called()
 
     def test_bad_limit_is_refused(self):
         self.assertEqual(self.post("/api/mixes/settings", {"max_unheard": "lots"}).status_code, 400)

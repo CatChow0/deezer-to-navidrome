@@ -803,7 +803,10 @@ def _public_api(path, params=None):
             if wait > 0:
                 time.sleep(wait)
             _api_last[0] = time.time()
-        data = requests.get(f"https://api.deezer.com{path}", params=params, timeout=30).json()
+        # English names: genres end up in file tags, and Deezer otherwise follows the
+        # server's country ("Films/Jeux vidéo").
+        data = requests.get(f"https://api.deezer.com{path}", params=params, timeout=30,
+                            headers={"Accept-Language": "en"}).json()
         error = data.get("error") if isinstance(data, dict) else None
         if error and error.get("code") == 4 and attempt < 2:
             time.sleep(1.5)  # quota exceeded: wait for the window to pass

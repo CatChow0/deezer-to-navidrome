@@ -1,9 +1,8 @@
 import random
-import tempfile
 import unittest
 from pathlib import Path
 
-from core import mix_candidates as mc, mix_features, mix_taste, mixes_db, stats_db
+from core import mix_candidates as mc, mix_taste, mixes_db, stats_db
 
 NOW = 1_800_000_000
 
@@ -167,27 +166,6 @@ class Pools(Base):
         pool = mc.release_pool(releases, "2026-09-01", api)
         self.assertEqual(seen, ["/album/1/tracks"])
         self.assertEqual(pool[0].album, "Album")
-
-
-class Features(Base):
-    def test_measures_once_and_again_when_a_file_changes(self):
-        folder = tempfile.TemporaryDirectory()
-        self.addCleanup(folder.cleanup)
-        path = Path(folder.name) / "a.flac"
-        path.write_bytes(b"not audio")
-        entry = {"path": str(path), "mtime_ns": 1}
-        self.assertEqual(mix_features.status(self.conn, [entry]), {"total": 1, "left": 1})
-        self.assertEqual(mix_features.analyze(self.conn, [entry]), 1)
-        self.assertEqual(mix_features.status(self.conn, [entry])["left"], 0)
-        self.assertEqual(mix_features.features_map(self.conn), {str(path): (None, None)})
-        self.assertEqual(mix_features.pending(self.conn, [{**entry, "mtime_ns": 2}]), [{**entry, "mtime_ns": 2}])
-
-    def test_can_be_stopped_and_resumed(self):
-        entries = [{"path": f"/none/{i}.flac", "mtime_ns": 1} for i in range(5)]
-        seen = []
-        stop = lambda: seen.append(1) or len(seen) > 2
-        self.assertEqual(mix_features.analyze(self.conn, entries, should_stop=stop), 2)
-        self.assertEqual(len(mix_features.pending(self.conn, entries)), 3)
 
 
 if __name__ == "__main__":

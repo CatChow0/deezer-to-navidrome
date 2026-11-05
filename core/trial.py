@@ -13,7 +13,7 @@ import shutil
 import tempfile
 from pathlib import Path
 
-from core import config, deezer_dl, stats_db
+from core import config, deezer_dl, metadata_fix, stats_db
 from core.utils import read_tags
 
 logger = logging.getLogger(__name__)
@@ -159,6 +159,7 @@ def keep(conn, deezer_id, now, reason="Kept by hand") -> None:
     target = _free_name(songs, source.name)
     shutil.move(str(source), str(target))
     _set(conn, deezer_id, KEPT, now, reason, target)
+    metadata_fix.move_file(conn, row["path"], target)
     _follow_move(row["path"], target)
 
 

@@ -273,6 +273,15 @@ class Moved(Base):
         moved = conn.execute("SELECT file_path FROM tracks WHERE id=?", (track,)).fetchone()[0]
         self.assertEqual(moved, str(self.downloads / "songs" / path.name))
 
+    def test_kept_file_is_not_measured_again(self):
+        path = self.add()
+        self.conn.execute("INSERT INTO track_features(path, mtime_ns, bpm, genre, analyzed_at) VALUES (?,?,?,?,?)",
+                          (str(path), 1, 120, "Rap", NOW))
+        self.conn.commit()
+        trial.keep(self.conn, "1", NOW)
+        rows = self.conn.execute("SELECT path FROM track_features").fetchall()
+        self.assertEqual([r[0] for r in rows], [str(self.downloads / "songs" / path.name)])
+
     def test_kept_file_updates_saved_playlist_rows(self):
         path = self.add()
         rows = [{"number": 1, "matched": True, "local_path": str(path)}]

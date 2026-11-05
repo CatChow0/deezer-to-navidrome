@@ -41,7 +41,13 @@ CREATE TABLE IF NOT EXISTS track_features (
     mtime_ns INTEGER NOT NULL,
     bpm REAL,
     genre TEXT,
-    analyzed_at INTEGER NOT NULL
+    analyzed_at INTEGER NOT NULL,
+    write_error TEXT NOT NULL DEFAULT ''
+);
+CREATE TABLE IF NOT EXISTS album_genres (
+    key TEXT PRIMARY KEY,
+    genre TEXT NOT NULL DEFAULT '',
+    checked_at INTEGER NOT NULL
 );
 CREATE TABLE IF NOT EXISTS meta (
     key TEXT PRIMARY KEY,

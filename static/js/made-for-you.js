@@ -36,8 +36,9 @@ function versionsHtml(state) {
     <h3 class="doc-title">Versions</h3>
     <div class="mfy-versions">${rows}</div>
     <p class="muted" data-mfy-analysis>${analysis.left
-      ? `Measuring the tempo of your music: ${measured} of ${analysis.total} files. ${anyOn ? 'Mixes start once most of it is done.' : 'It starts when you turn a version on.'}`
-      : `Tempo measured for all ${analysis.total} files.`}</p>
+      ? `Missing metadata: ${measured} of ${analysis.total} files done. ${anyOn ? 'Mixes start once most of it is done.' : 'Turning a version on starts it: it adds the missing tempo and genre to your files\' tags.'}`
+      : `Tempo and genre checked for all ${analysis.total} files.`}</p>
+    ${analysis.write_errors ? `<p class="help-live help-live--warn">${plural(analysis.write_errors, 'file')} could not be tagged. Is the folder mounted read-only? Their results still count for the mixes.</p>` : ''}
     ${lastRun?.notes?.length ? `<p class="help-live help-live--warn">${lastRun.notes.map(escapeHtml).join(' ')}</p>` : ''}
     <div class="button-row">
       <button type="button" class="btn btn--sm" data-mfy-generate ${!anyOn || state.running ? 'disabled' : ''}>${state.running ? 'Generating…' : 'Regenerate now'}</button>
@@ -202,6 +203,19 @@ export function initMadeForYou(modal) {
     }
     button.dataset.armed = '1';
     button.textContent = `Click again to remove ${state.pending.length} tracks`;
+  });
+  on(document, 'click', '[data-action="fix-metadata"]', async (_, button) => {
+    if (button.dataset.armed !== '1') {
+      button.dataset.label = button.textContent;
+      button.dataset.armed = '1';
+      button.textContent = 'Click again: this adds tags to your files';
+      return;
+    }
+    button.dataset.armed = '';
+    button.textContent = button.dataset.label;
+    button.disabled = true;
+    await runServerTask('Fix missing metadata', '/api/metadata/fix');
+    button.disabled = false;
   });
   on(document, 'click', '[data-action="made-for-you"]', () => {
     showTab(state?.pending.length ? 'review' : 'versions');

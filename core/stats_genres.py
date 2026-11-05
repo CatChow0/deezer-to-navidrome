@@ -8,11 +8,11 @@ _GROUPS = {
         "rap", "hip hop", "hip-hop", "hiphop", "rap/hip hop", "hip-hop & rap", "hip hop & rap", "hip-hop/rap",
         "french rap", "rap francais", "trap", "gangsta rap",
     ),
-    "Film & Game Music": ("films/games", "film scores", "films", "games", "soundtrack", "film score", "video game music"),
+    "Film & Game Music": ("films/jeux video", "musiques de films", "films/games", "film scores", "films", "games", "soundtrack", "film score", "video game music"),
     "Electronic": ("electro", "electronic", "electronica", "edm", "dance", "house", "techno"),
     "R&B & Soul": ("r&b", "rnb", "contemporary r&b", "contemporary soul", "soul", "soul & funk"),
-    "Latin": ("latin music", "latin", "brazilian music", "reggaeton"),
-    "Asian": ("asian music", "j-pop", "k-pop", "jpop", "kpop"),
+    "Latin": ("latino", "musique bresilienne", "brazilian music", "latin music", "latin", "brazilian music", "reggaeton"),
+    "Asian": ("musique asiatique", "asian music", "j-pop", "k-pop", "jpop", "kpop"),
 }
 _LOOKUP = {name: group for group, names in _GROUPS.items() for name in names}
 _MEANINGLESS = {"music", "other", "various", "misc"}

@@ -4,7 +4,7 @@ import time
 
 from flask import Blueprint, jsonify, request
 
-from core import mix_builder, mix_features, mixes_db, stats_db, stats_import, trial
+from core import mix_builder, metadata_fix, mixes_db, stats_db, stats_import, trial
 
 logger = logging.getLogger(__name__)
 
@@ -32,8 +32,8 @@ def _state(conn) -> dict:
     finally:
         stats.close()
     entries = mix_builder.library_entries()
-    analysis = mix_features.status(conn, entries)
-    analysis["running"] = mix_features.is_running()
+    analysis = metadata_fix.status(conn, entries)
+    analysis["running"] = metadata_fix.is_running()
     usage = trial.usage(conn, plays)
     return {
         "settings": mix_builder.load_settings(conn),
@@ -75,10 +75,27 @@ def settings():
                 return jsonify({"ok": False, "error": mix_builder.downloads_possible()}), 400
             mix_builder.set_enabled(conn, name, bool(enabled))
         if any(toggles.values()):
-            mix_features.start_background(mix_builder.library_entries)
+            metadata_fix.start_background(mix_builder.library_entries)
         return jsonify({"ok": True, **_state(conn)})
     finally:
         conn.close()
+
+
+@mixes_bp.post("/api/metadata/fix")
+def fix_metadata():
+    """Asked for once, it then also takes care of new files on its own."""
+    from core.config import create_task
+
+    if metadata_fix.is_running():
+        return jsonify({"ok": False, "error": "Already running"}), 409
+    conn = mixes_db.connect()
+    try:
+        mixes_db.set_meta(conn, "metadata_fix_on", True)
+    finally:
+        conn.close()
+    task_id = create_task("Fix missing metadata", kind="metadata")
+    metadata_fix.start_background(mix_builder.library_entries, task_id=task_id)
+    return jsonify({"ok": True, "task_id": task_id})
 
 
 @mixes_bp.post("/api/mixes/generate")

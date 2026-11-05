@@ -18,7 +18,7 @@ from pathlib import Path
 import requests
 from Crypto.Cipher import Blowfish
 from mutagen.flac import FLAC, Picture
-from mutagen.id3 import APIC, TALB, TDRC, TIT2, TPE1, TPE2, TPOS, TRCK, TXXX, PictureType
+from mutagen.id3 import APIC, TALB, TCON, TDRC, TIT2, TPE1, TPE2, TPOS, TRCK, TXXX, PictureType
 from mutagen.mp3 import MP3
 
 from core.config import load_secret
@@ -153,6 +153,20 @@ def _cover(song):
         return None
 
 
+def _album_genre(song):
+    """Without it, a downloaded file has no genre. A failure must not stop the download."""
+    if not song.get("ALB_ID"):
+        return None
+    try:
+        from core.deezer import _public_api
+
+        genres = ((_public_api(f"/album/{song['ALB_ID']}") or {}).get("genres") or {}).get("data") or []
+        return genres[0].get("name") if genres else None
+    except Exception as e:
+        _log(f"No genre for album {song['ALB_ID']}: {e}")
+        return None
+
+
 def _write_tags(path, song, is_flac):
     cover = _cover(song)
     artist = song.get("ART_NAME")
@@ -162,6 +176,7 @@ def _write_tags(path, song, is_flac):
     track_number = song.get("TRACK_NUMBER")
     disc_number = song.get("DISK_NUMBER")
     released = song.get("PHYSICAL_RELEASE_DATE") or song.get("DIGITAL_RELEASE_DATE")
+    genre = _album_genre(song)
 
     if is_flac:
         audio = FLAC(path)
@@ -174,6 +189,8 @@ def _write_tags(path, song, is_flac):
             audio["discnumber"] = str(disc_number)
         if released:
             audio["date"] = str(released)[:4]
+        if genre:
+            audio["genre"] = genre
         if song.get("SNG_ID"):
             audio[DEEZER_ID_TAG.lower()] = str(song["SNG_ID"])
         if cover:
@@ -201,6 +218,8 @@ def _write_tags(path, song, is_flac):
         audio["TPOS"] = TPOS(encoding=3, text=str(disc_number))
     if released:
         audio["TDRC"] = TDRC(encoding=3, text=str(released)[:4])
+    if genre:
+        audio["TCON"] = TCON(encoding=3, text=genre)
     if song.get("SNG_ID"):
         audio["TXXX:" + DEEZER_ID_TAG] = TXXX(encoding=3, desc=DEEZER_ID_TAG, text=str(song["SNG_ID"]))
     if cover:

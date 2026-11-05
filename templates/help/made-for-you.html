@@ -28,8 +28,16 @@
   </div>
 
   <div class="doc-block">
-    <h4>Tempo and genre</h4>
-    <p>Almost no file carries its tempo, so the app measures it, one file at a time in the background. It resumes after a restart, and files are only read. <b>Manage</b> shows the progress, and automatic mixes wait until most of it is done.</p>
+    <h4>Fix missing metadata</h4>
+    <p>Almost no file carries its tempo, and many have no genre. <b>Fix missing metadata</b>, in <b>Your library</b> or <b>Settings → Library index</b>, finds what each file lacks: the tempo is measured from the audio, the genre comes from Deezer, one search per album. Both are added to the file's tags, so Navidrome sees them too.</p>
+    <ul>
+      <li><strong>Your files are safe.</strong> A value already there is never replaced. Tags are written on a copy, which replaces the file only once its audio and its other tags are proven the same.</li>
+      <li><strong>Each file is done once.</strong> Results are kept in the file and in the app's data, and the pass resumes after a restart. A file is looked at again only if it changes. A genre Deezer did not have is tried again after a month.</li>
+      <li><strong>When it runs.</strong> Nothing touches your files until you click it or turn on a mix. After that, new files are handled on their own. Automatic mixes wait until most of the library is done.</li>
+      <li><strong>Read-only folders.</strong> A file that cannot be written still counts for the mixes, and <b>Manage</b> says how many there are.</li>
+      <li><strong>Genres are per album.</strong> Deezer gives the genre of an album, so one single can be mislabelled.</li>
+    </ul>
+    <p>After the first pass, Navidrome reads the changed files again at its next scan.</p>
     <p>An album's tempo is not its average: a candidate is compared with each track, weighted by your plays. A rarely played track that stands out barely counts, and an album with two tempos keeps both. A tempo and its double, like 90 and 180, count as the same.</p>
     <p>A track without a known tempo is not excluded. A track without a known genre only joins mixes around its own artists.</p>
   </div>
@@ -55,7 +63,7 @@
   <div class="doc-block">
     <h4>When something looks wrong</h4>
     <ul>
-      <li><strong>No mix appears.</strong> The tempo measure may still be running: see <b>Manage</b>, or use <b>Regenerate now</b>. A library or listening history with too little in it gives fewer mixes, or none.</li>
+      <li><strong>No mix appears.</strong> Fix missing metadata may still be running: see <b>Manage</b>, or use <b>Regenerate now</b>. A library or listening history with too little in it gives fewer mixes, or none.</li>
       <li><strong>A track in the wrong mix.</strong> Genres come from your file tags and Deezer, and a wrong tag misleads the mix.</li>
       <li><strong>"Unmapped path" in Activity.</strong> Add the folder in <b>Settings → Navidrome paths</b>. The downloads folder needs a mapping too.</li>
       <li><strong>Plays do not keep a track.</strong> Check that plays reach the app, under <b>Stats → Recent plays</b>.</li>

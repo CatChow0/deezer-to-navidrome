@@ -4,14 +4,17 @@
   <li><strong>Daily Mix.</strong> Up to 4 mixes a day, only with music you already have, each around a track, an album or an artist that keeps coming back in your listening. Seeds change every day.</li>
   <li><strong>Daily Mix+.</strong> The same idea, with about a third of tracks you do not have yet.</li>
   <li><strong>Discover.</strong> Every week, only new releases and tracks you never heard, chosen from your habits.</li>
-  <li><strong>Tempo and genre.</strong> The app measures the tempo of your music itself, in the background, since almost no file carries it. A track mix looks for the same tempo and genre, an album mix also favors the artists on the album, and an artist mix adds what you barely played of that artist. Your files are only read.</li>
+  <li><strong>How mixes choose.</strong> A track mix looks for the same tempo and genre, an album mix also favors the artists on the album, and an artist mix adds what you barely played of that artist.</li>
+  <li><strong>Fix missing metadata.</strong> Finds the tempo and genre your files lack and adds them to their tags, in <b>Your library</b> or <b>Settings → Library index</b>. Tempo is measured from the audio, genre comes from Deezer. Existing values are kept, and each file is written on a copy that replaces it only once its audio is proven the same. New downloads now carry their genre too.</li>
   <li><strong>Quarantine.</strong> What these playlists download stays on trial for 30 days. Play it twice, or star it or rate it 4 or 5 in Navidrome, and it is kept. Otherwise it waits under <b>To review</b>, and nothing leaves without your decision.</li>
   <li><strong>Trash.</strong> A removed track waits 30 days in the trash, then its file is deleted and it is never proposed again.</li>
 </ul>
 
 <h4 class="help-h">Before you turn it on</h4>
 <ul class="help-todo">
-  <li>The first tempo measure takes a while: under an hour for about 9,000 files on a test machine. Mixes start once most of it is done.</li>
+  <li>Nothing touches your files until you click <b>Fix missing metadata</b> or turn on a mix. From then on, new files are handled on their own.</li>
+  <li>The first pass takes a while: it reads and tags each file, and Navidrome then reads them again at its next scan. Mixes start once most of it is done.</li>
+  <li>Your music folders must be mounted writable for tags to be added. Otherwise the results only count for the mixes, and Manage tells you.</li>
   <li>Stars and ratings need Navidrome's database mounted at <code>/import/navidrome</code>, as for the history import. Without it, only plays count.</li>
-  <li>The Docker image is about 90 MB larger, for the tempo measure.</li>
+  <li>The Docker image is about 110 MB larger, for the tempo measure.</li>
 </ul>

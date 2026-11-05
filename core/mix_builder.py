@@ -11,7 +11,7 @@ import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from core import config, deezer_dl, mix_candidates, mix_features, mix_taste, mixes_db, stats_db, trial
+from core import config, deezer_dl, mix_candidates, metadata_fix, mix_taste, mixes_db, stats_db, trial
 from core.library import load_library_cache
 from core.mix_taste import MIX_COUNT, MIX_SIZE
 
@@ -211,7 +211,7 @@ class _Run:
         self.owned = mix_taste.owned_tracks(
             [e for e in library_entries() if e.get("path") and Path(e["path"]).exists()],
             exclude_under=[str(trial.trial_dir())],
-            features=mix_features.features_map(conn),
+            features=metadata_fix.features_map(conn),
         )
         self.notes = []
         self.downloaded = 0
@@ -445,12 +445,16 @@ def tick(now=None) -> None:
     conn = mixes_db.connect()
     try:
         settings = load_settings(conn)
-        if not any(settings[v] for v in ("daily", "blend", "discover")):
+        mixes_on = any(settings[v] for v in ("daily", "blend", "discover"))
+        # Files are only tagged once you asked for it: the button, or turning on a mix.
+        if not mixes_on and not mixes_db.get_meta(conn, "metadata_fix_on"):
             return
         entries = library_entries()
-        state = mix_features.status(conn, entries)
+        state = metadata_fix.status(conn, entries)
         if state["left"]:
-            mix_features.start_background(library_entries)
+            metadata_fix.start_background(library_entries)
+        if not mixes_on:
+            return
         analysed = 1 - state["left"] / state["total"] if state["total"] else 1
         due = due_versions(conn, now) if analysed >= MIN_ANALYSED_SHARE else []
     finally:

@@ -56,7 +56,7 @@ class Base(unittest.TestCase):
         path.write_bytes(b"audio")
         self.entries.append({"path": str(path), "tag_artist": artist, "tag_title": title, "tag_album": album or "A",
                              "duration": 200, "mtime_ns": 1})
-        self.conn.execute("INSERT OR REPLACE INTO track_features VALUES (?,?,?,?,?)", (str(path), 1, bpm, genre, NOW))
+        self.conn.execute("INSERT OR REPLACE INTO track_features(path, mtime_ns, bpm, genre, analyzed_at) VALUES (?,?,?,?,?)", (str(path), 1, bpm, genre, NOW))
         if plays:
             track = stats_db.upsert_track(self.stats, title, [artist], genre=genre, genre_source="file")
             album_id = stats_db.upsert_album(self.stats, album, artist) if album else None
@@ -383,7 +383,7 @@ class Timing(Base):
         self.entries.extend({"path": f"/x/{i}.flac", "mtime_ns": 1} for i in range(10))
         mb.save_settings(self.conn, {"daily": True})
         with mock.patch("core.mix_builder.start_task") as start, \
-                mock.patch("core.mix_features.start_background") as analysis:
+                mock.patch("core.metadata_fix.start_background") as analysis:
             mb.tick(NOW)
         analysis.assert_called_once()
         start.assert_not_called()
@@ -395,9 +395,17 @@ class Timing(Base):
             mb.tick(NOW)
         start.assert_called_once_with(["daily"])
 
+    def test_after_the_button_new_files_are_handled_with_every_mix_off(self):
+        self.entries.append({"path": "/x/1.flac", "mtime_ns": 1})
+        mixes_db.set_meta(self.conn, "metadata_fix_on", True)
+        with mock.patch("core.metadata_fix.start_background") as analysis, mock.patch("core.mix_builder.start_task") as start:
+            mb.tick(NOW)
+        analysis.assert_called_once()
+        start.assert_not_called()
+
     def test_tick_does_nothing_when_off(self):
         self.entries.append({"path": "/x/1.flac", "mtime_ns": 1})
-        with mock.patch("core.mix_features.start_background") as analysis:
+        with mock.patch("core.metadata_fix.start_background") as analysis:
             mb.tick(NOW)
         analysis.assert_not_called()
 
