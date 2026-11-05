@@ -1,0 +1,479 @@
+/* Stats view: the latest recap up top, then charts for a chosen period. */
+
+.st-recaps {
+  overflow: hidden;
+}
+
+.st-manage {
+  position: absolute;
+  top: var(--pad);
+  right: var(--pad);
+}
+
+.st-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: var(--gap) 32px;
+  padding: calc(var(--pad) * 1.6) var(--pad) var(--pad);
+}
+
+.st-hero-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: clamp(2.2rem, 7vw, 5.4rem);
+  font-weight: 600;
+  letter-spacing: -0.05em;
+  line-height: 0.98;
+  overflow-wrap: anywhere;
+}
+
+.st-hero-text {
+  max-width: 56ch;
+  margin: 14px 0 20px;
+  color: var(--text-soft);
+  font-size: var(--step-1);
+  line-height: 1.45;
+}
+
+/* The month's top albums, overlapping like a stack of sleeves. */
+.st-sleeves {
+  display: flex;
+  align-items: flex-end;
+  padding-right: 12px;
+}
+
+.st-sleeves .st-art {
+  --art: clamp(84px, 12vw, 148px);
+  margin-left: calc(var(--art) * -0.42);
+  border-radius: var(--r-tile);
+  box-shadow: 0 0 0 2px var(--ink-2), 0 18px 34px -14px rgba(0, 0, 0, 0.8);
+}
+
+.st-sleeves .st-art:first-child { margin-left: 0; }
+.st-sleeves .st-art:nth-child(2) { transform: translateY(-10px); }
+.st-sleeves .st-art:nth-child(3) { transform: translateY(-20px); }
+
+.st-shelf {
+  display: flex;
+  gap: 8px;
+  padding: 0 var(--pad) var(--pad);
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.st-shelf-card {
+  flex: none;
+  display: grid;
+  gap: 2px;
+  min-width: 118px;
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-control);
+  background: var(--glass-raised);
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--t-fast), border-color var(--t-fast);
+}
+
+.st-shelf-card:hover {
+  background: var(--glass-hover);
+  border-color: var(--line-strong);
+}
+
+.st-shelf-card strong {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.st-shelf-card span {
+  color: var(--muted);
+  font-size: var(--step--1);
+  white-space: nowrap;
+}
+
+.st-shelf-card--year {
+  border-color: rgba(139, 92, 246, 0.45);
+}
+
+.st-empty-text {
+  max-width: 60ch;
+  margin: 8px 0 16px;
+  color: var(--text-soft);
+}
+
+/* Period picker and totals */
+.st-period {
+  padding: var(--pad);
+}
+
+.st-period-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.st-stepper {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.st-period-label {
+  min-width: 11ch;
+  font-weight: 600;
+  text-align: center;
+}
+
+.st-totals {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: var(--gap);
+  margin: 22px 0 0;
+}
+
+.st-totals dt {
+  color: var(--muted);
+  font-size: var(--step--1);
+}
+
+.st-totals dd {
+  margin: 2px 0 0;
+  font-family: var(--font-display);
+  font-size: clamp(1.15rem, 2.4vw, 1.75rem);
+  font-weight: 500;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+}
+
+.st-note {
+  margin: 14px 0 0;
+  color: var(--muted);
+  font-size: var(--step--1);
+}
+
+/* Ranked lists */
+.st-rank,
+.st-genres {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.st-row {
+  display: grid;
+  grid-template-columns: 1.4em auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 6px;
+  border-radius: var(--r-control);
+}
+
+.st-row--link {
+  cursor: pointer;
+}
+
+.st-row--link:hover,
+.st-row--link:focus-within {
+  background: var(--glass-raised);
+}
+
+.st-rank-n {
+  color: var(--faint);
+  font-size: var(--step--1);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.st-row-main {
+  min-width: 0;
+}
+
+.st-row-name {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-weight: 500;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.st-row-sub {
+  display: block;
+  color: var(--muted);
+  font-size: var(--step--1);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.st-bar {
+  display: block;
+  height: 4px;
+  margin-top: 5px;
+  border-radius: 0 4px 4px 0;
+  background: var(--violet);
+}
+
+.st-row-value {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-soft);
+  font-size: var(--step--1);
+  font-variant-numeric: tabular-nums;
+}
+
+.st-row-value .play-btn {
+  width: 28px;
+  height: 28px;
+}
+
+.st-art {
+  --art: 40px;
+  position: relative;
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: var(--art);
+  height: var(--art);
+  overflow: hidden;
+  border-radius: 10px;
+  background: linear-gradient(135deg, hsl(var(--hue, 260) 58% 42%), hsl(calc(var(--hue, 260) + 48) 62% 30%));
+  color: rgba(255, 255, 255, 0.86);
+  font-size: calc(var(--art) * 0.32);
+  font-weight: 600;
+}
+
+.st-art img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.st-none {
+  margin: 0;
+  padding: 6px;
+  color: var(--muted);
+}
+
+/* Genres */
+.st-genre {
+  padding: 7px 6px;
+}
+
+.st-genre-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.st-genre-top span:last-child {
+  flex: none;
+  color: var(--text-soft);
+  font-size: var(--step--1);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Heatmap: one hue, stronger where you listen more */
+.st-heat {
+  --label: 2.6em;
+  display: grid;
+  grid-template-columns: var(--label) repeat(24, minmax(0, 1fr));
+  gap: 2px;
+  font-size: var(--step--1);
+}
+
+.st-heat-axis {
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.st-heat-day {
+  align-self: center;
+  color: var(--muted);
+}
+
+.st-heat-cell {
+  aspect-ratio: 1;
+  max-height: 34px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.st-heat-cell[data-level] {
+  background: color-mix(in srgb, var(--violet) calc(var(--level) * 1%), rgba(255, 255, 255, 0.06));
+}
+
+.st-heat-legend {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  color: var(--muted);
+  font-size: var(--step--1);
+}
+
+.st-heat-scale {
+  width: 96px;
+  height: 8px;
+  border-radius: 4px;
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.06), var(--violet));
+}
+
+/* Recent plays */
+.st-search {
+  flex: 0 1 320px;
+  min-width: 0;
+}
+
+.st-pager {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 12px;
+  color: var(--muted);
+  font-size: var(--step--1);
+}
+
+/* History */
+.st-history {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--gap) 32px;
+}
+
+.st-history h3 {
+  margin: 0 0 8px;
+  font-size: var(--step-0);
+  font-weight: 600;
+}
+
+.st-history .muted {
+  margin: 0 0 10px;
+}
+
+.st-sources {
+  display: grid;
+  gap: 6px;
+  margin: 0 0 10px;
+  padding: 0;
+  list-style: none;
+  font-size: var(--step--1);
+  overflow-wrap: anywhere;
+}
+
+.st-sources li {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+/* Detail drawer */
+.st-detail-figures {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: var(--gap);
+  margin: 18px 0;
+}
+
+.st-detail-figures dt {
+  color: var(--muted);
+  font-size: var(--step--1);
+}
+
+.st-detail-figures dd {
+  margin: 2px 0 0;
+  font-weight: 600;
+}
+
+.st-months {
+  display: grid;
+  gap: 4px;
+  margin: 0 0 18px;
+  padding: 0;
+  list-style: none;
+}
+
+.st-month {
+  display: grid;
+  grid-template-columns: 8ch minmax(0, 1fr) 4ch;
+  align-items: center;
+  gap: 10px;
+  font-size: var(--step--1);
+  font-variant-numeric: tabular-nums;
+}
+
+.st-month .st-bar {
+  margin: 0;
+}
+
+.st-month span:last-child {
+  text-align: right;
+}
+
+.st-detail-heading {
+  margin: 0 0 8px;
+  font-size: var(--step-0);
+  font-weight: 600;
+}
+
+@media (max-width: 1100px) {
+  .st-totals {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 700px) {
+  .st-history {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .st-manage {
+    position: static;
+    margin: 0 var(--pad) var(--pad);
+    align-self: flex-start;
+  }
+
+  .st-hero {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .st-sleeves {
+    order: -1;
+    padding-right: 0;
+  }
+
+  .st-sleeves .st-art {
+    --art: 84px;
+  }
+
+  .st-totals {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .st-heat {
+    --label: 2.4em;
+    gap: 1px;
+  }
+
+  .st-heat-cell {
+    border-radius: 2px;
+  }
+}

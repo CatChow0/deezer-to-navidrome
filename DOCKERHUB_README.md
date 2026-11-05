@@ -2,7 +2,7 @@
 
 **Turn your Deezer playlists into Navidrome `.m3u8` playlists, match them against your local library, and download what is missing straight from Deezer.**
 
-[![Version](https://img.shields.io/badge/version-1.12.0-blue)](https://hub.docker.com/r/catchow/deezer-to-navidrome)
+[![Version](https://img.shields.io/badge/version-1.13.0-blue)](https://hub.docker.com/r/catchow/deezer-to-navidrome)
 [![Python 3](https://img.shields.io/badge/python-3-blue)](https://www.python.org/)
 [![Flask](https://img.shields.io/badge/flask-web%20app-brightgreen)](https://flask.palletsprojects.com/)
 [![GitHub](https://img.shields.io/badge/GitHub-source%20%26%20full%20docs-black)](https://github.com/CatChow0/deezer-to-navidrome)
@@ -11,6 +11,8 @@
 
 ---
 
+The **New** button keeps the notes of each version, and **Help** is a full guide with a search.
+
 ## What it does
 
 - Matches each track of your Deezer playlists and mixes (Flow, "made for you") against your local files
@@ -18,6 +20,7 @@
 - Generates `.m3u8` playlists that Navidrome imports
 - **Downloads missing tracks directly from Deezer** — tracks, albums or whole discographies, decrypted and tagged by the app itself
 - **Automation** — scan playlists on a schedule and download what is missing
+- **Listening stats** — story recaps, top lists, genres and habits, from your own play history; replaces Maloja and lb-enricher
 - **Release feed** — new albums, EPs and singles of your favorite Deezer artists, with what you already own
 - **Library check** — see which tracks, albums and artists you own while browsing Deezer
 - **Manual matching** — fix a wrong match by picking the file yourself
@@ -96,6 +99,15 @@ Each download shows its progress on its button (*Queued* → `42%` or `3/14` →
 
 ---
 
+## Listening stats
+
+The **Stats** tab keeps its own play history in `stats.db`. No Maloja, lb-enricher or Navidrome password needed. Recaps are stories built from what stood out in each period, playing your own files, with covers taken from your files and Deezer and cached locally.
+
+- **New plays:** create a token in Settings → Listening stats, set `ND_LISTENBRAINZ_BASEURL=http://deezer-to-navidrome:8080/apis/listenbrainz/1/` in Navidrome, restart it, and link ListenBrainz in its personal settings with that token.
+- **Past plays:** mount Navidrome's and Maloja's data folders read-only at `/import/navidrome` and `/import/maloja`, then choose **Rebuild (merge)** under Stats → Your history. Merge never removes a play and can be run again at any time. **Start clean** wipes and rebuilds from the sources, and needs Navidrome's database.
+
+---
+
 ## Environment Variables
 
 > Folder and performance variables are read **on first start** to create `config.json`; then use **Settings** (no restart needed). Credentials are read on every start.
@@ -115,6 +127,9 @@ Each download shows its progress on its button (*Queued* → `42%` or `3/14` →
 | `SECRET_KEY` | random, kept in `secrets.json` | Session key |
 | `APP_USERNAME` / `APP_PASSWORD` | — | The sign-in account; else the first visit asks you to create it |
 | `API_TOKEN` | — | Token for other apps (CatBoard); else create one in Settings |
+| `SCROBBLE_TOKEN` | — | Token Navidrome sends plays with; else create one in Settings |
+| `STATS_NAVIDROME_DB` | `/import/navidrome/navidrome.db` | Navidrome's database, for importing your history |
+| `STATS_MALOJA_DB` | `/import/maloja/malojadb.sqlite` | Maloja's database, for importing your history |
 | `DISABLE_AUTH` | `false` | `true` turns sign-in off (a reverse proxy already asks for a login) |
 | `COOKIE_SECURE` | `false` | `true` makes the session cookie HTTPS-only |
 
@@ -139,6 +154,7 @@ M3U8 contains:  /deezer-dl/songs/Artist - Song.mp3   ← what Navidrome sees
 | `/music/deezer-dl` | Downloads | ✅ Writable, shared with Navidrome |
 | `/music/*` | Your music library | Read-only is fine unless you delete duplicates |
 | `/music/playlists` | Generated M3U8 output | ✅ Writable, shared with Navidrome |
+| `/import/navidrome`, `/import/maloja` | Optional: history to import into Stats | Read-only is enough |
 
 ---
 
@@ -191,6 +207,9 @@ Similarities use `rapidfuzz` (C++, GIL-releasing), so matching threads run in pa
 | `playlist_preview_state.json` | Per-playlist match results (enables Quick scan) |
 | `releases.json` / `release_prefs.json` | Release feed / muted artists |
 | `dedup_report.json` / `dedup_choices.json` | Latest duplicate analysis / persistent decisions |
+| `stats.db`, `stats.db.bak-*` | Listening history and the last 3 backups |
+| `stats_sources/` | Saved copy of Maloja's database |
+| `stats_covers/` | Cached artist, album and track covers |
 | `covers/` | Playlist artwork |
 | `dedup_quarantine/` | Quarantined duplicate files |
 

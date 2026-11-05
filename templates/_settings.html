@@ -4,15 +4,18 @@
     <p class="page-lead">Where your music lives, how Navidrome sees it, and how hard the scanner may work.</p>
   </div>
 
-  <form method="post" action="{{ url_for('system.config_view') }}" class="stack span-8" id="settings-form">
-    <section class="cell" aria-labelledby="sources-title">
+  <h2 class="settings-group span-12">Music and downloads</h2>
+
+  <form method="post" action="{{ url_for('system.config_view') }}" class="span-12 set-rows" id="settings-form">
+    <div class="set-row">
+<section class="cell set-4" aria-labelledby="sources-title">
       <div class="cell-head">
         <div>
           <h2 class="cell-title" id="sources-title">Music folders</h2>
           <p class="cell-sub">Folders scanned to build the library index, one per line.</p>
         </div>
       </div>
-      <div class="cell-body">
+      <div class="cell-body set-fill">
         <label class="form-field">
           <span class="sr-only">Music folders</span>
           <textarea class="mono" name="scan_dirs" rows="5">{{ config.scan_dirs | join('\n') }}</textarea>
@@ -20,7 +23,7 @@
       </div>
     </section>
 
-    <section class="cell" aria-labelledby="mapping-title">
+<section class="cell set-8" aria-labelledby="mapping-title">
       <div class="cell-head">
         <div>
           <h2 class="cell-title" id="mapping-title">Navidrome paths</h2>
@@ -52,9 +55,10 @@
         </template>
       </div>
     </section>
+    </div>
 
-    <div class="bento bento--even">
-      <section class="cell span-6" aria-labelledby="dl-title">
+    <div class="set-row">
+<section class="cell set-4" aria-labelledby="dl-title">
         <div class="cell-head">
           <h2 class="cell-title" id="dl-title">Downloads</h2>
         </div>
@@ -79,11 +83,11 @@
         </div>
       </section>
 
-      <section class="cell span-6" aria-labelledby="perf-title">
+<section class="cell set-8" aria-labelledby="perf-title">
         <div class="cell-head">
           <h2 class="cell-title" id="perf-title">Performance</h2>
         </div>
-        <div class="cell-body form-grid">
+        <div class="cell-body set-columns">
           <label class="form-field">
             <span>Library scan threads per folder</span>
             <select name="library_workers_per_dir">
@@ -119,7 +123,8 @@
       </section>
     </div>
 
-    <section class="cell" aria-labelledby="feed-settings-title">
+    <div class="set-row">
+<section class="cell set-4" aria-labelledby="feed-settings-title">
       <div class="cell-head">
         <div>
           <h2 class="cell-title" id="feed-settings-title">Release feed</h2>
@@ -139,14 +144,14 @@
       </div>
     </section>
 
-    <section class="cell" aria-labelledby="files-title">
+<section class="cell set-8" aria-labelledby="files-title">
       <div class="cell-head">
         <div>
           <h2 class="cell-title" id="files-title">Data files</h2>
           <p class="cell-sub">Where the app keeps its state. The defaults are fine unless you moved them.</p>
         </div>
       </div>
-      <div class="cell-body form-grid">
+      <div class="cell-body set-columns set-columns--two">
         <label class="form-field">
           <span>Generated playlists folder</span>
           <input class="mono" type="text" name="playlists_base_dir" value="{{ config.playlists_base_dir }}">
@@ -165,43 +170,67 @@
         </label>
       </div>
     </section>
+    </div>
 
-    <div class="cell save-bar">
-      <p data-save-status>Changes apply as soon as they are saved.</p>
+    <div class="cell save-bar" data-save-bar hidden>
+      <p>You have unsaved changes.</p>
       <button type="submit" class="btn">Save settings</button>
     </div>
   </form>
 
-  <aside class="stack span-4 side">
-    <section class="cell" aria-labelledby="account-title">
+  <h2 class="settings-group span-12">Accounts and connections</h2>
+
+  <div class="span-12 set-rows">
+    <div class="set-row">
+<section class="cell set-12" aria-labelledby="account-title">
       <div class="cell-head">
         <div>
           <h2 class="cell-title" id="account-title">Deezer account</h2>
           <p class="cell-sub">Used for your mixes and the release feed of your favorite artists, and for the downloads unless you add a premium account below.</p>
         </div>
       </div>
-      <div class="cell-body" data-account>
+      <div class="cell-body set-security" data-account>
         <p class="muted">Checking…</p>
       </div>
     </section>
 
-    <section class="cell" aria-labelledby="security-title">
+<section class="cell set-12" aria-labelledby="listening-title">
+      <div class="cell-head">
+        <div>
+          <h2 class="cell-title" id="listening-title">Listening stats</h2>
+          <p class="cell-sub">How Navidrome sends this app your new plays. Your history and rebuilds are in the Stats tab.</p>
+        </div>
+      </div>
+      <div class="cell-body set-security" data-stats-settings>
+        <p class="muted">Loading…</p>
+      </div>
+    </section>
+    </div>
+
+    <div class="set-row">
+<section class="cell set-12" aria-labelledby="security-title">
       <div class="cell-head">
         <div>
           <h2 class="cell-title" id="security-title">Sign-in and other apps</h2>
           <p class="cell-sub">Your password, the API token other apps use to read the release feed, and the webhook that tells CatBoard when it changed.</p>
         </div>
       </div>
-      <div class="cell-body" data-security>
+      <div class="cell-body set-security" data-security>
         <p class="muted">Loading…</p>
       </div>
     </section>
+    </div>
+  </div>
 
-    <section class="cell" aria-labelledby="index-title">
+  <h2 class="settings-group span-12">Maintenance</h2>
+
+  <div class="span-12 set-rows">
+    <div class="set-row">
+<section class="cell set-8" aria-labelledby="index-title">
       <div class="cell-head">
         <h2 class="cell-title" id="index-title">Library index</h2>
       </div>
-      <div class="cell-body cache-actions">
+      <div class="cell-body cache-actions set-columns">
         <div class="cache-action">
           <button type="button" class="btn btn--ghost btn--block" data-action="cache-refresh" data-mode="incremental">Refresh library</button>
           <p>Indexes new and changed files only. Use this after downloads.</p>
@@ -217,7 +246,7 @@
       </div>
     </section>
 
-    <section class="cell" aria-labelledby="settings-activity-title">
+<section class="cell set-4" aria-labelledby="settings-activity-title">
       <div class="cell-head">
         <h2 class="cell-title" id="settings-activity-title">Activity</h2>
       </div>
@@ -226,15 +255,17 @@
         <div class="activity-list" aria-live="polite"></div>
       </div>
     </section>
+    </div>
 
-    <section class="cell cell--danger" aria-labelledby="danger-title">
+    <div class="set-row">
+<section class="cell set-12 cell--danger" aria-labelledby="danger-title">
       <div class="cell-head">
         <div>
           <h2 class="cell-title" id="danger-title">Reset data</h2>
           <p class="cell-sub">These cannot be undone. Each button needs a second click.</p>
         </div>
       </div>
-      <div class="cell-body danger-list">
+      <div class="cell-body danger-list set-columns">
         {% set resets = [
           ('system.clear_library_cache_route', 'Clear library index', 'Forget every indexed file. Refresh the library afterwards.'),
           ('system.clear_preview_state_route', 'Clear match results', 'Playlists will show every track as not checked.'),
@@ -256,5 +287,6 @@
         {% endfor %}
       </div>
     </section>
-  </aside>
+    </div>
+  </div>
 </div>

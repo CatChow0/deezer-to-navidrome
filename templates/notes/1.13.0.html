@@ -1,0 +1,19 @@
+<p>A new <b>Stats</b> tab shows what you listen to. It replaces Wrapped, Maloja and lb-enricher if you ran them.</p>
+
+<ul class="help-list">
+  <li><strong>Story recaps.</strong> A full-screen story for each month and year, built from what stood out in that period: a song played on repeat, your longest sitting, who rose and fell, and a listener personality. Slides move on by themselves; tap to skip, hold or press Space to pause.</li>
+  <li><strong>Your own music.</strong> Recaps play your files, starting about a third of the way into each song. A track with no playable file uses Deezer's 30-second preview.</li>
+  <li><strong>Charts for any period.</strong> Top artists, albums and tracks by week, month or year, with genres, when you listen, and a searchable list of your plays. Open an artist, album or track to see its plays over time.</li>
+  <li><strong>Covers kept here.</strong> Artist, album and track covers come from your files first, then Deezer, and are stored in the data folder.</li>
+  <li><strong>Your own history.</strong> The app stores your plays itself, and can import the past ones from Navidrome and Maloja. <b>Stats → Your history</b> shows it and rebuilds it.</li>
+  <li><strong>Settings reorganised.</strong> Three groups instead of a long column, and the save bar only appears when there is something to save.</li>
+  <li><strong>New and Help.</strong> This panel keeps the notes of each version. <b>Help</b> is now a full guide with a search.</li>
+</ul>
+
+<h4 class="help-h">Start recording your plays</h4>
+<ol class="help-guide">
+  <li><strong>Import your history (optional).</strong> Mount the folders holding <code>navidrome.db</code> and, if you have it, <code>malojadb.sqlite</code> read-only at <code>/import/navidrome</code> and <code>/import/maloja</code>, then choose <b>Rebuild (merge)</b> under <b>Stats → Your history</b>.</li>
+  <li><strong>Point Navidrome at this app.</strong> Create a token in <b>Settings → Listening stats</b>. Set <code>ND_LISTENBRAINZ_BASEURL=http://deezer-to-navidrome:8080/apis/listenbrainz/1/</code> in Navidrome, restart it, and link ListenBrainz in its personal settings using that token.</li>
+  <li><strong>Check that plays arrive.</strong> Play a track in Navidrome and find it under <b>Stats → Recent plays</b>. Run <b>Rebuild (merge)</b> once more to pick up what you played during the switch: Navidrome kept it in its own history.</li>
+  <li><strong>Remove what you no longer need.</strong> Stop and remove lb-enricher, Maloja and Wrapped. Keep the read-only Navidrome mount: <b>Start clean</b> needs it, and <b>Rebuild (merge)</b> reads Navidrome's new plays through it. The app keeps its own copy of Maloja's database.</li>
+</ol>

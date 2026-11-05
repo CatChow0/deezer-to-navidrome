@@ -80,6 +80,8 @@ function applyVolume() {
   const level = prefs.muted ? 0 : prefs.volume ** 2;
   if (gainNode) {
     audio.volume = 1;
+    // A fade left over from a story must not carry on under a normal preview.
+    gainNode.gain.cancelScheduledValues(audioCtx.currentTime);
     gainNode.gain.value = level * levelFactor();
   } else {
     // Without Web Audio, the element can only turn the sound down.
@@ -98,6 +100,7 @@ let index = -1;
 let current = null;
 let loadToken = 0;
 let el = null;
+let playerHidden = false;
 
 export function playButton(trackId, label = 'Play preview') {
   return `<button type="button" class="icon-btn play-btn" data-play-track="${escapeHtml(trackId)}" aria-label="${escapeHtml(label)}" title="Play a 30-second preview">${ICONS.play}</button>`;
@@ -105,6 +108,163 @@ export function playButton(trackId, label = 'Play preview') {
 
 export function playAlbumButton(albumId, label = 'Play previews of this release') {
   return `<button type="button" class="icon-btn play-btn" data-play-album="${escapeHtml(albumId)}" aria-label="${escapeHtml(label)}" title="Play 30-second previews">${ICONS.play}</button>`;
+}
+
+// For a page that runs its own audio controls (the story recap): the player
+// bar stays out of sight while it plays, with the same volume and levelling.
+export function setPlayerHidden(hidden) {
+  playerHidden = hidden;
+  if (hidden && el) {
+    el.hidden = true;
+    document.body.classList.remove('has-player');
+  }
+}
+
+export function playPreview(trackId) {
+  // Already playing, or already on its way: a slide with the same track goes on.
+  if (current?.id === trackId || queue[index] === trackId) return Promise.resolve();
+  queue = [trackId];
+  return load(0);
+}
+
+export function stopPreview() {
+  loadToken++;
+  queue = [];
+  index = -1;
+  storyTrack = null;
+  storyPaused = false;
+  dropPendingLoad?.();
+  if (el) hide();
+}
+
+// ── Story audio ──────────────────────────────────────────────────────────────
+// The recap plays your own files: same element and volume, starting around the
+// hook, with a short fade between songs. A track with no playable file falls
+// back on Deezer's preview, and on silence if there is none.
+const FADE_MS = 500;
+const HOOK_POINT = 0.33;
+const KEEP_PLAYING_SECONDS = 40;
+let storyTrack = null;
+let storyPaused = false;
+let dropPendingLoad = null;
+
+function hookTime(length) {
+  if (!length || !Number.isFinite(length)) return 0;
+  return Math.max(0, Math.min(length * HOOK_POINT, length - KEEP_PLAYING_SECONDS));
+}
+
+function setLevel(level, milliseconds) {
+  const target = Math.max(0, level);
+  if (gainNode && audioCtx) {
+    const now = audioCtx.currentTime;
+    gainNode.gain.cancelScheduledValues(now);
+    gainNode.gain.setValueAtTime(gainNode.gain.value, now);
+    gainNode.gain.linearRampToValueAtTime(target, now + milliseconds / 1000);
+    return;
+  }
+  audio.volume = Math.min(1, target);
+}
+
+function storyLevel() {
+  return prefs.muted ? 0 : prefs.volume ** 2;
+}
+
+const wait = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds));
+
+function loadSource(src, startAt) {
+  return new Promise((resolve, reject) => {
+    dropPendingLoad?.();
+    const done = handler => value => {
+      audio.removeEventListener('loadedmetadata', ready);
+      audio.removeEventListener('error', failed);
+      dropPendingLoad = null;
+      handler(value);
+    };
+    const failed = done(() => reject(new Error('This file cannot be played')));
+    dropPendingLoad = failed;
+    const ready = done(() => {
+      audio.currentTime = startAt ?? hookTime(audio.duration);
+      resolve(audio.currentTime);
+    });
+    audio.addEventListener('loadedmetadata', ready);
+    audio.addEventListener('error', failed);
+    audio.src = src;
+    audio.load();
+  });
+}
+
+async function previewSource(deezerId) {
+  if (!deezerId) return null;
+  const { data } = await fetchJSON(`/api/preview/${encodeURIComponent(deezerId)}`);
+  return data?.ok && data.preview ? data.preview : null;
+}
+
+export async function playStoryTrack(track) {
+  if (!track?.id || storyTrack?.id === track.id) return;
+  const token = ++loadToken;
+  storyTrack = track;
+  current = null;
+  queue = [];
+  index = -1;
+  ensureAudioGraph();
+  if (!audio.paused) {
+    setLevel(0, FADE_MS);
+    await wait(FADE_MS);
+    if (token !== loadToken) return;
+  }
+  let started = false;
+  const attempt = async (src, startAt) => {
+    await loadSource(src, startAt);
+    started = true;
+    if (token !== loadToken || storyPaused) return; // resuming plays it
+    setLevel(0, 0);
+    await audio.play();
+    if (token === loadToken) setLevel(storyLevel(), FADE_MS);
+  };
+  try {
+    await attempt(`/stats/audio/${encodeURIComponent(track.id)}`, track.duration ? hookTime(track.duration) : undefined);
+  } catch (_) {
+    if (token !== loadToken) return;
+    try {
+      const preview = await previewSource(track.deezer_track_id);
+      if (preview && token === loadToken) await attempt(preview, 0);
+    } catch (_) {
+      // Blocked by the browser or nothing to play: the story goes on in silence.
+    }
+  }
+  if (!started && token === loadToken) audio.pause();
+}
+
+export function pauseStoryAudio() {
+  storyPaused = true;
+  audio.pause();
+}
+
+export function resumeStoryAudio() {
+  storyPaused = false;
+  if (storyTrack && audio.src) audio.play().then(() => setLevel(storyLevel(), 200)).catch(() => {});
+}
+
+export function toggleMute() {
+  prefs.muted = !prefs.muted;
+  savePrefs();
+  applyVolume();
+  if (storyTrack) setLevel(storyLevel(), 100);
+  if (el) syncVolumeControls();
+  return prefs.muted;
+}
+
+export function setPreviewVolume(volume) {
+  prefs.volume = Math.max(0, Math.min(1, volume));
+  prefs.muted = false;
+  savePrefs();
+  applyVolume();
+  if (storyTrack) setLevel(storyLevel(), 100);
+  if (el) syncVolumeControls();
+}
+
+export function previewAudioState() {
+  return { volume: prefs.volume, muted: prefs.muted };
 }
 
 function formatTime(seconds) {
@@ -130,6 +290,7 @@ function syncButtons() {
 }
 
 function show() {
+  if (playerHidden) return;
   el.hidden = false;
   document.body.classList.add('has-player');
 }
@@ -167,7 +328,7 @@ async function load(position) {
   if (token !== loadToken) return;
 
   if (!data?.ok || !data.preview) {
-    toast(data?.error || 'Deezer has no preview for this track', { tone: 'error' });
+    if (!playerHidden) toast(data?.error || 'Deezer has no preview for this track', { tone: 'error' });
     if (position < queue.length - 1) load(position + 1);
     else hide();
     return;
@@ -339,6 +500,12 @@ export function initPlayer() {
   audio.addEventListener('play', syncButtons);
   audio.addEventListener('pause', syncButtons);
   audio.addEventListener('ended', () => {
+    if (storyTrack) {
+      // A slide outlasted the song: go round again instead of falling silent.
+      audio.currentTime = hookTime(audio.duration);
+      audio.play().catch(() => {});
+      return;
+    }
     if (index < queue.length - 1) load(index + 1);
     else syncButtons();
   });

@@ -82,12 +82,14 @@ function premiumForm(status) {
 function render(host, status) {
   if (status.connected) {
     host.innerHTML = `
-      <p class="account-state"><span class="dot dot--ok"></span>Connected as <strong>${escapeHtml(status.name || 'your account')}</strong></p>
-      <p class="account-badges">${planBadge(status)}</p>
-      ${downloadNote(status)}
-      ${status.from_env
-        ? '<p class="muted">Set by the DEEZER_ARL environment variable. Change it there to use another account.</p>'
-        : '<button type="button" class="btn btn--danger btn--sm" data-account-disconnect>Disconnect</button>'}
+      <div class="account-status">
+        <p class="account-state"><span class="dot dot--ok"></span>Connected as <strong>${escapeHtml(status.name || 'your account')}</strong></p>
+        <p class="account-badges">${planBadge(status)}</p>
+        ${downloadNote(status)}
+        ${status.from_env
+          ? '<p class="muted">Set by the DEEZER_ARL environment variable. Change it there to use another account.</p>'
+          : '<button type="button" class="btn btn--danger btn--sm" data-account-disconnect>Disconnect</button>'}
+      </div>
       ${premiumForm(status)}
     `;
     return;

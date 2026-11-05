@@ -121,6 +121,10 @@
 </div>
 </section>
 
+<section class="view{% if view == 'stats' %} is-active{% endif %}" data-view-name="stats" aria-label="Stats" {% if view != 'stats' %}inert{% endif %}>
+  {% include '_stats.html' %}
+</section>
+
 <section class="view{% if view == 'releases' %} is-active{% endif %}" data-view-name="releases" aria-label="Releases" {% if view != 'releases' %}inert{% endif %}>
   {% include '_releases.html' %}
 </section>
@@ -132,7 +136,31 @@
 {% endblock %}
 
 {% block overlays %}
+{% include '_new.html' %}
 {% include '_help.html' %}
+
+<div id="stats-story" class="overlay st-story" aria-hidden="true">
+  <section class="overlay-panel" role="dialog" aria-modal="true" aria-label="Recap" tabindex="-1">
+    <div class="st-stage" data-story-root>
+      <div class="st-slides" data-story-slides data-overlay-content aria-live="polite"></div>
+      <div class="st-story-top">
+        <div class="st-story-progress" data-story-progress aria-hidden="true"></div>
+        <div class="st-story-controls">
+          <button type="button" data-story-pause>Pause</button>
+          <button type="button" data-story-mute>Mute</button>
+          <input type="range" min="0" max="100" step="1" data-story-volume aria-label="Volume">
+          <span class="st-paused" data-story-paused role="img" aria-label="Paused" hidden>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5h3.5v14H7zM13.5 5H17v14h-3.5z" fill="currentColor"/></svg>
+          </span>
+          <span class="st-story-count" data-story-count></span>
+        </div>
+      </div>
+      <button type="button" class="icon-btn overlay-close" data-overlay-close aria-label="Close the recap">×</button>
+      <button type="button" class="st-skip-link" data-story-prev aria-label="Previous slide"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15.5 5l-7 7 7 7"/></svg></button>
+      <button type="button" class="st-skip-link" data-story-next aria-label="Next slide"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8.5 5l7 7-7 7"/></svg></button>
+    </div>
+  </section>
+</div>
 
 <div id="drawer" class="overlay drawer" aria-hidden="true">
   <div class="overlay-backdrop" data-overlay-close></div>

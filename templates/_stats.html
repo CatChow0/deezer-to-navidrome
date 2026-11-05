@@ -1,0 +1,92 @@
+<div class="bento st" data-stats>
+  <section class="cell span-12 st-recaps" aria-label="Recaps">
+    <div class="st-hero" data-stats-hero>
+      <p class="muted">Loading…</p>
+    </div>
+    <div class="st-shelf" data-stats-shelf hidden></div>
+    <a class="btn btn--ghost btn--sm st-manage" href="#st-history" data-stats-manage>Manage history</a>
+  </section>
+
+  <div class="span-12 st-empty" data-stats-empty hidden>
+    <section class="cell">
+      <div class="cell-body">
+        <h2 class="cell-title">No plays yet</h2>
+        <p class="st-empty-text">Import your history from Navidrome and Maloja below, or point Navidrome at this app to record new plays. That part is set up in Settings.</p>
+        <a class="btn" href="{{ url_for('system.config_view') }}" data-view-link="settings">Set up new plays</a>
+      </div>
+    </section>
+  </div>
+
+  <section class="cell span-12 st-period" aria-label="Period" data-stats-content>
+    <div class="st-period-row">
+      <div class="segmented" role="group" aria-label="Period length">
+        <button type="button" data-stats-period="week" aria-pressed="false">Week</button>
+        <button type="button" data-stats-period="month" aria-pressed="true">Month</button>
+        <button type="button" data-stats-period="year" aria-pressed="false">Year</button>
+        <button type="button" data-stats-period="all" aria-pressed="false">All time</button>
+      </div>
+      <div class="st-stepper">
+        <button type="button" class="icon-btn" data-stats-step="-1" aria-label="Previous period">‹</button>
+        <strong class="st-period-label" data-stats-label aria-live="polite"></strong>
+        <button type="button" class="icon-btn" data-stats-step="1" aria-label="Next period">›</button>
+      </div>
+    </div>
+    <dl class="st-totals" data-stats-totals></dl>
+    <p class="st-note" data-stats-coverage hidden></p>
+  </section>
+
+  <section class="cell span-4" aria-labelledby="st-artists-title" data-stats-content>
+    <div class="cell-head"><h2 class="cell-title" id="st-artists-title">Top artists</h2></div>
+    <div class="cell-body"><ol class="st-rank" data-stats-top="artists"></ol></div>
+  </section>
+  <section class="cell span-4" aria-labelledby="st-albums-title" data-stats-content>
+    <div class="cell-head"><h2 class="cell-title" id="st-albums-title">Top albums</h2></div>
+    <div class="cell-body"><ol class="st-rank" data-stats-top="albums"></ol></div>
+  </section>
+  <section class="cell span-4" aria-labelledby="st-tracks-title" data-stats-content>
+    <div class="cell-head"><h2 class="cell-title" id="st-tracks-title">Top tracks</h2></div>
+    <div class="cell-body"><ol class="st-rank" data-stats-top="tracks" data-play-queue></ol></div>
+  </section>
+
+  <section class="cell span-4" aria-labelledby="st-genres-title" data-stats-content>
+    <div class="cell-head">
+      <div>
+        <h2 class="cell-title" id="st-genres-title">Genres</h2>
+        <p class="cell-sub" data-stats-genre-note></p>
+      </div>
+    </div>
+    <div class="cell-body"><ol class="st-genres" data-stats-genres></ol></div>
+  </section>
+  <section class="cell span-8" aria-labelledby="st-habits-title" data-stats-content>
+    <div class="cell-head">
+      <div>
+        <h2 class="cell-title" id="st-habits-title">When you listen</h2>
+        <p class="cell-sub" data-stats-habits-note></p>
+      </div>
+    </div>
+    <div class="cell-body" data-stats-heatmap></div>
+  </section>
+
+  <section class="cell span-12" aria-labelledby="st-plays-title" data-stats-content>
+    <div class="cell-head">
+      <h2 class="cell-title" id="st-plays-title">Recent plays</h2>
+      <input class="search-input st-search" type="search" placeholder="Search title, artist or album" aria-label="Search your plays" data-stats-search>
+    </div>
+    <div class="cell-body">
+      <div class="table-wrap" data-stats-plays></div>
+      <div class="st-pager" data-stats-pager></div>
+    </div>
+  </section>
+
+  <section class="cell span-12" id="st-history" aria-labelledby="st-history-title">
+    <div class="cell-head">
+      <div>
+        <h2 class="cell-title" id="st-history-title">Your history</h2>
+        <p class="cell-sub">What the Stats tab knows, and how to rebuild it from Navidrome and Maloja.</p>
+      </div>
+    </div>
+    <div class="cell-body st-history" data-stats-history>
+      <p class="muted">Loading…</p>
+    </div>
+  </section>
+</div>

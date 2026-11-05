@@ -9,20 +9,28 @@ export function initSettings() {
 
   const mappings = document.getElementById('mappings');
   const template = document.getElementById('mapping-template');
+  const saveBar = form.querySelector('[data-save-bar]');
+  const showSaveBar = () => {
+    saveBar.hidden = false;
+  };
+
+  form.addEventListener('input', showSaveBar);
+  form.addEventListener('change', showSaveBar);
 
   on(form, 'click', '[data-action="add-mapping"]', () => {
     mappings.appendChild(template.content.cloneNode(true));
     mappings.lastElementChild.querySelector('input')?.focus();
+    showSaveBar();
   });
 
   on(form, 'click', '[data-action="remove-mapping"]', (_, btn) => {
     btn.closest('.mapping-row')?.remove();
+    showSaveBar();
   });
 
   form.addEventListener('submit', async event => {
     event.preventDefault();
     const button = form.querySelector('button[type="submit"]');
-    const status = form.querySelector('[data-save-status]');
     button.disabled = true;
     button.textContent = 'Saving…';
 
@@ -30,7 +38,7 @@ export function initSettings() {
       const resp = await fetch(form.action, { method: 'POST', body: new FormData(form) });
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
       toast('Settings saved', { tone: 'ok' });
-      if (status) status.textContent = `Saved at ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}.`;
+      saveBar.hidden = true;
     } catch (err) {
       toast(`Settings were not saved: ${err.message}`, { tone: 'error' });
     } finally {

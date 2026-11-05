@@ -1,0 +1,83 @@
+<section data-doc-section="stats" hidden>
+  <h3 class="doc-title">Stats and recaps</h3>
+
+  <div class="doc-block">
+    <h4>Where your plays come from</h4>
+    <p>The app keeps its own history of what you play. New plays are sent by Navidrome as they happen, and past ones can be imported from Navidrome and Maloja. Neither Maloja nor lb-enricher is needed, and the app needs no Navidrome password.</p>
+  </div>
+
+  <div class="doc-block">
+    <h4>Recording new plays</h4>
+    <ol>
+      <li>Create a token in <b>Settings → Listening stats</b>, or set <code>SCROBBLE_TOKEN</code>.</li>
+      <li>Set <code>ND_LISTENBRAINZ_BASEURL=http://deezer-to-navidrome:8080/apis/listenbrainz/1/</code> in Navidrome and restart it. Change the host if Navidrome reaches this app under another name.</li>
+      <li>In Navidrome's personal settings, link ListenBrainz using that token. If Navidrome already holds a token, you can paste that one in Settings instead.</li>
+      <li>Play a track and find it under <b>Stats → Recent plays</b>.</li>
+    </ol>
+    <p>This token is checked even with <code>DISABLE_AUTH</code>. Making a new one stops Navidrome until it is linked again.</p>
+  </div>
+
+  <div class="doc-block">
+    <h4>Importing your past plays</h4>
+    <p>Mount the sources read-only, then choose <b>Rebuild (merge)</b> under <b>Stats → Your history</b> (<b>Manage history</b> jumps there):</p>
+<pre class="help-code">volumes:
+  - /path/to/navidrome/data:/import/navidrome:ro
+  - /path/to/Maloja:/import/maloja:ro</pre>
+    <p>The app reads copies of these files and never writes to them. When the same play is in both, Navidrome's details win, and it counts once even if Maloja changed the title or its clock was a few minutes off.</p>
+  </div>
+
+  <div class="doc-block">
+    <h4>Merge or Start clean</h4>
+    <table>
+      <thead><tr><th></th><th>Rebuild (merge)</th><th>Start clean</th></tr></thead>
+      <tbody>
+        <tr><td>Plays only this app has</td><td>Kept</td><td>Lost</td></tr>
+        <tr><td>Plays gone from the sources</td><td>Kept</td><td>Lost</td></tr>
+        <tr><td>Needs Navidrome's database</td><td>No</td><td>Yes</td></tr>
+      </tbody>
+    </table>
+    <p>Merge can be run at any time without counting anything twice, and also records each track's exact file. Start clean says how many plays it would lose before you confirm, and refuses to run if Navidrome's database has no plays.</p>
+    <p>The first import saves a copy of Maloja's database, so rebuilds keep working after you remove Maloja. Keep the Navidrome mount: Start clean needs it, and Merge reads new Navidrome plays through it.</p>
+  </div>
+
+  <div class="doc-block">
+    <h4>Going back to a backup</h4>
+    <p>Both rebuilds first keep a backup of the history (the last 3, as <code>stats.db.bak-*</code> in the data folder). To restore one, stop the container, delete <code>stats.db</code> and its <code>-wal</code> and <code>-shm</code> files, rename the backup to <code>stats.db</code>, and start it again.</p>
+    <p><b>Reset data</b> in Settings does not touch your listening history.</p>
+  </div>
+
+  <div class="doc-block">
+    <h4>Recaps</h4>
+    <p>Each month and year gets a story of up to 12 slides that move on by themselves. The month in progress is marked <i>so far</i>.</p>
+    <table>
+      <tbody>
+        <tr><td>Next or previous slide</td><td>Tap the right or left side, swipe, or use the arrow keys or on-screen arrows</td></tr>
+        <tr><td>Pause</td><td>Hold on the slide, press Space, or use <b>Pause</b></td></tr>
+        <tr><td>Close</td><td>Escape or the × button</td></tr>
+      </tbody>
+    </table>
+    <p>The slides depend on what stood out in that period, so they differ from one recap to the next. Your listener personality compares the period with your usual habits, so a night owl only earns that title in an unusually late month.</p>
+    <p>Comparisons with the previous period are left out when that period is only partly recorded, and "new to you" waits until 90 days of history exist, since your records start when recording started.</p>
+  </div>
+
+  <div class="doc-block">
+    <h4>Recap sound</h4>
+    <p>Recaps play your own files, starting about a third of the way into each song, using the music folders already mounted here. A track with no playable file uses Deezer's 30-second preview, and otherwise the slide stays silent.</p>
+  </div>
+
+  <div class="doc-block">
+    <h4>Covers</h4>
+    <p>Covers are stored in the data folder. Tracks and albums use art inside your files, then a <code>cover</code>, <code>folder</code> or <code>front</code> image in the album's own folder, then Deezer. Artists use an <code>artist</code> or <code>folder</code> image in their folder, then their Deezer photo, then their most-played album's cover.</p>
+    <p>They fill in the background, most played first, and a cover is also fetched the first time a page needs it.</p>
+  </div>
+
+  <div class="doc-block">
+    <h4>How the numbers are worked out</h4>
+    <ul>
+      <li><strong>Listening time</strong> is plays × track length, so it is an estimate, not measured listening. A note appears when some lengths are unknown.</li>
+      <li><strong>A featured artist</strong> counts for each credited artist, while the play counts once in the total.</li>
+      <li><strong>Genres</strong> come from your files and then Deezer, a few tracks at a time. Similar names are grouped, like Rap and Hip Hop. A note says how many plays have a known genre.</li>
+      <li><strong>Periods</strong> follow your browser's timezone.</li>
+    </ul>
+  </div>
+</section>

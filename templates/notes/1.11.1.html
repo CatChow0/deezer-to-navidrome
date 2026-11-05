@@ -1,0 +1,10 @@
+<div class="help-callout help-callout--warn">
+  <strong>Downloads from 1.10.0 to 1.11.0 may be damaged</strong>
+  <p>Those versions decrypted the files wrongly: they play with noise and skips, and Navidrome's web player refuses them. Downloads are correct from this version on.</p>
+  <p><b>Repair downloads</b> checks every file saved since 1.10.0 against Deezer and replaces only the damaged ones, keeping their tags. Files that are fine, and files it cannot identify on Deezer, are left as they are. Then run <b>Refresh library</b>. The button is also in <b>Settings → Library index</b>.</p>
+  <button type="button" class="btn btn--sm" data-action="repair-downloads">Repair downloads</button>
+</div>
+
+<ul class="help-list">
+  <li><strong>Track id in the tags.</strong> New downloads also carry the Deezer id of the track in a <code>DEEZER_TRACK_ID</code> tag.</li>
+</ul>

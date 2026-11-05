@@ -1,0 +1,60 @@
+<section data-doc-section="getting-started">
+  <h3 class="doc-title">Getting started</h3>
+
+  <div class="doc-block">
+    <h4>What this app does</h4>
+    <p>It keeps your Deezer playlists and your own music server in step. It matches each playlist against your files, writes playlists Navidrome can read, downloads what is missing, follows new releases, and shows what you listen to.</p>
+    <p>Long tasks run in the background and show their progress in <b>Activity</b>, on the Dashboard and in Settings, so the rest of the page stays usable.</p>
+  </div>
+
+  <div class="doc-block">
+    <h4>Check your setup</h4>
+    <ol class="help-steps">
+      <li class="help-step" data-help-account>
+        <span class="help-step-state"><span class="dot"></span></span>
+        <div>
+          <strong>Deezer account</strong>
+          <p>Downloads, mixes and the release feed use the <code>arl</code> cookie of your account, pasted in <b>Settings → Deezer account</b>.</p>
+          <p class="help-live" data-help-account-status>Checking…</p>
+        </div>
+      </li>
+      <li class="help-step" data-help-downloads>
+        <span class="help-step-state"><span class="dot {{ 'dot--ok' if download_dir.writable else 'dot--miss' }}"></span></span>
+        <div>
+          <strong>Downloads folder</strong>
+          <p>It must be mounted in this container and writable, or downloads fail or stay inside the container.</p>
+          <p class="help-live{{ '' if download_dir.writable else ' help-live--warn' }}">
+            {% if download_dir.writable %}Downloads go to <code>{{ download_dir.path }}</code>
+            {% elif download_dir.exists %}<code>{{ download_dir.path }}</code> exists but cannot be written to.
+            {% else %}<code>{{ download_dir.path }}</code> does not exist in this container.{% endif %}
+          </p>
+        </div>
+      </li>
+    </ol>
+    <p><a class="btn btn--ghost btn--sm" href="{{ url_for('system.config_view') }}" data-view-link="settings" data-help-settings>Open Settings</a></p>
+  </div>
+
+  <div class="doc-block">
+    <h4>First steps</h4>
+    <ol>
+      <li><strong>Settings.</strong> Check the music folders and the Navidrome paths, make sure the line under <b>Downloads</b> is green, and connect your Deezer account.</li>
+      <li><strong>Index your library.</strong> <b>Settings → Library index → Rebuild from scratch</b> the first time. Afterwards <b>Refresh library</b> only reads new and changed files.</li>
+      <li><strong>Add playlists.</strong> On the Dashboard, paste a Deezer or Spotify playlist link in <b>Playlists</b>, import a CSV, or follow your mixes with <b>Mixes → Choose mixes</b>.</li>
+      <li><strong>Scan.</strong> Open a playlist and run a <b>Quick scan</b> or a <b>Full scan</b>. It writes the <code>.m3u8</code> Navidrome imports.</li>
+      <li><strong>Download what is missing.</strong> <b>Download missing</b> in the playlist, or <b>Download</b> on a single row. Then run <b>Refresh library</b> and a <b>Quick scan</b> so the new files count as <i>In library</i>.</li>
+      <li><strong>Automate.</strong> <b>Automation</b> in the playlist scans it on a schedule and can download what is missing each time.</li>
+      <li><strong>See what you listen to.</strong> Set up the <a href="#" data-doc-go="stats">Stats tab</a>.</li>
+    </ol>
+  </div>
+
+  <div class="doc-block">
+    <h4>Where to find what changed</h4>
+    <p>The <b>New</b> button keeps the notes of each version, one tab each. A dot appears on it after an upgrade, until you open it.</p>
+    <p>A badge next to these buttons says when a newer version is available.</p>
+  </div>
+
+  <div class="doc-block">
+    <h4>More detail</h4>
+    <p>The <a href="https://github.com/CatChow0/deezer-to-navidrome" target="_blank" rel="noopener">documentation on GitHub</a> also covers installation, every environment variable and the API.</p>
+  </div>
+</section>

@@ -48,7 +48,7 @@
 .view-switch {
   position: relative;
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   padding: 4px;
   border-radius: var(--r-chip);
   background: rgba(0, 0, 0, 0.28);
@@ -81,19 +81,23 @@
   top: 4px;
   bottom: 4px;
   left: 4px;
-  width: calc((100% - 8px) / 3);
+  width: calc((100% - 8px) / 4);
   border-radius: var(--r-chip);
   background: var(--text);
   box-shadow: 0 4px 18px -6px rgba(238, 234, 248, 0.5);
   transition: transform var(--t-slow) var(--ease-out);
 }
 
-.view-switch[data-active="releases"] .view-switch-pill {
+.view-switch[data-active="stats"] .view-switch-pill {
   transform: translateX(100%);
 }
 
-.view-switch[data-active="settings"] .view-switch-pill {
+.view-switch[data-active="releases"] .view-switch-pill {
   transform: translateX(200%);
+}
+
+.view-switch[data-active="settings"] .view-switch-pill {
+  transform: translateX(300%);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -104,6 +108,11 @@
 
 @media (max-width: 560px) {
   .view-switch {
-    flex: 1;
+    flex: 1 1 100%;
+  }
+
+  .view-switch a {
+    padding: 8px 4px;
+    font-size: var(--step--1);
   }
 }

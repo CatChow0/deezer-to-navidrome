@@ -1,0 +1,62 @@
+<section data-doc-section="downloads" hidden>
+  <h3 class="doc-title">Downloads</h3>
+
+  <div class="doc-block">
+    <h4>How it works</h4>
+    <p>The app downloads from Deezer itself: it fetches the file, decrypts it and writes its tags, cover included. You can download a track, a whole album or an artist's discography, from search, a playlist or the Releases view. A file that already exists is not downloaded again.</p>
+  </div>
+
+  <div class="doc-block">
+    <h4>Accounts and quality</h4>
+    <p>Downloads use the <code>arl</code> cookie of a Deezer account. To get it, sign in on deezer.com, open your browser's developer tools, and copy the value of the <code>arl</code> cookie into <b>Settings → Deezer account</b>.</p>
+    <table>
+      <thead><tr><th>Account</th><th>Download format</th></tr></thead>
+      <tbody>
+        <tr><td>Premium (HiFi)</td><td>FLAC</td></tr>
+        <tr><td>Premium with high quality only</td><td>MP3 320 kbps</td></tr>
+        <tr><td>Free</td><td>MP3 128 kbps</td></tr>
+        <tr><td>Free, plus a premium arl for the downloads</td><td>FLAC from the second account</td></tr>
+      </tbody>
+    </table>
+    <p>The second account is only used for downloads: your mixes and the release feed keep using the first. A free arl is refused in that field.</p>
+  </div>
+
+  <div class="doc-block">
+    <h4>Country and explicit versions</h4>
+    <p>Deezer serves the catalogue of the account's subscription country, shown next to its badge in Settings. The app does not pick a country: to download from another catalogue, use an account from that country.</p>
+    <ul>
+      <li><strong>Explicit or censored.</strong> You get exactly the version you clicked.</li>
+      <li><strong>Another release of the same recording.</strong> When a release is not available for your account, the app may use another release of the same recording, only if it is explicit exactly when the requested track is. It keeps the requested track's tags, and Activity says "from another release".</li>
+      <li><strong>Only the censored version exists for you.</strong> The download fails with a message saying so, instead of silently saving it.</li>
+    </ul>
+  </div>
+
+  <div class="doc-block">
+    <h4>Where files go</h4>
+<pre class="help-code">&lt;downloads folder&gt;/
+├── albums/
+│   └── Artist - Album/
+│       ├── 01 - Artist Title.flac
+│       └── 02 - Artist Title.flac
+└── songs/
+    └── Artist - Title.flac</pre>
+    <p>The folder is set in <b>Settings → Downloads</b>. Left empty, it is the music folder named <code>deezer-dl</code>. Settings shows the folder actually used, and warns if it does not exist or cannot be written to. Mount it as a volume, or the files stay inside the container.</p>
+  </div>
+
+  <div class="doc-block">
+    <h4>Following a download</h4>
+    <p>The button and <b>Activity</b> show the progress: <span class="chip chip--info">Queued</span> while it waits for a free slot, then <span class="chip chip--info">42%</span> or <span class="chip chip--info">3/14</span>, then <span class="chip chip--ok">Downloaded</span> or <i>Already there</i>.</p>
+    <p>When some tracks of an album fail, the button shows <span class="chip chip--partial">13/14 saved</span> and lists the missing ones: click it again to fetch only those.</p>
+    <p><b>Settings → Performance → Download threads</b> sets how many run at once. Deezer throttles requests, so a low number is safer.</p>
+  </div>
+
+  <div class="doc-block">
+    <h4>After downloading</h4>
+    <p>In a playlist, <b>Download missing</b> queues every missing track and marks the rows as <i>Downloaded</i> as they finish. Run <b>Refresh library</b> and a <b>Quick scan</b> afterwards so they count as <i>In library</i>. With automation, the next automatic scan picks them up.</p>
+  </div>
+
+  <div class="doc-block">
+    <h4>If Deezer changes</h4>
+    <p>Downloads and mixes use a private Deezer service. If Deezer changes it, they may stop working until the app is updated. Search, playlists and the release feed use the public API and are not affected.</p>
+  </div>
+</section>

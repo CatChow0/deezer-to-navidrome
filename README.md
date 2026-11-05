@@ -2,7 +2,7 @@
 
 **A self-hosted web app that turns your Deezer playlists into Navidrome `.m3u8` playlists, matches them against your local library, and downloads what is missing straight from Deezer.**
 
-[![Docker Image Version](https://img.shields.io/badge/version-1.12.0-blue)](https://hub.docker.com/r/catchow/deezer-to-navidrome)
+[![Docker Image Version](https://img.shields.io/badge/version-1.13.0-blue)](https://hub.docker.com/r/catchow/deezer-to-navidrome)
 [![Python 3](https://img.shields.io/badge/python-3-blue)](https://www.python.org/)
 [![Flask](https://img.shields.io/badge/flask-web%20app-brightgreen)](https://flask.palletsprojects.com/)
 
@@ -13,6 +13,7 @@
 - [Architecture](#architecture)
 - [Downloads](#downloads)
 - [Playlists from other platforms](#other-platforms)
+- [Listening stats](#-listening-stats)
 - [Cache System](#cache-system)
 - [Deduplication System](#deduplication-system)
 - [Installation](#installation)
@@ -57,9 +58,9 @@ If you self-host your music with Navidrome but discover it on Deezer, this app k
 <a id ="features"></a>
 ## ✨ Features
 
-The interface has three views: **Dashboard**, **Releases** and **Settings**. Long tasks (scans, downloads, library refreshes) run in the background and show their progress in the **Activity** cell, so the rest of the page stays usable.
+The interface has four views: **Dashboard**, **Stats**, **Releases** and **Settings**. Long tasks (scans, downloads, library refreshes) run in the background and show their progress in the **Activity** cell, so the rest of the page stays usable.
 
-The **Help** button in the topbar opens a short guide and the notes of the current version. After an upgrade from a version before 1.10, that window opens on its own once: it explains that the separate `kmille2/deezer-downloader` container is no longer needed, and checks that your Deezer account and downloads folder are ready.
+Two buttons in the topbar explain the app. **New** keeps the notes of each version, one tab each, and shows a dot after an upgrade until you open it. **Help** is a full guide with a search: how each part works, every setting, and what to do when something goes wrong, with live checks of your Deezer account and downloads folder.
 
 ### Playlists
 - **Deezer playlist import** - Add playlists by ID or URL
@@ -70,6 +71,12 @@ The **Help** button in the topbar opens a short guide and the notes of the curre
 - **Manual matching** - **Fix** a track: search your library and pick the right file, or mark it as not in your library
 - **M3U8 export** - Navidrome-compatible playlists, with a `report.json` and a `missing.txt`
 - **Automation** - Per playlist: scan on an interval (minutes, hours or days) and download what is missing after each scan
+
+### Listening stats
+
+- **Stats tab** with story recaps of each month and year, top lists, genres and listening habits
+- **Keeps its own history**: receives new plays from Navidrome and imports your past plays from Navidrome and Maloja
+- See [Listening stats](#-listening-stats)
 
 ### Search, releases and player
 - **Deezer search** - Tracks, albums and artists, with album and artist details in a drawer
@@ -273,6 +280,65 @@ The **To review** filter lists the tracks to check. **Find on Deezer** on a row 
 ---
 
 <a id ="cache-system"></a>
+## 📊 Listening stats
+
+The **Stats** tab shows what you listen to: a story recap of each month and year, top artists, albums and tracks for any week, month or year, genres, when you listen, and a searchable list of your plays. Open an artist, album or track for its plays over time.
+
+It keeps its own history in `stats.db`, so it needs neither Maloja nor lb-enricher, and no Navidrome password. Track lengths come from Navidrome and your library index; missing genres come from Deezer, a few tracks at a time in the background, most played first. Listening time is plays × track length, so it is an estimate.
+
+### Recaps
+
+Each recap is a story of 10 to 12 slides that move on by themselves: tap the right side to skip, the left to go back, hold to pause. The slides depend on what stood out in that period, such as a song you played 40 times in a day, your longest sitting, who rose and fell, and a listener personality that compares the period with your usual habits.
+
+Recaps play your own files, starting about a third of the way into each song, using the music folders already mounted in this container. A track with no playable file falls back on Deezer's 30-second preview.
+
+### Covers
+
+Covers are cached in `stats_covers/` in `DATA_DIR`, at most 600 px. Tracks and albums use art embedded in your files, then a `cover`, `folder` or `front` image in the album's own folder, then Deezer. Artists use an `artist` or `folder` image in their folder, then their Deezer photo, then their most-played album's cover. The cache fills in the background, most played first, and a cover is also fetched the first time a page needs it. Run **Rebuild (merge)** once after upgrading from an earlier build: it records each track's exact file.
+
+### Recording new plays
+
+Navidrome sends plays over its ListenBrainz integration:
+
+1. Create a token in **Settings → Listening stats**, or set `SCROBBLE_TOKEN`.
+2. Set `ND_LISTENBRAINZ_BASEURL=http://deezer-to-navidrome:8080/apis/listenbrainz/1/` in Navidrome and restart it.
+3. In Navidrome's personal settings, link ListenBrainz using that token.
+4. Play a track and find it under **Stats → Recent plays**.
+
+The route checks this token itself, even with `DISABLE_AUTH`.
+
+### Importing your history
+
+Mount the sources read-only, then choose **Rebuild (merge)** under **Stats → Your history**:
+
+```yaml
+volumes:
+  - /path/to/navidrome/data:/import/navidrome:ro
+  - /path/to/Maloja:/import/maloja:ro
+```
+
+The app reads copies of these files and never writes to them. When the same play is in both, Navidrome's details win. It counts as the same play within 5 seconds whatever the title (Maloja rewrites titles), within 2 minutes with the same track or a very similar title, and within 10 minutes for the same track with no closer partner.
+
+### Rebuilding
+
+| | Rebuild (merge) | Start clean |
+|---|---|---|
+| Plays only this app has | Kept | Lost |
+| Plays gone from the sources | Kept | Lost |
+| Needs Navidrome's database | No | Yes |
+
+Both back up `stats.db` first (the last 3, as `stats.db.bak-*` in `DATA_DIR`) and report what changed. To go back to a backup, stop the container, delete `stats.db` and its `-wal` and `-shm` files, rename the backup to `stats.db`, and start it again. Start clean shows how many plays it would lose before you confirm, and refuses to run if Navidrome's database has no plays. Merge can be run any time without counting anything twice. The first import saves a copy of Maloja's database in `stats_sources/`, so rebuilds keep working after you remove Maloja. **Reset data** in Settings does not touch your listening history.
+
+### Moving from Wrapped, Maloja and lb-enricher
+
+1. Deploy this version, mount both sources, run **Rebuild (merge)** and check the numbers.
+2. Point Navidrome at this app (above).
+3. Check that a new play arrives.
+4. Run **Rebuild (merge)** again to pick up plays from during the switch: Navidrome kept them.
+5. Stop and remove lb-enricher, Maloja and Wrapped. Keep the Navidrome mount: Start clean needs it, and Merge reads new Navidrome plays through it.
+
+---
+
 ## 📦 Cache System
 
 ### Cache Files Overview
@@ -287,6 +353,10 @@ The **To review** filter lists the tracks to check. **Find on Deezer** on a row 
 | `release_prefs.json` | Muted artists of the release feed | Survives restarts |
 | `dedup_report.json` | Latest duplicate analysis | Until a new scan |
 | `dedup_choices.json` | **Persistent** duplicate decisions | Survives restarts |
+| `stats.db` | Listening history | Survives **Reset data**; replaced only by Start clean |
+| `stats.db.bak-*` | Backups made before each rebuild (the last 3) | Replaced by newer ones |
+| `stats_sources/` | Saved copy of Maloja's database | Until replaced by a larger one |
+| `stats_covers/` | Cached artist, album and track covers | Survives **Reset data**; can be deleted, it fills again |
 | `covers/` | Playlist artwork | Until cleaned up |
 | `config.json` | App configuration | Survives restarts |
 | `secrets.json` | Password hash, API token, Deezer ARLs, webhook URL, session key | Survives restarts |
@@ -500,6 +570,7 @@ services:
       # Optional: the Deezer account (you can paste it in Settings instead)
       # DEEZER_ARL: ""
       # DEEZER_ARL_PREMIUM: ""       # premium account used only for downloads
+      # SCROBBLE_TOKEN: ""           # token Navidrome sends new plays with
 
       # Optional: the sign-in account (else the first visit asks for it)
       # APP_USERNAME: "admin"
@@ -562,6 +633,9 @@ The folder and performance variables are read **on first start** to create `conf
 | `SECRET_KEY` | random, kept in `secrets.json` | Session signing key |
 | `APP_USERNAME` / `APP_PASSWORD` | — | The sign-in account; else the first visit asks you to create it |
 | `API_TOKEN` | — | Token for other apps; else create one in Settings |
+| `SCROBBLE_TOKEN` | — | Token Navidrome sends plays with; else create one in Settings |
+| `STATS_NAVIDROME_DB` | `/import/navidrome/navidrome.db` | Navidrome's database, for importing your history |
+| `STATS_MALOJA_DB` | `/import/maloja/malojadb.sqlite` | Maloja's database, for importing your history |
 | `DISABLE_AUTH` | `false` | `true` turns sign-in off (a reverse proxy already asks for a login) |
 | `COOKIE_SECURE` | `false` | `true` makes the session cookie HTTPS-only |
 

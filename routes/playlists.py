@@ -2,6 +2,7 @@ import threading
 
 from flask import Blueprint, flash, jsonify, redirect, render_template, request, url_for
 
+from core.patch_notes import RELEASES
 from core.config import (
     create_task,
     delete_playlist_cache,
@@ -49,6 +50,7 @@ def render_app(view):
         view=view,
         download_dir=deezer_dl.download_dir_status(),
         whats_new=whats_new_state(),
+        releases=RELEASES,
     )
 
 

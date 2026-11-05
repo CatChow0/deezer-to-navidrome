@@ -5,6 +5,8 @@ import time
 import uuid
 from pathlib import Path
 
+from core.patch_notes import RELEASES
+
 DATA_DIR = Path(os.environ.get("DATA_DIR", "./data"))
 COVERS_DIR = DATA_DIR / "covers"
 CONFIG_FILE = DATA_DIR / "config.json"
@@ -46,12 +48,12 @@ def env_host_to_navidrome_roots(name: str, default=None):
     return mappings
 
 
-# The release notes shown once in the Help window. A new install starts with
-# them read; any older install sees them once (it has another notes_seen, or
-# none before 1.11). An install upgraded from before the built-in downloader
-# still has the old downloader address in its config.json: the notes then also
-# explain how to drop the old container.
-WHATS_NEW_ID = "1.11.1"
+# The newest notes behind the New button. A new install starts with them read;
+# any older install gets a dot on the button until it is opened (it has another
+# notes_seen, or none before 1.11). An install upgraded from before the built-in
+# downloader still has the old downloader address in its config.json: it gets
+# the dot too, since the 1.10.0 note explains how to drop the old container.
+WHATS_NEW_ID = RELEASES[0]["version"]
 LEGACY_DOWNLOADER_KEY = "deezer_dl_base_url"
 
 DEFAULT_CONFIG = {
@@ -256,8 +258,8 @@ def _raw_config():
 
 
 def whats_new_state():
-    """Whether the Help window opens on its own, and if the install still used
-    the separate downloader before this version."""
+    """Whether the New button shows its dot, and if the install still used the
+    separate downloader."""
     raw = _raw_config()
     legacy = LEGACY_DOWNLOADER_KEY in raw
     return {

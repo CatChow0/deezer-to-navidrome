@@ -147,6 +147,12 @@ def _scheduler_loop():
 
         from core.deezer import load_playlists
         from core.config import load_config
+        from core.stats_enrich import start_background_batch
+
+        try:
+            start_background_batch()
+        except Exception as e:
+            logger.error(f"[stats] Could not start the lookups: {e}")
 
         playlists = load_playlists()
         _sync_state_from_playlists(playlists)

@@ -683,11 +683,7 @@ tbody[data-filter="review"] tr:not([data-review="true"]) {
   gap: 8px;
 }
 
-/* Help window: release notes and guide */
-.help-modal .overlay-panel {
-  width: min(820px, 100%);
-}
-
+/* The notes and the documentation (their panels are in help.css) */
 .help-eyebrow {
   margin: 0 0 6px;
   color: var(--cyan);
@@ -695,14 +691,6 @@ tbody[data-filter="review"] tr:not([data-review="true"]) {
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-}
-
-.help-tabs {
-  margin-top: 16px;
-}
-
-.help-body {
-  padding: 22px 28px 8px;
 }
 
 .help-h {
@@ -788,8 +776,7 @@ tbody[data-filter="review"] tr:not([data-review="true"]) {
 
 .help-step p,
 .help-guide li,
-.help-list li,
-.help-faq dd {
+.help-list li {
   color: var(--text-soft);
 }
 
@@ -865,54 +852,6 @@ tbody[data-filter="review"] tr:not([data-review="true"]) {
   color: var(--muted);
   font-size: 0.75rem;
   font-weight: 600;
-}
-
-.help-faq {
-  margin: 0;
-}
-
-.help-reopen {
-  margin: 22px 0 0;
-  color: var(--muted);
-  font-size: var(--step--1);
-}
-
-.help-faq dt {
-  margin-top: 12px;
-  font-weight: 600;
-}
-
-.help-faq dd {
-  margin: 4px 0 0;
-}
-
-.help-foot {
-  position: sticky;
-  bottom: 0;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 10px;
-  margin-top: 18px;
-  padding: 14px 28px;
-  border-top: 1px solid var(--line);
-  background: rgba(12, 10, 30, 0.94);
-}
-
-.help-foot > div {
-  display: flex;
-  gap: 8px;
-}
-
-@media (max-width: 560px) {
-  .help-body {
-    padding: 18px 18px 8px;
-  }
-
-  .help-foot {
-    padding: 12px 18px;
-  }
 }
 
 .help-todo {

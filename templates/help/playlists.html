@@ -1,0 +1,53 @@
+<section data-doc-section="playlists" hidden>
+  <h3 class="doc-title">Playlists and mixes</h3>
+
+  <div class="doc-block">
+    <h4>Adding a playlist</h4>
+    <p>On the Dashboard, paste a Deezer playlist link or ID in <b>Playlists</b>. Spotify links and CSV files work too: see <a href="#" data-doc-go="other-platforms">Spotify and CSV</a>.</p>
+  </div>
+
+  <div class="doc-block">
+    <h4>Mixes</h4>
+    <p>With a connected Deezer account, <b>Mixes → Choose mixes</b> lets you follow your Flow and the mixes Deezer makes for you. Their tracks change, and every scan picks up the current ones.</p>
+  </div>
+
+  <div class="doc-block">
+    <h4>Quick scan or Full scan</h4>
+    <table>
+      <thead><tr><th>Button</th><th>What it does</th><th>When to use it</th></tr></thead>
+      <tbody>
+        <tr><td><b>Quick scan</b></td><td>Keeps the tracks already in your library and only checks the missing and unchecked ones again</td><td>Most of the time</td></tr>
+        <tr><td><b>Full scan</b></td><td>Matches every track again</td><td>After reorganizing your library</td></tr>
+      </tbody>
+    </table>
+    <p>Both write the playlist's <code>.m3u8</code>, <code>report.json</code> and <code>missing.txt</code>, in its own folder under the generated playlists folder.</p>
+  </div>
+
+  <div class="doc-block">
+    <h4>What the track statuses mean</h4>
+    <table>
+      <tbody>
+        <tr><td><b>In library</b></td><td>A file of yours was matched to this track</td></tr>
+        <tr><td><b>Missing</b></td><td>No file matched. It can be downloaded</td></tr>
+        <tr><td><b>Not checked</b></td><td>No scan has looked at this track yet</td></tr>
+      </tbody>
+    </table>
+    <p>The buttons above the list filter by status.</p>
+  </div>
+
+  <div class="doc-block">
+    <h4>Fixing a wrong match</h4>
+    <p>Click <b>Fix</b> on a row to search your library, then <b>Use this file</b>, or choose <b>Not in my library</b>. <b>Back to automatic matching</b> undoes it. Your choice stays through later scans.</p>
+  </div>
+
+  <div class="doc-block">
+    <h4>Getting playlists into Navidrome</h4>
+    <p>The app and Navidrome usually see the same files under different paths. <b>Settings → Navidrome paths</b> translates them, so the <code>.m3u8</code> points where Navidrome looks. For example, the app sees <code>/music/deezer-dl/songs/Song.mp3</code> and Navidrome sees <code>/deezer-dl/songs/Song.mp3</code>.</p>
+    <p>Both containers must see the same files, and the downloads folder needs a mapping too, or downloaded tracks are left out of the playlists.</p>
+  </div>
+
+  <div class="doc-block">
+    <h4>Automation</h4>
+    <p>In a playlist, <b>Automation</b> turns on a scan at an interval of minutes, hours or days, and can download the missing tracks after each scan. The library index is refreshed after these scans, and tracks downloaded during one run are picked up by the next. The playlist tile shows the time until the next scan.</p>
+  </div>
+</section>

@@ -11,8 +11,10 @@ from routes.account import account_bp
 from routes.auth import auth_bp
 from routes.cache import cache_bp
 from routes.dedup import dedup_bp
+from routes.listenbrainz import listenbrainz_bp
 from routes.playlists import playlists_bp
 from routes.search import search_bp
+from routes.stats import stats_bp
 from routes.system import system_bp
 
 ensure_dirs()
@@ -33,10 +35,16 @@ app.register_blueprint(account_bp)
 app.register_blueprint(auth_bp)
 app.register_blueprint(cache_bp)
 app.register_blueprint(dedup_bp)
+app.register_blueprint(listenbrainz_bp)
 app.register_blueprint(search_bp)
+app.register_blueprint(stats_bp)
 app.register_blueprint(system_bp)
 
-PUBLIC_ENDPOINTS = {"auth.login", "auth.setup", "static", "system.favicon", "system.health"}
+# The ListenBrainz routes check their own token: Navidrome has no session.
+PUBLIC_ENDPOINTS = {
+    "auth.login", "auth.setup", "static", "system.favicon", "system.health",
+    "listenbrainz.submit", "listenbrainz.submit_slash", "listenbrainz.validate", "listenbrainz.validate_slash",
+}
 
 
 @app.before_request

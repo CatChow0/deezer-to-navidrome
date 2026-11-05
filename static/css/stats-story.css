@@ -1,0 +1,1143 @@
+/* Story recap: a loud poster per slide, filling the screen. Sizes use --u, so a
+   slide scales with the window; wide windows get their own compositions. */
+
+.st-story {
+  z-index: 1600;
+}
+
+.st-story .overlay-panel {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  width: auto;
+  max-width: none;
+  height: auto;
+  max-height: none;
+  margin: 0;
+  transform: none;
+  border-radius: 0;
+  background: #05030f;
+}
+
+.st-stage {
+  --ink: #fdfbff;
+  position: relative;
+  width: 100vw;
+  height: 100dvh;
+  overflow: hidden;
+  container-type: size;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.st-slides {
+  position: absolute;
+  inset: 0;
+  touch-action: pan-y;
+  cursor: pointer;
+}
+
+/* ── Chrome on top of the slide ─────────────────────────────────────────── */
+.st-story-top {
+  position: absolute;
+  z-index: 3;
+  inset: 0 0 auto 0;
+  display: grid;
+  gap: 8px;
+  padding: 12px 12px 0;
+  pointer-events: none;
+  color: var(--ink);
+}
+
+.st-story-top button,
+.st-story-top input {
+  pointer-events: auto;
+}
+
+.st-story-progress {
+  display: flex;
+  gap: 3px;
+  min-height: 4px;
+}
+
+.st-story-progress span {
+  --fill: 0;
+  position: relative;
+  flex: 1;
+  height: 4px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--ink) 28%, transparent);
+}
+
+.st-story-progress span::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: var(--ink);
+  transform: scaleX(var(--fill));
+  transform-origin: left;
+}
+
+.st-story-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-right: 44px;
+  font-size: 12px;
+}
+
+.st-story-controls button {
+  padding: 3px 9px;
+  border: 1px solid color-mix(in srgb, var(--ink) 45%, transparent);
+  border-radius: var(--r-chip);
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.st-story-controls input[type="range"] {
+  width: 72px;
+  accent-color: var(--ink);
+}
+
+.st-story-count {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+}
+
+.st-stage .overlay-close {
+  z-index: 4;
+  top: 20px;
+  right: 10px;
+  width: 34px;
+  height: 34px;
+  color: var(--ink);
+  background: color-mix(in srgb, var(--ink) 14%, transparent);
+}
+
+/* Paused: a small mark at the top, so the slide stays in full view. */
+.st-paused {
+  display: grid;
+  margin-left: auto;
+  width: 22px;
+  height: 22px;
+  place-items: center;
+}
+
+.st-paused svg {
+  width: 18px;
+  height: 18px;
+}
+
+.st-paused:not([hidden]) + .st-story-count {
+  margin-left: 0;
+}
+
+.st-skip-link {
+  position: absolute;
+  z-index: 5;
+  top: 50%;
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  padding: 0;
+  opacity: 0;
+  border: 1px solid color-mix(in srgb, var(--ink) 40%, transparent);
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--ink) 16%, transparent);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  color: var(--ink);
+  transform: translateY(-50%);
+  cursor: pointer;
+  pointer-events: none;
+  transition: opacity var(--t-fast), background var(--t-fast);
+}
+
+.st-skip-link svg {
+  display: block;
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.st-skip-link:hover {
+  background: color-mix(in srgb, var(--ink) 30%, transparent);
+}
+
+.st-skip-link:focus-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.st-skip-link[data-story-prev] { left: 16px; }
+.st-skip-link[data-story-next] { right: 16px; }
+
+/* ── The slide ──────────────────────────────────────────────────────────── */
+.st-slide {
+  --u: min(1cqw, 0.5625cqh);
+  --d: 1cqw;
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2.4cqh;
+  padding: 11cqh calc(7 * var(--u)) 6cqh;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--ink);
+  font-size: calc(5 * var(--u));
+  line-height: 1.25;
+  isolation: isolate;
+}
+
+/* One big shape per slide, slowly moving, so no two backgrounds feel alike. */
+.st-slide::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  width: calc(130 * var(--d));
+  height: calc(130 * var(--d));
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--ink) 11%, transparent);
+  animation: st-drift 14s ease-in-out infinite alternate;
+}
+
+.st-slide[data-deco="0"]::before { top: calc(-55 * var(--d)); right: calc(-55 * var(--d)); }
+.st-slide[data-deco="1"]::before { bottom: calc(-60 * var(--d)); left: calc(-50 * var(--d)); }
+.st-slide[data-deco="2"]::before {
+  top: 25cqh; left: calc(-40 * var(--d)); border-radius: 0; height: calc(26 * var(--d)); rotate: -18deg; width: calc(190 * var(--d));
+}
+.st-slide[data-deco="3"]::before {
+  top: calc(-30 * var(--d)); left: calc(-30 * var(--d)); border-radius: 28%; rotate: 24deg;
+}
+
+.st-is-hidden { display: none; }
+
+.st-center {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2.4cqh;
+  height: 100%;
+  min-height: 0;
+}
+
+.st-kicker {
+  margin: 0;
+  font-size: calc(5.4 * var(--u));
+  font-weight: 600;
+}
+
+.st-title {
+  margin: 0;
+  max-height: 34cqh;
+  overflow: hidden;
+  font-family: var(--font-display);
+  font-size: calc(10 * var(--u));
+  font-weight: 700;
+  letter-spacing: -0.04em;
+  line-height: 1.02;
+}
+
+.st-title--huge {
+  font-size: calc(15 * var(--u));
+  max-height: 26cqh;
+}
+
+.st-line {
+  margin: 0;
+  font-size: calc(5.2 * var(--u));
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.st-slide .st-note {
+  margin: 0;
+  color: inherit;
+  font-size: calc(3.8 * var(--u));
+  opacity: 0.85;
+}
+
+.st-big-note {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: calc(9 * var(--u));
+  font-weight: 500;
+  letter-spacing: -0.04em;
+}
+
+.st-stat {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: calc(8.4 * var(--u));
+  font-weight: 600;
+  letter-spacing: -0.04em;
+  font-variant-numeric: tabular-nums;
+}
+
+.st-giant {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: min(calc(42 * var(--u)), calc(86 * var(--u) / (var(--digits, 2) * 0.78)));
+  font-weight: 800;
+  letter-spacing: -0.07em;
+  line-height: 0.9;
+  font-variant-numeric: tabular-nums;
+}
+
+.st-giant--time {
+  font-size: calc(19 * var(--u));
+  line-height: 1;
+}
+
+.st-giant--word {
+  font-size: calc(19 * var(--u));
+}
+
+.st-teaser {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: calc(6 * var(--u));
+  font-weight: 600;
+}
+
+.st-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.st-slide .st-actions .btn {
+  border: calc(0.4 * var(--u)) solid var(--ink);
+  background: var(--ink);
+  color: var(--bg);
+}
+
+.st-slide .st-actions .btn--ghost {
+  background: transparent;
+  color: var(--ink);
+}
+
+/* ── Entrances: each slide type moves in its own way ────────────────────── */
+.st-rise {
+  animation: st-rise 600ms var(--ease-out) calc(var(--i, 0) * 180ms + 150ms) both;
+}
+
+.st-letter {
+  display: inline-block;
+  animation: st-slam 620ms cubic-bezier(0.2, 1.6, 0.4, 1) calc(var(--i, 0) * 70ms + 200ms) both;
+}
+
+.st-slam {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: calc(19 * var(--u));
+  font-weight: 800;
+  letter-spacing: -0.06em;
+  line-height: 1.05;
+  white-space: nowrap;
+  overflow: hidden;
+  padding-top: 0.1em;
+}
+
+@keyframes st-rise {
+  from { opacity: 0; transform: translateY(5cqh); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes st-slam {
+  from { opacity: 0; transform: translateY(-40cqh) rotate(-14deg) scale(1.8); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes st-drift {
+  to { transform: translate(calc(8 * var(--u)), 6cqh) rotate(40deg) scale(1.1); }
+}
+
+@keyframes st-flip {
+  from { opacity: 0; transform: perspective(600px) rotateX(-90deg); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes st-pop {
+  0% { opacity: 0; transform: scale(0); }
+  70% { opacity: 1; transform: scale(1.14); }
+  100% { opacity: 1; transform: none; }
+}
+
+@keyframes st-stamp {
+  0% { opacity: 0; transform: scale(4) rotate(-22deg); }
+  60% { opacity: 1; transform: scale(0.92) rotate(-5deg); }
+  100% { opacity: 1; transform: rotate(-5deg); }
+}
+
+@keyframes st-spin-in {
+  from { opacity: 0; transform: translateX(calc(-90 * var(--u))) rotate(-540deg); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes st-spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes st-tilt-in {
+  from { opacity: 0; transform: rotate(-30deg) scale(0.4); }
+  to { opacity: 1; transform: rotate(var(--tilt, -5deg)); }
+}
+
+@keyframes st-stretch {
+  from { width: 0; }
+  to { width: var(--width); }
+}
+
+@keyframes st-marquee {
+  to { transform: translateX(-50%); }
+}
+
+@keyframes st-fall {
+  from { opacity: 0; transform: translateY(-70cqh) rotate(25deg); }
+  to { opacity: 0.9; transform: rotate(var(--turn, 0deg)); }
+}
+
+@keyframes st-swell {
+  to { transform: scale(1.12); }
+}
+
+/* ── Covers ─────────────────────────────────────────────────────────────── */
+.st-slide .st-art {
+  --art: calc(18 * var(--u));
+  border-radius: calc(3 * var(--u));
+}
+
+/* Intro: covers rain down behind the month's name */
+.st-wall {
+  position: absolute;
+  z-index: -1;
+  inset: calc(-4 * var(--u));
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  grid-auto-rows: calc(34 * var(--u));
+  gap: calc(3 * var(--u));
+  opacity: 0.9;
+}
+
+.st-wall > span {
+  --turn: -6deg;
+  animation: st-fall 800ms var(--ease-out) calc(var(--i) * 60ms) both;
+}
+
+.st-wall > span:nth-child(even) { --turn: 5deg; }
+
+.st-wall .st-art {
+  --art: calc(34 * var(--u));
+  width: 100%;
+}
+
+.st-slide--intro::after {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  background: linear-gradient(color-mix(in srgb, var(--bg) 35%, transparent), var(--bg) 72%);
+}
+
+.st-slide--intro .st-center {
+  justify-content: flex-end;
+}
+
+.st-tilt {
+  --tilt: -5deg;
+  align-self: center;
+  animation: st-tilt-in 800ms var(--ease-out) both;
+}
+
+.st-tilt--other { --tilt: 5deg; }
+
+.st-tilt .st-art {
+  --art: calc(58 * var(--u));
+  border-radius: calc(4 * var(--u));
+  box-shadow: calc(2 * var(--u)) calc(2 * var(--u)) 0 var(--ink);
+  font-size: calc(15 * var(--u));
+}
+
+/* Top artist: the photo is the slide */
+.st-bleed {
+  position: absolute;
+  z-index: -2;
+  inset: 0;
+  animation: st-swell 11s ease-out both;
+}
+
+.st-bleed .st-art {
+  --art: 100%;
+  width: 100%;
+  height: 100%;
+  border-radius: 0;
+  font-size: calc(40 * var(--u));
+}
+
+.st-slide--top_artist {
+  justify-content: flex-end;
+}
+
+.st-slide.st-slide--top_artist::before {
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border-radius: 0;
+  background: linear-gradient(rgba(0, 0, 0, 0.55), rgba(0, 0, 0, 0.1) 30%, rgba(0, 0, 0, 0.92) 72%);
+  animation: none;
+  rotate: none;
+}
+
+.st-marquee {
+  position: absolute;
+  top: 13cqh;
+  left: 0;
+  width: max-content;
+  font-family: var(--font-display);
+  font-size: calc(24 * var(--u));
+  font-weight: 800;
+  letter-spacing: -0.05em;
+  line-height: 1;
+  white-space: nowrap;
+  -webkit-text-stroke: calc(0.4 * var(--u)) #fff;
+  color: transparent;
+  animation: st-marquee 22s linear infinite;
+}
+
+.st-bottom {
+  display: flex;
+  flex-direction: column;
+  gap: 1.6cqh;
+}
+
+/* Top track: a record spinning in */
+.st-record {
+  align-self: center;
+  animation: st-spin-in 1100ms var(--ease-out) both;
+}
+
+.st-record .st-art {
+  --art: calc(62 * var(--u));
+  border-radius: 50%;
+  font-size: calc(16 * var(--u));
+  box-shadow: 0 0 0 calc(2 * var(--u)) rgba(0, 0, 0, 0.82), 0 0 0 calc(2.4 * var(--u)) rgba(255, 255, 255, 0.3);
+  animation: st-spin 6s linear 1100ms infinite;
+}
+
+.st-record .st-art::after {
+  content: "";
+  position: absolute;
+  z-index: 2;
+  top: 50%;
+  left: 50%;
+  width: calc(9 * var(--u));
+  height: calc(9 * var(--u));
+  border-radius: 50%;
+  background: var(--bg);
+  transform: translate(-50%, -50%);
+}
+
+/* Countdown rows flip over one by one, worst to best */
+.st-count-list,
+.st-moves,
+.st-compare,
+.st-genre-stack {
+  display: grid;
+  gap: 1.8cqh;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.st-count-row,
+.st-move {
+  display: flex;
+  align-items: center;
+  gap: calc(3 * var(--u));
+  min-width: 0;
+  padding: calc(1.4 * var(--u)) calc(2 * var(--u));
+  border-radius: calc(3 * var(--u));
+  background: color-mix(in srgb, var(--ink) 12%, transparent);
+  animation: st-flip 650ms var(--ease-out) calc(var(--i) * 1300ms + 400ms) both;
+  transform-origin: top;
+}
+
+.st-count-list--tiles .st-count-row {
+  border-radius: 0;
+  background: none;
+  border-bottom: calc(0.4 * var(--u)) solid color-mix(in srgb, var(--ink) 40%, transparent);
+  animation-name: st-rise;
+}
+
+.st-count-rank {
+  flex: none;
+  width: calc(9 * var(--u));
+  font-family: var(--font-display);
+  font-size: calc(9 * var(--u));
+  font-weight: 800;
+  text-align: center;
+}
+
+.st-count-text {
+  display: grid;
+  min-width: 0;
+  font-size: calc(3.8 * var(--u));
+  line-height: 1.25;
+}
+
+.st-count-text small {
+  font-size: calc(3.4 * var(--u));
+  font-weight: 600;
+  opacity: 0.85;
+}
+
+.st-count-text strong {
+  max-height: 2.5em;
+  overflow: hidden;
+  font-size: calc(5 * var(--u));
+  overflow-wrap: anywhere;
+}
+
+.st-count-text em {
+  display: block;
+  font-style: normal;
+  font-weight: 600;
+}
+
+/* Genres: type sized by share */
+.st-genre-stack li {
+  display: grid;
+  animation: st-rise 500ms var(--ease-out) calc(var(--i) * 240ms + 400ms) both;
+}
+
+.st-genre-name {
+  max-height: 1.15em;
+  overflow: hidden;
+  font-family: var(--font-display);
+  font-size: calc(calc(5 * var(--u)) + var(--share) * calc(13 * var(--u)));
+  font-weight: 700;
+  letter-spacing: -0.04em;
+  line-height: 1.1;
+}
+
+.st-genre-time {
+  font-size: calc(3.8 * var(--u));
+}
+
+/* Loyalty: one lit square */
+.st-grid {
+  display: grid;
+  grid-template-columns: repeat(min(var(--cells), 4), 1fr);
+  gap: calc(2 * var(--u));
+  width: 100%;
+  max-width: calc(76 * var(--u));
+}
+
+.st-grid span {
+  aspect-ratio: 1;
+  border-radius: calc(2.4 * var(--u));
+  background: color-mix(in srgb, var(--ink) 18%, transparent);
+  animation: st-pop 420ms var(--ease-out) calc(var(--i) * 90ms + 400ms) both;
+}
+
+.st-grid .is-lit {
+  background: var(--ink);
+  animation-delay: 1500ms;
+}
+
+/* Binge: a bar that keeps stretching */
+.st-stretch {
+  height: calc(7 * var(--u));
+  overflow: hidden;
+  border-radius: var(--r-chip);
+  background: color-mix(in srgb, var(--ink) 16%, transparent);
+}
+
+.st-stretch span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--ink);
+  animation: st-stretch 2.4s var(--ease-out) 400ms both;
+}
+
+/* Album run: tracks ticking off */
+.st-ticks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: calc(1.6 * var(--u));
+}
+
+.st-ticks span {
+  width: calc(5 * var(--u));
+  height: calc(5 * var(--u));
+  border-radius: 50%;
+  border: calc(0.5 * var(--u)) solid var(--ink);
+}
+
+.st-ticks .is-lit {
+  background: var(--ink);
+  animation: st-pop 300ms var(--ease-out) calc(var(--i) * 70ms + 600ms) both;
+}
+
+/* New artists: faces popping in */
+.st-faces {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: calc(3 * var(--u));
+}
+
+.st-face {
+  display: grid;
+  justify-items: center;
+  gap: calc(1 * var(--u));
+  min-width: 0;
+  animation: st-pop 520ms var(--ease-out) calc(var(--i) * 260ms + 500ms) both;
+}
+
+.st-face .st-art {
+  --art: calc(25 * var(--u));
+  border-radius: 50%;
+  font-size: calc(8 * var(--u));
+}
+
+.st-face em {
+  width: 100%;
+  overflow: hidden;
+  font-size: calc(3.4 * var(--u));
+  font-style: normal;
+  font-weight: 600;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Then and now: rows arriving from opposite sides */
+.st-move {
+  animation: st-rise 600ms var(--ease-out) calc(var(--i) * 900ms + 400ms) both;
+}
+
+.st-move-mark {
+  flex: none;
+  width: calc(8 * var(--u));
+  font-size: calc(9 * var(--u));
+  font-weight: 800;
+  line-height: 1;
+  text-align: center;
+}
+
+/* Clock */
+.st-clock {
+  align-self: center;
+  width: calc(78 * var(--u));
+  max-height: 44cqh;
+}
+
+.st-clock rect {
+  fill: color-mix(in srgb, var(--ink) 38%, transparent);
+  animation: st-pop 400ms var(--ease-out) calc(var(--i) * 45ms + 300ms) both;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.st-clock rect.is-lit {
+  fill: var(--ink);
+}
+
+.st-clock text {
+  fill: var(--ink);
+  font-family: var(--font-display);
+  font-size: 18px;
+  font-weight: 700;
+}
+
+/* Personality: stamped on */
+.st-stamp {
+  align-self: flex-start;
+  max-width: 100%;
+  max-height: 44cqh;
+  margin: 1cqh 0;
+  padding: calc(3 * var(--u)) calc(4 * var(--u));
+  overflow: hidden;
+  border: calc(1.4 * var(--u)) solid var(--ink);
+  border-radius: calc(3 * var(--u));
+  font-family: var(--font-display);
+  font-size: calc(14 * var(--u));
+  font-weight: 800;
+  letter-spacing: -0.05em;
+  line-height: 1.02;
+  overflow-wrap: normal;
+  transform: rotate(-5deg);
+  animation: st-stamp 700ms cubic-bezier(0.2, 1.3, 0.4, 1) 700ms both;
+}
+
+/* Time */
+.st-compare {
+  gap: 1cqh;
+}
+
+.st-compare li {
+  font-size: calc(4.6 * var(--u));
+  animation: st-rise 500ms var(--ease-out) calc(var(--i) * 300ms + 500ms) both;
+}
+
+.st-compare strong {
+  font-family: var(--font-display);
+  font-size: calc(6.4 * var(--u));
+}
+
+/* Outro: a summary card */
+.st-card {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: calc(3 * var(--u));
+  margin: 0;
+  padding: calc(5 * var(--u));
+  border-radius: calc(4 * var(--u));
+  background: var(--ink);
+  color: var(--bg);
+  animation: st-tilt-in 800ms var(--ease-out) 200ms both;
+  --tilt: -1.5deg;
+}
+
+.st-card dt {
+  font-size: calc(3.4 * var(--u));
+  font-weight: 600;
+  opacity: 0.8;
+}
+
+.st-card dd {
+  max-height: 2.4em;
+  margin: calc(0.5 * var(--u)) 0 0;
+  overflow: hidden;
+  font-family: var(--font-display);
+  font-size: calc(5.6 * var(--u));
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  line-height: 1.15;
+}
+
+.st-card-wide {
+  grid-column: 1 / -1;
+}
+
+/* Hold to pause: everything waits */
+.st-stage.is-paused *,
+.st-stage.is-paused *::before,
+.st-stage.is-paused *::after {
+  animation-play-state: paused !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .st-slide *,
+  .st-slide::before,
+  .st-slide::after {
+    animation: none !important;
+  }
+
+  .st-tilt { transform: rotate(var(--tilt)); }
+  .st-card { transform: rotate(var(--tilt)); }
+}
+
+/* ── Wide windows: a visual on one side, the words on the other ─────────────── */
+@container (min-aspect-ratio: 5/4) {
+  .st-slide {
+    --u: 1.1cqh;
+    --d: 0.62cqw;
+    padding: 12cqh 8cqw 7cqh;
+  }
+
+  .st-skip-link {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  /* A phone held sideways: tap and swipe are there, and text needs the room. */
+  @container (max-height: 500px) {
+    .st-skip-link {
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .st-skip-link:focus-visible {
+      opacity: 1;
+      pointer-events: auto;
+    }
+  }
+
+  .st-slide--opener,
+  .st-slide--genres,
+  .st-slide--artist_countdown,
+  .st-slide--track_countdown,
+  .st-slide--loyalty,
+  .st-slide--top_track,
+  .st-slide--obsession,
+  .st-slide--album_run,
+  .st-slide--new_artists,
+  .st-slide--then_now,
+  .st-slide--clock,
+  .st-slide--time,
+  .st-slide--outro {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-auto-rows: min-content;
+    align-content: center;
+    align-items: center;
+    column-gap: 6cqw;
+    row-gap: 2.6cqh;
+  }
+
+  .st-slide--opener > *,
+  .st-slide--genres > *,
+  .st-slide--artist_countdown > *,
+  .st-slide--track_countdown > *,
+  .st-slide--loyalty > *,
+  .st-slide--top_track > *,
+  .st-slide--obsession > *,
+  .st-slide--album_run > *,
+  .st-slide--new_artists > *,
+  .st-slide--then_now > *,
+  .st-slide--clock > *,
+  .st-slide--time > *,
+  .st-slide--outro > * {
+    grid-column: 1;
+  }
+
+  /* The visual of each slide takes the other half. */
+  .st-slide > .st-tilt,
+  .st-slide > .st-record,
+  .st-slide > .st-genre-stack,
+  .st-slide > .st-count-list,
+  .st-slide > .st-grid,
+  .st-slide > .st-faces,
+  .st-slide > .st-moves,
+  .st-slide > .st-clock,
+  .st-slide > .st-compare,
+  .st-slide > .st-card,
+  .st-slide--obsession > .st-giant {
+    grid-column: 2;
+    grid-row: 1 / span 7;
+    align-self: center;
+    justify-self: center;
+    width: 100%;
+  }
+
+  .st-slide > .st-tilt,
+  .st-slide > .st-record {
+    width: auto;
+  }
+
+  /* A wide slide has room to breathe: smaller type than a phone's poster. */
+  .st-slide {
+    font-size: calc(3.2 * var(--u));
+  }
+
+  .st-kicker,
+  .st-line {
+    font-size: calc(3.6 * var(--u));
+  }
+
+  .st-slide .st-note {
+    font-size: calc(2.6 * var(--u));
+  }
+
+  .st-stat {
+    font-size: calc(6 * var(--u));
+  }
+
+  .st-teaser {
+    font-size: calc(4.4 * var(--u));
+  }
+
+  .st-title {
+    font-size: calc(8 * var(--u));
+    max-height: 30cqh;
+  }
+
+  .st-count-rank {
+    width: calc(7 * var(--u));
+    font-size: calc(7 * var(--u));
+  }
+
+  .st-count-text {
+    font-size: calc(2.6 * var(--u));
+  }
+
+  .st-count-text small {
+    font-size: calc(2.4 * var(--u));
+  }
+
+  .st-count-text strong {
+    font-size: calc(3.4 * var(--u));
+  }
+
+  .st-genre-time,
+  .st-face em {
+    font-size: calc(2.6 * var(--u));
+  }
+
+  .st-ticks span {
+    width: calc(3 * var(--u));
+    height: calc(3 * var(--u));
+    border-width: calc(0.4 * var(--u));
+  }
+
+  .st-ticks {
+    gap: calc(1 * var(--u));
+  }
+
+  .st-stretch {
+    height: calc(5 * var(--u));
+  }
+
+  .st-tilt .st-art,
+  .st-record .st-art {
+    --art: min(66cqh, 38cqw);
+  }
+
+  .st-slam {
+    font-size: calc(30 * var(--u));
+  }
+
+  .st-big-note {
+    font-size: calc(11 * var(--u));
+  }
+
+  /* Intro: a wide wall of covers, the name below it */
+  .st-wall {
+    grid-template-columns: repeat(6, 1fr);
+    grid-auto-rows: 17cqw;
+    gap: 1cqw;
+    inset: -2cqw;
+  }
+
+  .st-wall .st-art {
+    --art: 17cqw;
+    font-size: 4cqw;
+  }
+
+  /* Top artist: the photo holds the right, the name the left */
+  .st-slide--top_artist {
+    justify-content: center;
+  }
+
+  .st-bleed {
+    inset: 0 0 0 42%;
+  }
+
+  .st-bleed .st-art {
+    font-size: 30cqh;
+  }
+
+  .st-slide.st-slide--top_artist::before {
+    background: linear-gradient(90deg, #000 42%, rgba(0, 0, 0, 0.75) 58%, rgba(0, 0, 0, 0.05) 82%);
+  }
+
+  .st-bottom {
+    max-width: 50%;
+  }
+
+  .st-title--huge {
+    font-size: calc(20 * var(--u));
+    max-height: 44cqh;
+  }
+
+  /* Runs along the bottom, clear of the name */
+  .st-marquee {
+    top: auto;
+    bottom: 2cqh;
+    font-size: calc(12 * var(--u));
+    opacity: 0.45;
+  }
+
+  /* Lists fill their half without spilling */
+  .st-count-list,
+  .st-moves {
+    gap: 1.4cqh;
+  }
+
+  .st-count-row .st-art,
+  .st-move .st-art,
+  .st-count-list--tiles .st-count-row .st-art {
+    --art: 11cqh;
+  }
+
+  .st-genre-name {
+    font-size: calc(5 * var(--u) + var(--share) * 15 * var(--u));
+  }
+
+  .st-grid {
+    max-width: 62cqh;
+  }
+
+  .st-faces {
+    gap: 2cqh 2cqw;
+  }
+
+  .st-face .st-art {
+    --art: 24cqh;
+  }
+
+  .st-clock {
+    max-height: 72cqh;
+    width: 100%;
+  }
+
+  .st-slide--obsession > .st-giant {
+    font-size: min(calc(60 * var(--u)), calc(40cqw / (var(--digits, 2) * 0.78)));
+    text-align: center;
+  }
+
+  .st-giant--time {
+    font-size: calc(15 * var(--u));
+  }
+
+  .st-slide--binge .st-giant--time {
+    font-size: calc(24 * var(--u));
+  }
+
+  .st-compare {
+    gap: 3cqh;
+  }
+
+  .st-compare li {
+    font-size: calc(4 * var(--u));
+  }
+
+  .st-compare strong {
+    font-size: calc(9 * var(--u));
+  }
+
+  .st-card {
+    padding: calc(6 * var(--u));
+  }
+
+  .st-card dt {
+    font-size: calc(2.4 * var(--u));
+  }
+
+  .st-card dd {
+    font-size: calc(4.4 * var(--u));
+  }
+
+  .st-stamp {
+    font-size: calc(24 * var(--u));
+    max-height: 56cqh;
+  }
+
+  .st-slide--personality .st-center {
+    max-width: 78%;
+  }
+}

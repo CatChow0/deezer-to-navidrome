@@ -1,0 +1,30 @@
+{# New: what changed, one tab per version, so a version's notes stay readable
+   after later ones. Nothing opens by itself: the button shows a dot instead. #}
+<div id="new-modal" class="overlay modal new-modal" aria-hidden="true">
+  <div class="overlay-backdrop" data-overlay-close></div>
+  <section class="overlay-panel cell" role="dialog" aria-modal="true" aria-labelledby="new-title" tabindex="-1">
+    <button type="button" class="icon-btn overlay-close" data-overlay-close aria-label="Close">×</button>
+    <header class="doc-head">
+      <h2 class="detail-title" id="new-title">What's new</h2>
+    </header>
+    <div class="doc-body" data-overlay-content>
+      <div class="new-tabs" role="tablist" aria-label="Versions" aria-orientation="vertical">
+        {% for release in releases %}
+        <button type="button" role="tab" id="new-tab-{{ loop.index }}" class="new-tab" data-new-tab="{{ release.version }}" aria-selected="{{ 'true' if loop.first else 'false' }}" aria-controls="new-panel-{{ loop.index }}" {% if not loop.first %}tabindex="-1"{% endif %}>
+          <strong>{{ release.version }}</strong>
+          <span>{{ release.date }}</span>
+        </button>
+        {% endfor %}
+      </div>
+      <div class="doc-article" data-new-article>
+        {% for release in releases %}
+        <article id="new-panel-{{ loop.index }}" class="new-note help-body" role="tabpanel" aria-labelledby="new-tab-{{ loop.index }}" tabindex="0" data-new-panel="{{ release.version }}" {% if not loop.first %}hidden{% endif %}>
+          <p class="help-eyebrow">Version {{ release.version }}</p>
+          <h3 class="doc-title">{{ release.title }}</h3>
+          {% include 'notes/' ~ release.version ~ '.html' %}
+        </article>
+        {% endfor %}
+      </div>
+    </div>
+  </section>
+</div>
