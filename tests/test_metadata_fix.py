@@ -486,6 +486,23 @@ class Threads(Base):
         self.assertEqual(calls.count("/search/album"), 1)
         self.assertEqual(calls.count("/album/7"), 1)
 
+    def test_different_albums_search_at_the_same_time(self):
+        import threading
+        barrier = threading.Barrier(3, timeout=10)
+
+        def api(path, params=None):
+            if path == "/search/album":
+                barrier.wait()  # Only passes if three searches are in progress together.
+                album = params["q"].split('album:"')[1].rstrip('"')
+                return {"data": [{"id": 7, "title": album, "artist": {"name": "Vald"}}]}
+            return {"genres": {"data": [{"name": "Rap"}]}}
+
+        entries = [{**self.entry(self.flac(f"{i}.flac")), "tag_album": f"Album {i}"} for i in range(3)]
+        with mock.patch("core.audio_tempo.file_tempo", return_value=128.0):
+            report = fix.run(self.conn, entries, api=api, workers=3)
+        self.assertEqual(report["errors"], 0)
+        self.assertEqual(fix.features_map(self.conn)[entries[0]["path"]][1], "Rap")
+
     def test_one_failure_does_not_stop_the_others(self):
         entries = self.many(8)
 

@@ -36,7 +36,8 @@ WRITTEN, IN_FILE, UNSUPPORTED, FAILED, OFF = "written", "in_file", "unsupported"
 CHUNK = 1024 * 1024
 
 _running = threading.Lock()
-_lookup_lock = threading.Lock()
+_album_locks = {}
+_album_locks_guard = threading.Lock()
 _current_task = None
 PROGRESS_EVERY_FILES = 25
 PROGRESS_EVERY_SECONDS = 5
@@ -341,9 +342,11 @@ def lookup_genre(conn, artist, title, album, now, api=_api):
     row = known()
     if row:
         return row["genre"] or None
-    # One search at a time: Deezer's limit is shared anyway, and two threads on tracks
-    # of one album must not both search. A known album never waits for this.
-    with _lookup_lock:
+    # Per album: two threads on tracks of one album must not both search, while
+    # different albums search side by side. _public_api keeps to Deezer's limit.
+    with _album_locks_guard:
+        album_lock = _album_locks.setdefault(key, threading.Lock())
+    with album_lock:
         row = known()
         if row:
             return row["genre"] or None
