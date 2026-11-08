@@ -241,6 +241,27 @@ def delete(account_id) -> None:
         _write(data)
 
 
+def owner_fallback():
+    """Who a playlist saved before 1.16, without accounts, belongs to: the
+    account made from the install, else the default one."""
+    accounts = list_accounts()
+    legacy = next((a["id"] for a in accounts if a.get("legacy")), None)
+    return legacy or default_id()
+
+
+def set_publish_mode(account_id, mode) -> None:
+    if mode not in PUBLISH_MODES:
+        raise AccountError("Unknown way of publishing playlists.")
+    with _lock:
+        data = _read()
+        account = next((a for a in data["accounts"] if a["id"] == account_id), None)
+        if account is None:
+            raise AccountError("Unknown Navidrome account.")
+        account["publish_mode"] = mode
+        account["updated_at"] = int(time.time())
+        _write(data)
+
+
 def set_default(account_id) -> None:
     with _lock:
         data = _read()

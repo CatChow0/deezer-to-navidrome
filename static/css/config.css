@@ -458,6 +458,25 @@ body.has-player .save-bar {
   margin: 0;
 }
 
+.nd-switch {
+  display: grid;
+  gap: 8px;
+  margin-top: 6px;
+  padding: 12px 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-control);
+}
+
+.nd-switch p,
+.nd-switch ul {
+  margin: 0;
+}
+
+.nd-switch ul {
+  padding-left: 18px;
+  color: var(--text-soft);
+}
+
 .nd-footer {
   margin-top: 14px;
   font-size: var(--step--1);

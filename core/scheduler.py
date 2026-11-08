@@ -172,6 +172,12 @@ def _scheduler_loop():
                 mix_builder.tick()
             except Exception as e:
                 logger.error(f"[mixes] Could not check the generated playlists: {e}")
+            try:
+                from core import publish
+
+                publish.retry_pending()
+            except Exception as e:
+                logger.error(f"[navidrome] Could not retry the playlists waiting for Navidrome: {e}")
 
         now = int(time.time())
         due = []

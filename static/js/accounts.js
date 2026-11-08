@@ -3,6 +3,7 @@
 // sent, never read back: the server says whether one is saved.
 
 import { armed, escapeHtml, fetchJSON, on, toast } from './core.js';
+import { runServerTask } from './activity.js';
 import { showView } from './views.js';
 
 const plural = (count, word) => `${count} ${word}${count === 1 ? '' : 's'}`;
@@ -61,6 +62,8 @@ function accountRow(account, state) {
         ${legacy}
       </div>
       <div class="nd-account-actions">
+        ${account.publish_mode === 'm3u8' && account.complete && account.last_test?.ok
+          ? '<button type="button" class="btn btn--sm" data-nd-switch title="Its playlists become this user\'s own, through Navidrome\'s API">Publish as this user…</button>' : ''}
         ${account.complete ? '<button type="button" class="btn btn--ghost btn--sm" data-nd-test>Test</button>' : ''}
         <button type="button" class="btn btn--ghost btn--sm" data-nd-edit>Edit</button>
         ${account.is_default ? '' : '<button type="button" class="btn btn--ghost btn--sm" data-nd-default>Make default</button>'}
@@ -112,6 +115,29 @@ function formHtml(account) {
         <button type="button" class="btn btn--ghost btn--sm" data-nd-cancel>Cancel</button>
       </div>
     </form>`;
+}
+
+function switchHtml(account, preview) {
+  if (!preview.ok) return `<p class="nd-warn">${preview.problems.map(escapeHtml).join(' ')}</p>`;
+  const old = preview.old.length
+    ? `<li>The ${preview.old.length === 1 ? 'copy' : `${preview.old.length} copies`} Navidrome imported from them ${preview.old.length === 1 ? 'is' : 'are'} removed from Navidrome: ${preview.old.map(p => escapeHtml(p.name)).join(', ')}.</li>`
+    : '';
+  const unknown = preview.database ? '' : '<li>Navidrome\'s database is not mounted, so the old copies imported from the files cannot be found: remove them in Navidrome afterwards.</li>';
+  const owner = preview.can_remove_old ? '' : '<p class="nd-warn">This user is not an admin and does not own the old copies: remove them in Navidrome afterwards.</p>';
+  return `
+    <div class="nd-switch" data-nd-switch-panel>
+      <p>The ${plural(preview.playlists, 'playlist')} of ${escapeHtml(account.label)} become private playlists of <b>${escapeHtml(account.username)}</b>, made and kept up to date through Navidrome's API.</p>
+      <ul>
+        <li>${plural(preview.files, '.m3u8 file')} written by this app ${preview.files === 1 ? 'is' : 'are'} removed from the playlists folder, so Navidrome does not import ${preview.files === 1 ? 'it' : 'them'} again.</li>
+        ${old}${unknown}
+      </ul>
+      ${owner}
+      <p class="muted">If Navidrome refuses a playlist, what was made is undone and nothing changes.</p>
+      <div class="button-row">
+        <button type="button" class="btn btn--sm" data-nd-switch-go>Switch now</button>
+        <button type="button" class="btn btn--ghost btn--sm" data-nd-switch-cancel>Cancel</button>
+      </div>
+    </div>`;
 }
 
 function footerHtml(state) {
@@ -247,6 +273,28 @@ export function initNavidromeAccounts() {
     const id = row.dataset.ndId;
     render();
     root.querySelector(`[data-nd-id="${id}"] [data-nd-test-result]`).innerHTML = testSummary(data.test);
+  });
+  on(root, 'click', '[data-nd-switch]', async (_, button) => {
+    const row = button.closest('[data-nd-id]');
+    const account = state.accounts.find(a => a.id === row.dataset.ndId);
+    const out = row.querySelector('[data-nd-test-result]');
+    button.disabled = true;
+    out.innerHTML = '<p class="muted">Looking at what would change…</p>';
+    const { ok, data } = await fetchJSON(`/api/navidrome/accounts/${encodeURIComponent(account.id)}/switch`);
+    button.disabled = false;
+    out.innerHTML = ok ? switchHtml(account, data.preview) : `<p class="nd-warn">${escapeHtml(data?.error || 'That did not work')}</p>`;
+  });
+  on(root, 'click', '[data-nd-switch-cancel]', (_, button) => {
+    button.closest('[data-nd-test-result]').innerHTML = '';
+  });
+  on(root, 'click', '[data-nd-switch-go]', async (_, button) => {
+    const row = button.closest('[data-nd-id]');
+    const account = state.accounts.find(a => a.id === row.dataset.ndId);
+    if (!armed(button, 'Click again to switch')) return;
+    button.disabled = true;
+    const result = await runServerTask(`Playlists as ${account.label}`, `/api/navidrome/accounts/${encodeURIComponent(account.id)}/switch`);
+    await load();
+    if (!result?.error) toast(`${account.label}: playlists published as ${account.username}`);
   });
   on(root, 'click', '[data-nd-default]', (_, button) => {
     const id = button.closest('[data-nd-id]').dataset.ndId;

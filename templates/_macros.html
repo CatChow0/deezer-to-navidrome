@@ -8,6 +8,7 @@
   data-subtitle="{{ playlist.subtitle or '' }}"
   data-cover="{{ cover }}"
   data-delete-url="{{ url_for('playlists.delete_playlist', playlist_id=playlist.id) }}"
+  data-accounts="{{ (playlist.accounts or []) | join(',') }}"
   data-auto-scan="{{ 'true' if playlist.auto_scan_enabled else 'false' }}"
   data-auto-interval="{{ playlist.auto_scan_interval_minutes | default(60) }}"
   data-auto-download="{{ 'true' if playlist.auto_download_after_scan else 'false' }}">

@@ -135,19 +135,21 @@ def _set_cover(playlist_id, cover) -> None:
 
 
 def publish(playlist_id, title, subtitle, tracks, cover=None) -> None:
-    """Saves the playlist and writes its .m3u8. The title never changes: Navidrome
-    keeps one playlist per file, so a new name each day would pile them up."""
-    from core.deezer import load_playlists, save_playlists, write_playlist_outputs
+    """Saves the playlist and puts it in Navidrome (core/publish.py). The title
+    never changes: Navidrome keeps one playlist per file, so a new name each day
+    would pile them up."""
+    from core import publish as navidrome
+    from core.deezer import load_playlists, save_playlists
 
     rows = _rows(tracks)
-    write_playlist_outputs(playlist_id, title, rows)
+    playlists = [p for p in load_playlists() if p["id"] != playlist_id]
+    save_playlists([*playlists, {"id": playlist_id, "title": title, "picture": "", "subtitle": subtitle}])
+    navidrome.publish(playlist_id, title, rows)
     _set_cover(playlist_id, cover)
     config.update_preview_state(playlist_id, {
         "playlist_id": playlist_id, "playlist_title": title, "rows": rows,
         "matched_count": len(rows), "unmatched_count": 0, "unchecked_count": 0,
     })
-    playlists = [p for p in load_playlists() if p["id"] != playlist_id]
-    save_playlists([*playlists, {"id": playlist_id, "title": title, "picture": "", "subtitle": subtitle}])
 
 
 def unpublish(playlist_id) -> None:
@@ -157,6 +159,8 @@ def unpublish(playlist_id) -> None:
 
     if not is_auto_id(playlist_id):
         raise ValueError(f"Not a generated playlist: {playlist_id}")
+    from core import publish as navidrome
+
     title = playlist_title(playlist_id)
     folder = config.get_paths_from_config()[1] / sanitize_filename(title)
     for name in (f"{sanitize_filename(title)}.m3u8", "report.json", "missing.txt"):
@@ -165,6 +169,7 @@ def unpublish(playlist_id) -> None:
         folder.rmdir()
     except OSError:
         pass
+    navidrome.unpublish(playlist_id)
     config.delete_playlist_cache(playlist_id)
     save_playlists([p for p in load_playlists() if p["id"] != playlist_id])
 

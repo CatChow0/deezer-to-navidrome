@@ -185,8 +185,13 @@ def config_view():
 
 @system_bp.get("/api/scheduler/status")
 def scheduler_status():
+    from flask import session
+
+    from core import account_context
     from core.deezer import load_playlists
-    playlists = load_playlists()
+
+    account = account_context.resolve(request, session)
+    playlists = [p for p in load_playlists() if not account or not p.get("accounts") or account in p["accounts"]]
     state = scheduler.get_status()
     result = []
     enabled_count = 0

@@ -67,6 +67,20 @@ CREATE TABLE IF NOT EXISTS meta (
     key TEXT PRIMARY KEY,
     value TEXT
 );
+CREATE TABLE IF NOT EXISTS publications (
+    playlist_id TEXT NOT NULL,
+    account_id TEXT NOT NULL,
+    navidrome_id TEXT NOT NULL DEFAULT '',
+    title TEXT NOT NULL DEFAULT '',
+    content_hash TEXT NOT NULL DEFAULT '',
+    song_count INTEGER NOT NULL DEFAULT 0,
+    missing INTEGER NOT NULL DEFAULT 0,
+    hidden INTEGER NOT NULL DEFAULT 0,
+    published_at INTEGER NOT NULL DEFAULT 0,
+    tried_at INTEGER NOT NULL DEFAULT 0,
+    error TEXT NOT NULL DEFAULT '',
+    PRIMARY KEY (playlist_id, account_id)
+);
 """
 
 

@@ -120,11 +120,12 @@ def _set(conn, deezer_id, state, now, reason="", path=None) -> None:
 
 
 def _rewrite_playlist(playlist_id) -> None:
-    from core.deezer import playlist_title, write_playlist_outputs
+    from core import publish
+    from core.deezer import playlist_title
 
     state = config.get_preview_state(playlist_id)
     if state and isinstance(state.get("rows"), list):
-        write_playlist_outputs(playlist_id, playlist_title(playlist_id), state["rows"])
+        publish.publish(playlist_id, playlist_title(playlist_id), state["rows"])
 
 
 def _follow_move(old, new) -> None:

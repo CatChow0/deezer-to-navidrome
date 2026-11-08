@@ -122,7 +122,12 @@ def mixes_route():
         found = available_mixes()
     except DeezerAccountError as e:
         return jsonify({"ok": False, "error": str(e)}), 400
-    followed = {p["id"] for p in load_playlists()}
+    from flask import session
+
+    from core import account_context
+
+    account = account_context.resolve(request, session)
+    followed = {p["id"] for p in load_playlists() if not account or not p.get("accounts") or account in p["accounts"]}
     for mix in found["mixes"]:
         mix["id"] = mix_id(mix["kind"], mix["source_id"])
         mix["followed"] = mix["id"] in followed
@@ -137,10 +142,18 @@ def follow_mix_route():
     kind, source_id = data.get("kind"), str(data.get("source_id") or "")
     if kind not in ("stl", "flow") or not source_id:
         return jsonify({"ok": False, "error": "Unknown mix"}), 400
+    from flask import session
+
+    from core import account_context
+    from core.deezer import give_to_account
+
+    account = account_context.resolve(request, session)
     try:
-        pid, added = follow_mix(kind, source_id, str(data.get("title") or "Mix"))
+        pid, added = follow_mix(kind, source_id, str(data.get("title") or "Mix"), accounts=[account] if account else None)
     except DeezerAccountError as e:
         return jsonify({"ok": False, "error": str(e)}), 400
+    if not added and account:
+        added = give_to_account(pid, account)
     return jsonify({"ok": True, "id": pid, "added": added})
 
 

@@ -134,6 +134,53 @@ def test_unsaved():
     return jsonify({"ok": True, "test": result})
 
 
+@navidrome_accounts_bp.get(f"{BASE}/accounts/<account_id>/switch")
+def switch_preview(account_id):
+    from core import publish
+
+    try:
+        return jsonify({"ok": True, "preview": publish.switch_preview(account_id)})
+    except publish.SwitchError as e:
+        return _error(e, 404)
+
+
+@navidrome_accounts_bp.post(f"{BASE}/accounts/<account_id>/switch")
+def switch_start(account_id):
+    """Runs as a task: Activity shows it, and it can take a while."""
+    import threading
+
+    from core import publish
+    from core.config import create_task, push_task_event
+
+    try:
+        preview = publish.switch_preview(account_id)
+    except publish.SwitchError as e:
+        return _error(e, 404)
+    if not preview["ok"]:
+        return _error(" ".join(preview["problems"]), 409)
+    label = nd_accounts.get(account_id)["label"]
+    task_id = create_task(f"Playlists as {label}", kind="navidrome")
+
+    def run():
+        try:
+            report = publish.switch_to_api(
+                account_id, lambda message, percent=None: push_task_event(task_id, message, progress=percent, stage="publish"))
+            left = (f" {len(report['old_left'])} old copies could not be removed: delete them in Navidrome."
+                    if report["old_left"] else "")
+            unknown = ("" if report["database"] else
+                       " Navidrome's database is not mounted: delete the old copies imported from files in Navidrome.")
+            push_task_event(task_id, f"{report['published']} playlists now belong to {label}; "
+                                     f"{report['files_removed']} .m3u8 files and {report['old_removed']} old copies "
+                                     f"removed.{left}{unknown}", stage="done", progress=100, done=True)
+        except publish.SwitchError as e:
+            push_task_event(task_id, str(e), stage="error", done=True, error=True)
+        except Exception as e:
+            push_task_event(task_id, f"Could not switch: {e}", stage="error", done=True, error=True)
+
+    threading.Thread(target=run, daemon=True).start()
+    return jsonify({"ok": True, "task_id": task_id})
+
+
 @navidrome_accounts_bp.post(f"{BASE}/active")
 def choose_active():
     """This browser now works on this account. The mobile app sends the
