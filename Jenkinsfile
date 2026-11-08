@@ -29,7 +29,10 @@ pipeline {
 
     stage('Image') {
       steps {
-        sh 'docker build --pull -t $IMAGE:$VERSION -t $IMAGE:$SHA -t $IMAGE:latest .'
+        // Only the commit tag here. A "latest" built locally can be swapped for the
+        // one on Docker Hub by any pull on this Docker host (a compose pull, an
+        // updater) before it is pushed: 1.15.0 shipped with the 1.14.0 image that way.
+        sh 'docker build --pull -t $IMAGE:$SHA .'
       }
     }
 
@@ -67,9 +70,21 @@ pipeline {
         withCredentials([usernamePassword(credentialsId: 'registry-creds',
                          usernameVariable: 'REG_USER', passwordVariable: 'REG_PASS')]) {
           sh 'echo "$REG_PASS" | docker login -u "$REG_USER" --password-stdin'
-          sh 'docker push $IMAGE:$VERSION'
           sh 'docker push $IMAGE:$SHA'
-          sh 'docker push $IMAGE:latest'
+          // The version and latest are copied on Docker Hub from the commit just
+          // pushed, so no local tag can slip in between.
+          sh 'docker buildx imagetools create -t $IMAGE:$VERSION -t $IMAGE:latest $IMAGE:$SHA'
+          sh '''
+            want=$(docker buildx imagetools inspect $IMAGE:$SHA --format '{{.Manifest.Digest}}')
+            for tag in $VERSION latest; do
+              got=$(docker buildx imagetools inspect $IMAGE:$tag --format '{{.Manifest.Digest}}')
+              echo "$tag -> $got"
+              if [ "$got" != "$want" ]; then
+                echo "$IMAGE:$tag is $got, expected $want (the image of $SHA)"
+                exit 1
+              fi
+            done
+          '''
         }
       }
     }
