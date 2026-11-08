@@ -2,7 +2,7 @@
 
 **Turn your Deezer playlists into Navidrome `.m3u8` playlists, match them against your local library, and download what is missing straight from Deezer.**
 
-[![Version](https://img.shields.io/badge/version-1.14.0-blue)](https://hub.docker.com/r/catchow/deezer-to-navidrome)
+[![Version](https://img.shields.io/badge/version-1.15.0-blue)](https://hub.docker.com/r/catchow/deezer-to-navidrome)
 [![Python 3](https://img.shields.io/badge/python-3-blue)](https://www.python.org/)
 [![Flask](https://img.shields.io/badge/flask-web%20app-brightgreen)](https://flask.palletsprojects.com/)
 [![GitHub](https://img.shields.io/badge/GitHub-source%20%26%20full%20docs-black)](https://github.com/CatChow0/deezer-to-navidrome)
@@ -11,7 +11,7 @@
 
 ---
 
-**Made for you** builds Daily Mix or Daily Mix+, and Discover, from what you listen to, with tempo and genre filled in by **Fix missing metadata**, your own limits, and a 30-day quarantine for what they download.
+**Made for you** builds Daily Mix or Daily Mix+, and Discover, from what you listen to, with tempo and genre filled in by **Fix missing metadata**, your own limits, and a quarantine with your own rules for what they download.
 
 The **New** button keeps the notes of each version, and **Help** is a full guide with a search.
 

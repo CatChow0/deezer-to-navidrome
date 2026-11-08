@@ -1,4 +1,5 @@
 import logging
+import os
 import threading
 import time
 
@@ -200,6 +201,11 @@ def _scheduler_loop():
 
 def start():
     global _scheduler_thread, _stop_event
+    # The tests import the app: a real scheduler would open their databases while
+    # they delete them.
+    if os.environ.get("D2N_SCHEDULER") == "off":
+        logger.info("[auto-scan] Scheduler not started (D2N_SCHEDULER=off)")
+        return
     try:
         from core.metadata_fix import recover_at_start
 

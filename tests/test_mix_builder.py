@@ -411,7 +411,7 @@ class WithDownloads(Base):
         row = trial.active(self.conn)[0]
         self.assertEqual(row["state"], "on_trial")
         mb.generate([], now=NOW + 31 * DAY)
-        self.assertEqual(trial.get(self.conn, row["deezer_id"])["state"], "pending")
+        self.assertEqual(trial.get(self.conn, row["deezer_id"])["state"], "trash")
 
 
 class Timing(Base):
@@ -563,6 +563,79 @@ class Switching(Base):
         mixes_db.set_meta(self.conn, "last_discover", NOW)
         mb.set_discover(self.conn, True)
         self.assertEqual(mb.due_versions(self.conn, NOW + 60), [])
+
+
+class QuarantineReview(Base):
+    def add_trial(self, deezer_id="1", title="Song", when=NOW - 40 * DAY):
+        path = trial.trial_dir() / f"{title}.flac"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"a")
+        trial.add_download(self.conn, deezer_id, "Artist", title, "", path, "auto-discover", when)
+        return path
+
+    def test_trial_rules_have_defaults_and_bounds(self):
+        settings = mb.load_settings(self.conn)
+        self.assertEqual((settings["trial_auto"], settings["trial_days"], settings["trash_days"], settings["trial_delete"],
+                          settings["trial_bypass"], settings["trial_plays"], settings["trial_marks"]), (True, 30, 30, False, False, 2, True))
+        saved = mb.save_settings(self.conn, {"trial_days": 900, "trash_days": 0, "trial_plays": 99, "trial_bypass": 1})
+        self.assertEqual((saved["trial_days"], saved["trash_days"], saved["trial_plays"], saved["trial_bypass"]), (365, 1, 50, True))
+
+    def test_runs_with_every_mix_off(self):
+        path = self.add_trial()
+        mb.review_quarantine(NOW)
+        self.assertEqual(trial.get(self.conn, "1")["state"], "trash")
+        self.assertFalse(path.exists())
+
+    def test_the_tick_runs_it_even_with_mixes_off(self):
+        self.add_trial()
+        mb.tick(NOW)
+        self.assertEqual(trial.get(self.conn, "1")["state"], "trash")
+
+    def test_follows_the_saved_rules(self):
+        self.add_trial()
+        mb.save_settings(self.conn, {"trial_auto": False})
+        mb.review_quarantine(NOW)
+        self.assertEqual(trial.get(self.conn, "1")["state"], "on_trial")
+        mb.save_settings(self.conn, {"trial_auto": True, "trial_delete": True})
+        mb.review_quarantine(NOW)
+        self.assertEqual(trial.get(self.conn, "1")["state"], "deleted")
+
+    def test_old_waiting_tracks_are_sorted_once(self):
+        self.add_trial("1", "A", when=NOW)
+        self.conn.execute("UPDATE trial_tracks SET state='pending', reason='Never played'")
+        self.conn.commit()
+        mb.save_settings(self.conn, {"trial_auto": False})
+        mb.review_quarantine(NOW)
+        self.assertEqual(trial.get(self.conn, "1")["state"], "pending")
+        mb.save_settings(self.conn, {"trial_auto": True})
+        mb.review_quarantine(NOW)
+        self.assertEqual(trial.get(self.conn, "1")["state"], "trash")
+        self.add_trial("2", "B", when=NOW)
+        self.conn.execute("UPDATE trial_tracks SET state='pending', reason='Played 2 times' WHERE deezer_id='2'")
+        self.conn.commit()
+        mb.review_quarantine(NOW)
+        self.assertEqual(trial.get(self.conn, "2")["state"], "pending")
+
+    def test_the_trash_length_is_used(self):
+        self.add_trial()
+        trial.remove(self.conn, "1", NOW - 8 * DAY)
+        mb.save_settings(self.conn, {"trash_days": 7})
+        mb.review_quarantine(NOW)
+        self.assertEqual(trial.get(self.conn, "1")["state"], "deleted")
+
+    def test_new_plays_count_without_a_generation(self):
+        self.add_trial("1", "Song", when=NOW - DAY)
+        track = stats_db.upsert_track(self.stats, "Song", ["Artist"])
+        for i in range(2):
+            stats_db.add_play(self.stats, track, None, 200, NOW - 60 * (i + 1), "navidrome")
+        self.stats.commit()
+        mb.review_quarantine(NOW)
+        self.assertEqual(trial.get(self.conn, "1")["state"], "pending")
+
+    def test_nothing_in_quarantine_costs_nothing(self):
+        with mock.patch("core.mix_builder.review_trial") as review:
+            mb.review_quarantine(NOW)
+        review.assert_not_called()
 
 
 class SurvivesStartClean(Base):

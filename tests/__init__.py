@@ -3,4 +3,6 @@ import os
 import tempfile
 
 os.environ["DATA_DIR"] = tempfile.mkdtemp(prefix="d2n-tests-")
+# No background scheduler: it would touch the test databases at random moments.
+os.environ["D2N_SCHEDULER"] = "off"
 os.environ.pop("DISABLE_AUTH", None)

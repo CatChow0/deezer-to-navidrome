@@ -2,7 +2,7 @@
 
 **A self-hosted web app that turns your Deezer playlists into Navidrome `.m3u8` playlists, matches them against your local library, and downloads what is missing straight from Deezer.**
 
-[![Docker Image Version](https://img.shields.io/badge/version-1.14.0-blue)](https://hub.docker.com/r/catchow/deezer-to-navidrome)
+[![Docker Image Version](https://img.shields.io/badge/version-1.15.0-blue)](https://hub.docker.com/r/catchow/deezer-to-navidrome)
 [![Python 3](https://img.shields.io/badge/python-3-blue)](https://www.python.org/)
 [![Flask](https://img.shields.io/badge/flask-web%20app-brightgreen)](https://flask.palletsprojects.com/)
 
@@ -60,7 +60,7 @@ If you self-host your music with Navidrome but discover it on Deezer, this app k
 
 The interface has four views: **Dashboard**, **Stats**, **Releases** and **Settings**. Long tasks (scans, downloads, library refreshes) run in the background and show their progress in the **Activity** cell, so the rest of the page stays usable.
 
-**Made for you** builds playlists from what you listen to: Daily Mix from music you already have, Daily Mix+ with a share of tracks to download (a third by default), and Discover with only tracks you never heard. Mixes form around a track, an album or an artist that keeps coming back, using tempo and genre. One switch chooses Off, Daily Mix or Daily Mix+, Discover has its own, and **Manage** sets how often they refresh, their length, the share of new tracks and the disk limits. **Fix missing metadata** finds what your files lack (tempo measured from the audio, genre from Deezer) and adds it to their tags without replacing anything: in the free space of a FLAC header, saved first so a brutal stop can put it back, or on a copy checked against the original. What these playlists download stays on trial for 30 days: played twice, or starred or well rated in Navidrome, it is kept; otherwise it waits for your decision, and nothing leaves without it. Everything is off until you turn it on.
+**Made for you** builds playlists from what you listen to: Daily Mix from music you already have, Daily Mix+ with a share of tracks to download (a third by default), and Discover with only tracks you never heard. Mixes form around a track, an album or an artist that keeps coming back, using tempo and genre. One switch chooses Off, Daily Mix or Daily Mix+, Discover has its own, and **Manage** sets how often they refresh, their length, the share of new tracks and the disk limits. **Fix missing metadata** finds what your files lack (tempo measured from the audio, genre from Deezer) and adds it to their tags without replacing anything: in the free space of a FLAC header, saved first so a brutal stop can put it back, or on a copy checked against the original. What these playlists download stays on trial: played enough, or starred or well rated in Navidrome, it waits under To review for you to keep it; otherwise it goes to the trash at the end of its trial. Every rule can be changed in **Manage**, and the lists can be searched, sorted and filtered. Everything is off until you turn it on.
 
 Two buttons in the topbar explain the app. **New** keeps the notes of each version, one tab each, and shows a dot after an upgrade until you open it. **Help** is a full guide with a search: how each part works, every setting, and what to do when something goes wrong, with live checks of your Deezer account and downloads folder.
 
@@ -359,7 +359,7 @@ Both back up `stats.db` first (the last 3, as `stats.db.bak-*` in `DATA_DIR`) an
 | `stats.db.bak-*` | Backups made before each rebuild (the last 3) | Replaced by newer ones |
 | `mixes.db` | Made for you: quarantine, mix history, settings, tempo and genre results | Survives **Reset data** and Start clean |
 | `metadata_journal/` | Saved FLAC headers while Fix missing metadata writes them | Emptied as each file is done, or at the next start |
-| `trial_trash/` | Tracks removed from quarantine | Deleted after 30 days |
+| `trial_trash/` | Tracks removed from quarantine | Deleted after the days chosen in Manage, 30 by default |
 | `stats_sources/` | Saved copy of Maloja's database | Until replaced by a larger one |
 | `stats_covers/` | Cached artist, album and track covers | Survives **Reset data**; can be deleted, it fills again |
 | `covers/` | Playlist artwork | Until cleaned up |
@@ -851,9 +851,12 @@ All routes need a signed-in session, except `/health` and the three routes the A
 | Endpoint | Method | Purpose |
 |----------|--------|---------|
 | `/api/mixes` | GET | Settings, metadata status and quarantine |
-| `/api/mixes/settings` | POST | Mode (`mix_mode`: `off`, `daily`, `blend`), `discover` and limits |
+| `/api/mixes/settings` | POST | Mode (`mix_mode`: `off`, `daily`, `blend`), `discover`, limits and trial rules (`trial_*`, `trash_days`) |
 | `/api/mixes/generate` | POST | Build what is turned on now |
 | `/api/mixes/trial/<id>/keep`, `/remove`, `/restore` | POST | Decide about one track |
+| `/api/mixes/trial/<id>/cover` | GET | The picture inside a track's file |
+| `/api/mixes/trial/keep-pending` | POST | Keep the given tracks waiting under To review (`ids`) |
+| `/api/mixes/trial/empty-trash` | POST | Delete everything in the trash now |
 | `/api/mixes/trial/remove-pending` | POST | Remove everything waiting under To review |
 | `/api/metadata/fix`, `/api/metadata/undo` | POST | Start Fix missing metadata, or undo it |
 

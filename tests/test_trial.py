@@ -35,8 +35,13 @@ class Base(unittest.TestCase):
     def state(self, deezer_id="1"):
         return trial.get(self.conn, deezer_id)["state"]
 
-    def evaluate(self, plays=None, marks=None, used=(), owned=(), now=NOW):
-        return trial.evaluate(self.conn, plays or {}, marks or {}, set(used), set(owned), now)
+    def evaluate(self, plays=None, marks=None, used=(), owned=(), now=NOW, migrate=False, **rules):
+        return trial.evaluate(self.conn, plays or {}, marks or {}, set(used), set(owned), now,
+                              trial.Rules(**rules), migrate=migrate)
+
+    def in_trash(self, deezer_id="1"):
+        row = trial.get(self.conn, deezer_id)
+        return row["state"] == "trash" and Path(row["path"]).is_relative_to(trial.trash_dir()) and Path(row["path"]).exists()
 
 
 class Adding(Base):
@@ -64,63 +69,147 @@ class Adding(Base):
 
 
 class Verdicts(Base):
-    def test_two_plays_keep_it(self):
+    def test_enough_plays_wait_for_your_confirmation(self):
         path = self.add()
-        self.evaluate(plays={"1": 2})
-        self.assertEqual(self.state(), "kept")
-        self.assertFalse(path.exists())
-        self.assertTrue((self.downloads / "songs" / path.name).exists())
+        report = self.evaluate(plays={"1": 2})
+        self.assertEqual(self.state(), "pending")
+        self.assertEqual(trial.get(self.conn, "1")["reason"], "Played 2 times")
+        self.assertTrue(path.exists())
+        self.assertEqual(report["review"], 1)
 
-    def test_one_play_is_not_enough(self):
+    def test_one_play_is_not_enough_by_default(self):
         self.add()
         self.evaluate(plays={"1": 1})
         self.assertEqual(self.state(), "on_trial")
 
-    def test_star_or_good_rating_keeps_it(self):
+    def test_the_number_of_plays_is_yours(self):
+        self.add()
+        self.evaluate(plays={"1": 2}, plays_needed=3)
+        self.assertEqual(self.state(), "on_trial")
+        self.evaluate(plays={"1": 3}, plays_needed=3)
+        self.assertEqual(self.state(), "pending")
+
+    def test_bypass_keeps_it_at_once(self):
+        path = self.add()
+        self.evaluate(plays={"1": 2}, bypass=True)
+        self.assertEqual(self.state(), "kept")
+        self.assertFalse(path.exists())
+        self.assertTrue((self.downloads / "songs" / path.name).exists())
+
+    def test_bypass_also_keeps_what_already_waits(self):
+        self.add()
+        self.evaluate(plays={"1": 2})
+        self.evaluate(plays={"1": 2}, bypass=True)
+        self.assertEqual(self.state(), "kept")
+
+    def test_star_or_good_rating_counts(self):
         self.add("1", title="A")
         self.add("2", title="B")
         self.evaluate(marks={"1": {"starred": True, "rating": 0}, "2": {"starred": False, "rating": 4}})
-        self.assertEqual(self.state("1"), "kept")
-        self.assertEqual(self.state("2"), "kept")
+        self.assertEqual(self.state("1"), "pending")
+        self.assertEqual(self.state("2"), "pending")
+        self.assertEqual(trial.get(self.conn, "1")["reason"], "Starred in Navidrome")
 
-    def test_bad_rating_goes_to_review_at_once(self):
-        path = self.add()
+    def test_stars_and_ratings_can_be_ignored(self):
+        self.add("1", title="A")
+        self.add("2", title="B")
+        marks = {"1": {"starred": True, "rating": 0}, "2": {"starred": False, "rating": 1}}
+        self.evaluate(marks=marks, marks_count=False)
+        self.assertEqual(self.state("1"), "on_trial")
+        self.assertEqual(self.state("2"), "on_trial")
+
+    def test_bad_rating_ends_the_trial_at_once(self):
+        self.add()
         self.evaluate(marks={"1": {"starred": False, "rating": 2}})
-        self.assertEqual(self.state(), "pending")
-        self.assertTrue(path.exists())
+        self.assertTrue(self.in_trash())
+        self.assertEqual(trial.get(self.conn, "1")["reason"], "Rated 2 in Navidrome")
 
-    def test_track_used_by_a_regular_playlist_is_kept(self):
+    def test_track_used_by_a_regular_playlist_counts(self):
         path = self.add()
         self.evaluate(used=[str(path)])
-        self.assertEqual(self.state(), "kept")
+        self.assertEqual(self.state(), "pending")
 
-    def test_track_you_also_own_elsewhere_is_kept(self):
+    def test_track_you_also_own_elsewhere_counts(self):
         self.add()
         self.evaluate(owned=[trial.get(self.conn, "1")["track_key"]])
-        self.assertEqual(self.state(), "kept")
+        self.assertEqual(self.state(), "pending")
 
-    def test_end_of_trial_asks_and_removes_nothing(self):
+    def test_end_of_trial_goes_to_the_trash(self):
         path = self.add()
         self.evaluate(now=NOW + 29 * DAY)
         self.assertEqual(self.state(), "on_trial")
-        self.evaluate(now=NOW + 31 * DAY)
-        self.assertEqual(self.state(), "pending")
-        self.assertTrue(path.exists())
-        self.evaluate(now=NOW + 400 * DAY)
+        report = self.evaluate(plays={"1": 1}, now=NOW + 30 * DAY)
+        self.assertTrue(self.in_trash())
+        self.assertFalse(path.exists())
+        self.assertEqual(trial.get(self.conn, "1")["reason"], "Played once")
+        self.assertEqual(report["trashed"], 1)
+
+    def test_the_trial_length_is_yours_and_applies_to_tracks_already_there(self):
+        self.add()
+        self.evaluate(now=NOW + 10 * DAY, trial_days=30)
+        self.assertEqual(self.state(), "on_trial")
+        self.evaluate(now=NOW + 10 * DAY, trial_days=7)
+        self.assertTrue(self.in_trash())
+        self.assertEqual(trial.get(self.conn, "1")["reason"], "Never played")
+
+    def test_delete_permanently_skips_the_trash(self):
+        path = self.add(artist="Bad", title="Song")
+        report = self.evaluate(now=NOW + 31 * DAY, delete_at_end=True)
+        self.assertEqual(self.state(), "deleted")
+        self.assertFalse(path.exists())
+        self.assertFalse((trial.trash_dir() / path.name).exists())
+        self.assertIn(stats_db.track_key(["Bad"], "Song"), trial.rejected(self.conn)["keys"])
+        self.assertEqual(report["deleted"], 1)
+
+    def test_waiting_for_your_confirmation_never_runs_out(self):
+        path = self.add()
+        self.evaluate(plays={"1": 2})
+        self.evaluate(plays={"1": 2}, now=NOW + 400 * DAY)
         self.assertEqual(self.state(), "pending")
         self.assertTrue(path.exists())
 
-    def test_waiting_for_review_can_still_be_earned_back(self):
+    def test_a_stricter_rule_does_not_take_back_a_validation(self):
         self.add()
-        self.evaluate(now=NOW + 31 * DAY)
-        self.evaluate(plays={"1": 2}, now=NOW + 32 * DAY)
-        self.assertEqual(self.state(), "kept")
+        self.evaluate(plays={"1": 2})
+        self.evaluate(plays={"1": 2}, plays_needed=5, now=NOW + 40 * DAY)
+        self.assertEqual(self.state(), "pending")
+
+    def test_off_moves_nothing(self):
+        path = self.add()
+        self.add("2", title="B")
+        report = self.evaluate(plays={"1": 9}, marks={"2": {"starred": False, "rating": 1}}, now=NOW + 400 * DAY, auto=False)
+        self.assertEqual((self.state("1"), self.state("2")), ("on_trial", "on_trial"))
+        self.assertTrue(path.exists())
+        self.assertEqual(report["review"] + report["trashed"] + report["kept"], 0)
 
     def test_file_gone_from_elsewhere_only_updates_the_state(self):
         path = self.add()
         path.unlink()
         self.evaluate()
         self.assertEqual(self.state(), "gone")
+
+
+class Migration(Base):
+    """Before 1.15, To review held the tracks whose trial had failed."""
+
+    def old_pending(self, deezer_id, reason, title):
+        path = self.add(deezer_id, title=title)
+        self.conn.execute("UPDATE trial_tracks SET state='pending', reason=? WHERE deezer_id=?", (reason, deezer_id))
+        self.conn.commit()
+        return path
+
+    def test_failed_tracks_go_to_the_trash_and_earned_ones_stay(self):
+        self.old_pending("1", "Never played", "A")
+        self.old_pending("2", "Played once", "B")
+        self.evaluate(plays={"2": 2}, now=NOW + 31 * DAY, migrate=True)
+        self.assertTrue(self.in_trash("1"))
+        self.assertEqual(self.state("2"), "pending")
+        self.assertEqual(trial.get(self.conn, "2")["reason"], "Played 2 times")
+
+    def test_without_migration_a_waiting_track_stays(self):
+        self.old_pending("1", "Never played", "A")
+        self.evaluate(now=NOW + 31 * DAY)
+        self.assertEqual(self.state("1"), "pending")
 
 
 class Decisions(Base):
@@ -149,9 +238,17 @@ class Decisions(Base):
         self.assertEqual(existing.read_bytes(), b"existing")
         self.assertEqual(Path(trial.get(self.conn, "1")["path"]).read_bytes(), b"new")
 
+    def test_keep_all_takes_only_the_given_waiting_tracks(self):
+        self.add("1", title="A")
+        self.add("2", title="B")
+        self.add("3", title="C")
+        self.evaluate(plays={"1": 2, "2": 2})
+        self.assertEqual(trial.keep_all_pending(self.conn, NOW, ["1", "3"]), 1)
+        self.assertEqual((self.state("1"), self.state("2"), self.state("3")), ("kept", "pending", "on_trial"))
+
     def test_remove_all_waiting_only_touches_the_waiting_list(self):
         self.add("1", title="Waiting")
-        self.evaluate(now=NOW + 31 * DAY)
+        self.evaluate(plays={"1": 2})
         keep = self.add("2", title="Current", when=NOW + 31 * DAY)
         self.assertEqual(trial.remove_all_pending(self.conn, NOW + 31 * DAY), 1)
         self.assertEqual(self.state("1"), "trash")
@@ -167,6 +264,24 @@ class Decisions(Base):
 
 
 class Purge(Base):
+    def test_the_trash_length_is_yours(self):
+        self.add()
+        trial.remove(self.conn, "1", NOW)
+        file = Path(trial.get(self.conn, "1")["path"])
+        trial.purge(self.conn, NOW + 6 * DAY, trash_days=7)
+        self.assertTrue(file.exists())
+        trial.purge(self.conn, NOW + 7 * DAY, trash_days=7)
+        self.assertFalse(file.exists())
+
+    def test_empty_trash_now(self):
+        self.add("1", title="A")
+        self.add("2", title="B")
+        trial.remove(self.conn, "1", NOW)
+        files = [Path(trial.get(self.conn, "1")["path"])]
+        self.assertEqual(trial.empty_trash(self.conn, NOW), 1)
+        self.assertFalse(files[0].exists())
+        self.assertEqual((self.state("1"), self.state("2")), ("deleted", "on_trial"))
+
     def test_trash_is_emptied_after_30_days_only(self):
         self.add()
         trial.remove(self.conn, "1", NOW)
@@ -253,9 +368,23 @@ class Safety(Base):
         target = self.outside()
         self.forge(target, "on_trial")
         self.add("2", title="Fine")
-        self.evaluate(plays={"1": 5, "2": 5})
+        self.evaluate(plays={"1": 5, "2": 5}, bypass=True)
         self.assertEqual(target.read_bytes(), b"precious")
         self.assertEqual(self.state("2"), "kept")
+
+    def test_end_of_trial_never_deletes_a_path_outside(self):
+        target = self.outside()
+        self.forge(target, "on_trial")
+        self.evaluate(now=NOW + 400 * DAY, delete_at_end=True)
+        self.assertEqual(target.read_bytes(), b"precious")
+        self.evaluate(now=NOW + 400 * DAY)
+        self.assertEqual(target.read_bytes(), b"precious")
+
+    def test_empty_trash_leaves_a_path_outside(self):
+        target = self.outside()
+        self.forge(target, "trash")
+        trial.empty_trash(self.conn, NOW)
+        self.assertEqual(target.read_bytes(), b"precious")
 
 
 class Moved(Base):
@@ -359,6 +488,18 @@ class NavidromeMarks(Base):
         with mock.patch("core.stats_import._navidrome_path", return_value=db):
             marks = trial.navidrome_marks(self.conn)
         self.assertEqual(marks, {"1": {"starred": True, "rating": 0}})
+
+    def test_marks_are_read_again_after_an_hour_only(self):
+        db = self.root / "navidrome.db"
+        db.write_bytes(b"")
+        self.add()
+        with mock.patch("core.stats_import._navidrome_path", return_value=db), \
+                mock.patch("core.trial._read_annotations", return_value=[("trial/Artist - Song.flac", 1, 0)]) as read:
+            trial.navidrome_marks(self.conn, now=NOW)
+            trial.navidrome_marks(self.conn, now=NOW + 3599)
+            self.assertEqual(read.call_count, 1)
+            self.assertEqual(trial.navidrome_marks(self.conn, now=NOW + 3600), {"1": {"starred": True, "rating": 0}})
+            self.assertEqual(read.call_count, 2)
 
     def test_no_mount_means_no_marks(self):
         self.add()

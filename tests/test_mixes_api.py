@@ -11,6 +11,10 @@ NOW = 1_800_000_000
 
 
 class Api(unittest.TestCase):
+    def test_the_scheduler_does_not_run_in_the_tests(self):
+        from core import scheduler
+        self.assertIsNone(scheduler._scheduler_thread)
+
     @classmethod
     def setUpClass(cls):
         from app import app
@@ -180,6 +184,53 @@ class Api(unittest.TestCase):
 
     def test_unknown_track_is_an_error(self):
         self.assertEqual(self.post("/api/mixes/trial/404/remove").status_code, 400)
+
+    def test_each_track_says_its_source_cover_and_days(self):
+        self.add("1")
+        track = self.get()["on_trial"][0]
+        self.assertEqual(track["source"], "Discover")
+        self.assertEqual(track["cover"], "/api/mixes/trial/1/cover")
+        self.assertIn("downloaded_at", track)
+        self.post("/api/mixes/settings", {"trial_days": 300})
+        with mock.patch("routes.mixes.time.time", return_value=NOW + 10 * 86400):
+            self.assertEqual(self.get()["on_trial"][0]["days_left"], 290)
+
+    def test_cover_from_the_file_or_nothing(self):
+        self.add("1")
+        with mock.patch("core.stats_covers._embedded_art", return_value=b"\x89PNG\r\n\x1a\nrest"):
+            response = self.client.get("/api/mixes/trial/1/cover")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.mimetype, "image/png")
+        self.assertIn("max-age", response.headers["Cache-Control"])
+        with mock.patch("core.stats_covers._embedded_art", return_value=None):
+            self.assertEqual(self.client.get("/api/mixes/trial/1/cover").status_code, 404)
+        self.assertEqual(self.client.get("/api/mixes/trial/404/cover").status_code, 404)
+
+    def test_keep_all_only_takes_the_given_waiting_tracks(self):
+        self.add("1", state="pending")
+        self.add("2", state="pending")
+        self.add("3")
+        data = self.client.post("/api/mixes/trial/keep-pending", json={"ids": ["1", "3"]}).get_json()
+        self.assertEqual(data["kept"], 1)
+        self.assertEqual([t["id"] for t in data["pending"]], ["2"])
+        self.assertEqual([t["id"] for t in data["on_trial"]], ["3"])
+
+    def test_keep_all_needs_a_list(self):
+        self.assertEqual(self.client.post("/api/mixes/trial/keep-pending", json={"ids": "1"}).status_code, 400)
+
+    def test_empty_trash(self):
+        self.add("1")
+        self.post("/api/mixes/trial/1/remove")
+        data = self.post("/api/mixes/trial/empty-trash").get_json()
+        self.assertEqual((data["deleted"], data["trash"]), (1, []))
+
+    def test_saving_trial_rules_reviews_at_once(self):
+        with mock.patch("core.mix_builder.review_quarantine") as review:
+            self.post("/api/mixes/settings", {"max_unheard": 5})
+            review.assert_not_called()
+            self.post("/api/mixes/settings", {"trial_plays": 3, "trial_bypass": True})
+            review.assert_called_once()
+        self.assertEqual(self.get()["settings"]["trial_plays"], 3)
 
     def test_remove_all_only_takes_what_waits(self):
         self.add("1", state="pending")

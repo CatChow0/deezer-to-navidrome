@@ -2,7 +2,7 @@
 import logging
 import time
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, Response, jsonify, request
 
 from core import mix_builder, metadata_fix, mixes_db, stats_db, stats_import, trial
 
@@ -11,7 +11,15 @@ logger = logging.getLogger(__name__)
 mixes_bp = Blueprint("mixes", __name__)
 
 
-def _track(row, plays, now) -> dict:
+def _source(mix_id) -> str:
+    if mix_id.startswith("auto-discover"):
+        return "Discover"
+    if mix_id.startswith("auto-blend"):
+        return "Daily Mix+"
+    return "Other"
+
+
+def _track(row, plays, now, rules) -> dict:
     return {
         "id": row["deezer_id"],
         "artist": row["artist"],
@@ -19,8 +27,12 @@ def _track(row, plays, now) -> dict:
         "album": row["album"],
         "plays": plays.get(row["deezer_id"], 0),
         "reason": row["reason"],
-        "days_left": max(0, (row["trial_ends_at"] - now + 86399) // 86400),
-        "trash_days_left": max(0, (row["state_at"] + trial.TRASH_DAYS * 86400 - now + 86399) // 86400),
+        "source": _source(row["mix_id"]),
+        "cover": f"/api/mixes/trial/{row['deezer_id']}/cover",
+        "downloaded_at": row["downloaded_at"],
+        "state_at": row["state_at"],
+        "days_left": max(0, (trial.trial_ends_at(row, rules) - now + 86399) // 86400),
+        "trash_days_left": max(0, (row["state_at"] + rules.trash_days * 86400 - now + 86399) // 86400),
     }
 
 
@@ -35,17 +47,19 @@ def _state(conn) -> dict:
     analysis = metadata_fix.status(conn, entries)
     analysis["running"] = metadata_fix.is_running()
     usage = trial.usage(conn, plays)
+    settings = mix_builder.load_settings(conn)
+    rules = trial.rules_from(settings)
     return {
-        "settings": mix_builder.load_settings(conn),
+        "settings": settings,
         "downloads_blocked": mix_builder.downloads_possible(),
         "analysis": analysis,
         "running": mix_builder.is_running(),
         "last_run": mixes_db.get_meta(conn, "last_run"),
         "navidrome_mounted": stats_import._navidrome_path().is_file(),
         "usage": usage,
-        "on_trial": [_track(r, plays, now) for r in trial.listing(conn, trial.ON_TRIAL)],
-        "pending": [_track(r, plays, now) for r in trial.listing(conn, trial.PENDING)],
-        "trash": [_track(r, plays, now) for r in trial.listing(conn, trial.TRASH)],
+        "on_trial": [_track(r, plays, now, rules) for r in trial.listing(conn, trial.ON_TRIAL)],
+        "pending": [_track(r, plays, now, rules) for r in trial.listing(conn, trial.PENDING)],
+        "trash": [_track(r, plays, now, rules) for r in trial.listing(conn, trial.TRASH)],
     }
 
 
@@ -81,6 +95,11 @@ def settings():
             mix_builder.set_mix_mode(conn, mode)
         if discover is not None:
             mix_builder.set_discover(conn, bool(discover))
+        if mix_builder.TRIAL_KEYS & set(body):
+            # New rules apply to what is already in quarantine, now.
+            conn.close()
+            mix_builder.review_quarantine()
+            conn = mixes_db.connect()
         if mode in ("daily", "blend") or discover:
             mixes_db.set_meta(conn, "metadata_fix_paused", False)
             metadata_fix.start_background(mix_builder.library_entries)
@@ -168,6 +187,50 @@ def remove(deezer_id):
 @mixes_bp.post("/api/mixes/trial/<deezer_id>/restore")
 def restore(deezer_id):
     return _decide(trial.restore, deezer_id)
+
+
+@mixes_bp.get("/api/mixes/trial/<deezer_id>/cover")
+def cover(deezer_id):
+    """The picture inside the downloaded file."""
+    from core import stats_covers
+
+    conn = mixes_db.connect()
+    try:
+        row = trial.get(conn, deezer_id)
+    finally:
+        conn.close()
+    data = stats_covers._embedded_art(row["path"]) if row and row["path"] else None
+    if not data:
+        return Response(status=404)
+    mimetype = "image/png" if data[:8] == b"\x89PNG\r\n\x1a\n" else "image/jpeg"
+    response = Response(data, mimetype=mimetype)
+    response.headers["Cache-Control"] = "private, max-age=86400"
+    return response
+
+
+@mixes_bp.post("/api/mixes/trial/keep-pending")
+def keep_pending():
+    body = request.get_json(silent=True) or {}
+    ids = body.get("ids")
+    if not isinstance(ids, list):
+        return jsonify({"ok": False, "error": "Expected the tracks to keep"}), 400
+    conn = mixes_db.connect()
+    try:
+        kept = trial.keep_all_pending(conn, int(time.time()), [str(i) for i in ids])
+        _update_trial_playlist(conn)
+        return jsonify({"ok": True, "kept": kept, **_state(conn)})
+    finally:
+        conn.close()
+
+
+@mixes_bp.post("/api/mixes/trial/empty-trash")
+def empty_trash():
+    conn = mixes_db.connect()
+    try:
+        deleted = trial.empty_trash(conn, int(time.time()))
+        return jsonify({"ok": True, "deleted": deleted, **_state(conn)})
+    finally:
+        conn.close()
 
 
 @mixes_bp.post("/api/mixes/trial/remove-pending")

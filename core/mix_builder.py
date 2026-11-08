@@ -36,9 +36,20 @@ DEFAULTS = {
     "blend_new_percent": 33,
     "max_unheard": 100,
     "max_trial_gb": 20,
+    "trial_auto": True,
+    "trial_days": trial.TRIAL_DAYS,
+    "trash_days": trial.TRASH_DAYS,
+    "trial_delete": False,
+    "trial_bypass": False,
+    "trial_plays": trial.KEEP_PLAYS,
+    "trial_marks": True,
 }
-BOUNDS = {"mix_size": (MIN_MIX_SIZE, 100), "blend_new_percent": (1, 90)}
+BOUNDS = {"mix_size": (MIN_MIX_SIZE, 100), "blend_new_percent": (1, 90), "trial_days": (1, 365),
+          "trash_days": (1, 365), "trial_plays": (1, 50)}
+SWITCHES = {"discover", "trial_auto", "trial_delete", "trial_bypass", "trial_marks"}
+TRIAL_KEYS = {"trial_auto", "trial_days", "trash_days", "trial_delete", "trial_bypass", "trial_plays", "trial_marks"}
 _run_lock = threading.Lock()
+_review_lock = threading.Lock()
 
 
 def load_settings(conn) -> dict:
@@ -57,7 +68,7 @@ def save_settings(conn, changes) -> dict:
             if value not in MIX_MODES:
                 raise ValueError(f"Unknown mode: {value}")
             settings[key] = value
-        elif key == "discover":
+        elif key in SWITCHES:
             settings[key] = bool(value)
         elif key in DEFAULTS:
             low, high = BOUNDS.get(key, (1, None))
@@ -372,14 +383,54 @@ def publish_trial_playlist(conn) -> bool:
 
 
 def review_trial(conn, stats_conn, now) -> dict:
-    """The daily verdicts, then the trash."""
-    outside = mix_taste.owned_tracks(library_entries(), exclude_under=[str(trial.trial_dir())])
-    marks = trial.navidrome_marks(conn)
+    """The verdicts with your rules, then the trash. Plays come from the history as it
+    is now, so plays a merge brought in count too."""
+    rules = trial.rules_from(load_settings(conn))
+    marks = trial.navidrome_marks(conn, now) if rules.auto and rules.marks_count else None
+    owned = set()
+    if rules.auto:
+        outside = mix_taste.owned_tracks(library_entries(), exclude_under=[str(trial.trial_dir())])
+        owned = {t.key for t in outside}
+    # Until 1.15, To review held the tracks whose trial had failed: sorted once.
+    migrate = rules.auto and not mixes_db.get_meta(conn, "trial_rules_v2")
     report = trial.evaluate(conn, trial.plays_since_download(conn, stats_conn), marks or {},
-                            trial.paths_in_regular_playlists(), {t.key for t in outside}, now)
-    report["purged"] = trial.purge(conn, now)
+                            trial.paths_in_regular_playlists(), owned, now, rules, migrate=migrate)
+    if migrate:
+        mixes_db.set_meta(conn, "trial_rules_v2", True)
+    report["purged"] = trial.purge(conn, now, rules.trash_days)
     report["navidrome_marks"] = marks is not None
     return report
+
+
+def review_quarantine(now=None):
+    """Outside the generation too: every scheduler pass, after an import of plays,
+    and after the rules change. None when there is nothing to look at."""
+    if not _review_lock.acquire(blocking=False):
+        return None
+    now = int(now or time.time())
+    try:
+        conn = mixes_db.connect()
+        try:
+            waiting = conn.execute("SELECT COUNT(*) FROM trial_tracks WHERE state IN (?, ?, ?)",
+                                   (trial.ON_TRIAL, trial.PENDING, trial.TRASH)).fetchone()[0]
+            if not waiting:
+                return None
+            stats_conn = stats_db.connect()
+            try:
+                report = review_trial(conn, stats_conn, now)
+            finally:
+                stats_conn.close()
+            if any(report[k] for k in ("kept", "review", "trashed", "deleted", "gone", "purged")):
+                logger.info("Quarantine: %s", report)
+                try:
+                    publish_trial_playlist(conn)
+                except (OSError, ValueError) as e:
+                    logger.warning("Could not update the On trial playlist: %s", e)
+            return report
+        finally:
+            conn.close()
+    finally:
+        _review_lock.release()
 
 
 def _refresh_library(progress) -> None:
@@ -400,7 +451,8 @@ def generate(versions=None, progress=None, now=None) -> dict:
         wanted = versions if versions is not None else enabled_versions(settings)
         mixes_db.set_meta(conn, "seeds_today", [])
         emit("Checking the tracks on trial")
-        report = review_trial(conn, stats_conn, now)
+        with _review_lock:
+            report = review_trial(conn, stats_conn, now)
         run = _Run(conn, stats_conn, now, f"{now // DAY}")
         run.emit = emit
         built = {}
@@ -490,6 +542,10 @@ def tick(now=None) -> None:
     if is_running():
         return
     now = int(now or time.time())
+    try:
+        review_quarantine(now)
+    except Exception as e:
+        logger.error("Could not review the quarantine: %s", e)
     conn = mixes_db.connect()
     try:
         settings = load_settings(conn)

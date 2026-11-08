@@ -1,6 +1,14 @@
 /* Made for you: the generated playlists and the quarantine. The panel itself uses
    the layout of New and Help (help.css). */
 
+/* To review is green and Trash red, only here: their tabs, their buttons and the
+   counter on the Dashboard. */
+.mfy-modal,
+.mfy-counter {
+  --mfy-review: #4ade80;
+  --mfy-trash: #f87171;
+}
+
 .mfy-modal .overlay-panel {
   width: min(1040px, 100%);
   height: min(88vh, 860px);
@@ -182,10 +190,83 @@
   font-size: var(--step--1);
 }
 
+.mfy-switch-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--text-soft);
+  font-size: var(--step--1);
+  cursor: pointer;
+}
+
+.mfy-switch-row:has(input:disabled),
+.mfy-limit:has(input:disabled) {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.mfy-limit-group--wide {
+  grid-column: 1 / -1;
+}
+
+/* Tabs and buttons of To review and Trash */
+.mfy-tab[data-mfy-tab="review"] { background: color-mix(in srgb, var(--mfy-review) 10%, transparent); }
+.mfy-tab[data-mfy-tab="trash"] { background: color-mix(in srgb, var(--mfy-trash) 10%, transparent); }
+.mfy-tab[data-mfy-tab="review"]:hover { background: color-mix(in srgb, var(--mfy-review) 18%, transparent); }
+.mfy-tab[data-mfy-tab="trash"]:hover { background: color-mix(in srgb, var(--mfy-trash) 18%, transparent); }
+
+.mfy-tab[data-mfy-tab="review"][aria-selected="true"] {
+  background: color-mix(in srgb, var(--mfy-review) 24%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--mfy-review) 60%, transparent) inset;
+}
+
+.mfy-tab[data-mfy-tab="trash"][aria-selected="true"] {
+  background: color-mix(in srgb, var(--mfy-trash) 24%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--mfy-trash) 60%, transparent) inset;
+}
+
+.btn.mfy-btn--review {
+  border-color: color-mix(in srgb, var(--mfy-review) 55%, transparent);
+  background: color-mix(in srgb, var(--mfy-review) 22%, transparent);
+  color: var(--text);
+}
+
+.btn.mfy-btn--trash {
+  border-color: color-mix(in srgb, var(--mfy-trash) 55%, transparent);
+  background: color-mix(in srgb, var(--mfy-trash) 22%, transparent);
+  color: var(--text);
+}
+
+.btn.mfy-btn--review:hover { background: color-mix(in srgb, var(--mfy-review) 34%, transparent); }
+.btn.mfy-btn--trash:hover { background: color-mix(in srgb, var(--mfy-trash) 34%, transparent); }
+
+/* Lists */
+.mfy-toolbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.mfy-toolbar select {
+  max-width: 190px;
+}
+
+.mfy-list-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 34px;
+  margin-top: 10px;
+  font-size: var(--step--1);
+}
+
 .mfy-tracks {
   display: grid;
   gap: 2px;
-  margin-top: 12px;
+  margin-top: 6px;
 }
 
 .mfy-track {
@@ -194,6 +275,23 @@
   gap: 12px;
   padding: 8px 4px;
   border-bottom: 1px solid var(--line);
+}
+
+.mfy-cover {
+  flex: none;
+  width: 44px;
+  height: 44px;
+  overflow: hidden;
+  border-radius: 6px;
+  background: var(--glass-raised);
+  box-shadow: 0 0 0 1px var(--line) inset;
+}
+
+.mfy-cover img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .mfy-track-name {
@@ -214,6 +312,62 @@
   gap: 6px;
 }
 
+/* The counter beside Manage */
+.mfy-head-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.mfy-counter {
+  display: inline-flex;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--r-control);
+}
+
+.mfy-counter[hidden] {
+  display: none;
+}
+
+.mfy-count {
+  display: grid;
+  justify-items: center;
+  min-width: 70px;
+  padding: 4px 12px;
+  border: 0;
+  background: var(--glass-raised);
+  color: var(--text-soft);
+  font: inherit;
+  cursor: pointer;
+}
+
+.mfy-count + .mfy-count {
+  border-left: 1px solid var(--line);
+}
+
+.mfy-count strong {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+}
+
+.mfy-count span {
+  font-size: 0.72rem;
+  white-space: nowrap;
+}
+
+.mfy-count--review { background: color-mix(in srgb, var(--mfy-review) 18%, transparent); }
+.mfy-count--trash { background: color-mix(in srgb, var(--mfy-trash) 18%, transparent); }
+.mfy-count:hover { filter: brightness(1.25); }
+
+.mfy-count:focus-visible {
+  outline: 2px solid var(--cyan);
+  outline-offset: -2px;
+}
+
 .tile-sub {
   overflow: hidden;
   color: var(--muted);
@@ -222,13 +376,6 @@
   white-space: nowrap;
 }
 
-.mfy-badge {
-  margin-right: 10px;
-  color: var(--partial);
-  font-size: var(--step--1);
-  font-weight: 600;
-  white-space: nowrap;
-}
 
 @media (max-width: 760px) {
   .mfy-modal .overlay-panel {
@@ -244,12 +391,28 @@
     grid-template-columns: minmax(0, 1fr);
   }
 
+  .mfy-toolbar {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  .mfy-toolbar .mfy-search {
+    grid-column: 1 / -1;
+  }
+
+  .mfy-toolbar select {
+    max-width: none;
+  }
+
   .mfy-track {
     flex-wrap: wrap;
   }
 
   .mfy-track-name {
-    flex-basis: calc(100% - 60px);
+    flex-basis: calc(100% - 116px);
+  }
+
+  .mfy-track-name > .muted {
+    white-space: normal;
   }
 
   .mfy-track-actions {
