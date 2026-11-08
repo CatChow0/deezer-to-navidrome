@@ -74,8 +74,16 @@
           <p class="cell-sub">Playlists built from what you listen to. New tracks they download stay on trial until you decide.</p>
         </div>
         <div>
-          <span class="mfy-badge" data-mfy-badge hidden></span>
+        <div class="mfy-head-actions">
+          <div class="mfy-counter" data-mfy-counter role="group" aria-label="Quarantine" hidden>
+            {% for key, label in [('trial', 'On trial'), ('review', 'To review'), ('trash', 'Trash')] %}
+            <button type="button" class="mfy-count mfy-count--{{ key }}" data-mfy-open="{{ key }}" aria-haspopup="dialog" title="Open {{ label }}">
+              <strong data-mfy-counter-value="{{ key }}">0</strong><span>{{ label }}</span>
+            </button>
+            {% endfor %}
+          </div>
           <button type="button" class="btn btn--ghost" data-action="made-for-you" aria-haspopup="dialog">Manage</button>
+        </div>
         </div>
       </div>
       <div class="cell-body">

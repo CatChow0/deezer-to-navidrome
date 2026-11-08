@@ -51,12 +51,13 @@
     <p>Tracks these playlists download go to the <code>trial</code> folder inside your downloads folder, so Navidrome can play them. The <b>On trial</b> playlist has all of them, and Daily Mix+ replays unheard ones before fetching more.</p>
     <table>
       <tbody>
-        <tr><td>Kept</td><td>Played twice, starred or rated 4-5 in Navidrome, added to one of your playlists, or also in your library. It moves to <code>songs</code></td></tr>
-        <tr><td>To review</td><td>30 days without any of that, or rated 1-2. It stays playable until you decide</td></tr>
-        <tr><td>Trash</td><td>You chose <b>Remove</b>. Restorable for 30 days, then the file is deleted and the track is never proposed again</td></tr>
+        <tr><td>On trial</td><td>Just downloaded. It stays playable for 30 days by default</td></tr>
+        <tr><td>To review</td><td>It earned its place: played twice, starred or rated 4-5 in Navidrome, added to one of your playlists, or also in your library. It waits for <b>Keep</b>, which moves it to <code>songs</code>, as long as needed</td></tr>
+        <tr><td>Trash</td><td>Its trial ended without that, it was rated 1-2, or you chose <b>Remove</b>. Restorable for 30 days by default, then the file is deleted and the track is never proposed again</td></tr>
       </tbody>
     </table>
-    <p>The trash is the only thing deleted automatically. The app only ever moves or deletes files in the <code>trial</code> folder and its trash, at <code>/data/trial_trash/</code>.</p>
+    <p>Each list has a search, a sort and a filter, and the counter beside <b>Manage</b> opens it. Tracks are checked every 10 minutes, right after a merge or Start clean of your history, and when the rules change, even with every mix off.</p>
+    <p>The app only ever moves or deletes files in the <code>trial</code> folder and its trash, at <code>/data/trial_trash/</code>.</p>
   </div>
 
   <div class="doc-block">
@@ -73,13 +74,30 @@
   </div>
 
   <div class="doc-block">
+    <h4>Trial rules</h4>
+    <p>Under <b>Versions → Trial</b> in <b>Manage</b>:</p>
+    <table>
+      <tbody>
+        <tr><td><b>Automatic validation</b></td><td>On by default. Off, nothing moves by itself: tracks stay on trial until you keep or remove them, and only the trash still empties</td></tr>
+        <tr><td><b>Days on trial</b></td><td>30 by default. A new length also applies to tracks already there</td></tr>
+        <tr><td><b>Days in the trash</b></td><td>30 by default, then the file is deleted</td></tr>
+        <tr><td><b>Delete permanently after the trial period ends</b></td><td>Off by default. On, a track that did not earn its place is deleted at once instead of going to the trash</td></tr>
+        <tr><td><b>Bypass user review</b></td><td>Off by default. On, a track that earned its place is kept at once</td></tr>
+        <tr><td><b>Plays to validate a track</b></td><td>2 by default, counted from the day it was downloaded</td></tr>
+        <tr><td><b>Starred or rated 4-5 in Navidrome counts</b></td><td>On by default. A rating of 1-2 then also ends the trial early</td></tr>
+      </tbody>
+    </table>
+    <p>A track already under To review stays there if you make a rule stricter.</p>
+  </div>
+
+  <div class="doc-block">
     <h4>When something looks wrong</h4>
     <ul>
       <li><strong>No mix appears.</strong> Fix missing metadata may still be running: see <b>Manage</b>, or use <b>Regenerate now</b>. A library or listening history with too little in it gives fewer mixes, or none.</li>
       <li><strong>A track in the wrong mix.</strong> Genres come from your file tags and Deezer, and a wrong tag misleads the mix.</li>
       <li><strong>"Unmapped path" in Activity.</strong> Add the folder in <b>Settings → Navidrome paths</b>. The downloads folder needs a mapping too.</li>
       <li><strong>Plays do not keep a track.</strong> Check that plays reach the app, under <b>Stats → Recent plays</b>.</li>
-      <li><strong>Stars and ratings do nothing.</strong> Navidrome's database must be mounted at <code>/import/navidrome</code>. They are read once a day, at the next refresh.</li>
+      <li><strong>Stars and ratings do nothing.</strong> Navidrome's database must be mounted at <code>/import/navidrome</code>, and <b>Starred or rated 4-5 in Navidrome counts</b> must be on. They are read at most once an hour.</li>
       <li><strong>"Connect a Deezer account".</strong> Daily Mix+ and Discover need one to download.</li>
     </ul>
   </div>

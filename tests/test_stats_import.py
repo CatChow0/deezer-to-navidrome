@@ -89,6 +89,23 @@ class Merging(ImportCase):
         self.assertEqual(self.count(), 3)
         self.assertEqual(report["from_maloja"], 1)
 
+    def test_an_import_reviews_the_quarantine(self):
+        make_navidrome(self.nav, [{"ts": 1000, "title": "One"}])
+        with mock.patch("core.mix_builder.review_quarantine") as review:
+            run_import("merge")
+        review.assert_called_once()
+
+    def test_a_preview_does_not(self):
+        make_navidrome(self.nav, [{"ts": 1000, "title": "One"}])
+        with mock.patch("core.mix_builder.review_quarantine") as review:
+            run_import("clean", dry_run=True)
+        review.assert_not_called()
+
+    def test_a_failed_review_does_not_fail_the_import(self):
+        make_navidrome(self.nav, [{"ts": 1000, "title": "One"}])
+        with mock.patch("core.mix_builder.review_quarantine", side_effect=OSError("disk")):
+            self.assertEqual(run_import("merge")["after"], 1)
+
     def test_import_twice_same_totals(self):
         make_navidrome(self.nav, [{"ts": 1000, "title": "One"}, {"ts": 2000, "title": "Two"}])
         make_maloja(self.mal, [{"ts": 1000, "title": "One"}, {"ts": 9000, "title": "Three"}])

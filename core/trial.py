@@ -1,9 +1,11 @@
 """Quarantine for the tracks the generated playlists download by themselves.
 
-A track stays playable in <downloads>/trial/ for a while. What you play or mark in
-Navidrome is kept; the rest waits for your decision, and nothing leaves without
-it. A removed track spends 30 days in a trash, then only its name is remembered,
-so it is never proposed again.
+A track stays playable in <downloads>/trial/ for a while. One you play enough, or
+star in Navidrome, waits under To review for you to keep it, or is kept at once
+with Bypass user review. One that does not earn its place by the end of the trial
+goes to the trash, or is deleted at once if you chose so. After its days in the
+trash, only its name is remembered, so it is never proposed again. Every rule is
+in Rules, from the settings in Manage.
 
 Every file operation goes through _inside(): whatever the database says, nothing
 outside the trial folder or the trash is moved or deleted."""
@@ -11,6 +13,9 @@ import logging
 import os
 import shutil
 import tempfile
+import threading
+import time
+from dataclasses import dataclass
 from pathlib import Path
 
 from core import config, deezer_dl, metadata_fix, stats_db
@@ -23,11 +28,36 @@ TRIAL_DAYS = 30
 TRASH_DAYS = 30
 KEEP_PLAYS = 2
 KEEP_RATING = 4
+BAD_RATING = 2
+MARKS_EVERY = 3600
 ON_TRIAL, KEPT, PENDING, TRASH, DELETED, GONE = "on_trial", "kept", "pending", "trash", "deleted", "gone"
 
 
 class TrialError(Exception):
     pass
+
+
+@dataclass(frozen=True)
+class Rules:
+    """What the daily pass may decide on its own. Off: nothing moves by itself."""
+    auto: bool = True
+    trial_days: int = TRIAL_DAYS
+    trash_days: int = TRASH_DAYS
+    delete_at_end: bool = False
+    bypass: bool = False
+    plays_needed: int = KEEP_PLAYS
+    marks_count: bool = True
+
+
+def rules_from(settings) -> Rules:
+    return Rules(auto=settings["trial_auto"], trial_days=settings["trial_days"], trash_days=settings["trash_days"],
+                 delete_at_end=settings["trial_delete"], bypass=settings["trial_bypass"],
+                 plays_needed=settings["trial_plays"], marks_count=settings["trial_marks"])
+
+
+def trial_ends_at(row, rules) -> int:
+    """From the download date: a new trial length applies to tracks already there."""
+    return row["downloaded_at"] + rules.trial_days * DAY
 
 
 def trial_dir() -> Path:
@@ -164,7 +194,7 @@ def keep(conn, deezer_id, now, reason="Kept by hand") -> None:
     _follow_move(row["path"], target)
 
 
-def remove(conn, deezer_id, now) -> None:
+def remove(conn, deezer_id, now, reason="Removed") -> None:
     row = get(conn, deezer_id)
     if row is None or row["state"] not in (ON_TRIAL, PENDING):
         raise TrialError("This track is not waiting for a decision")
@@ -173,9 +203,36 @@ def remove(conn, deezer_id, now) -> None:
     target = _free_name(trash_dir(), source.name)
     with FILES_LOCK:
         shutil.move(str(source), str(target))
-    _set(conn, deezer_id, TRASH, now, "Removed", target)
+    _set(conn, deezer_id, TRASH, now, reason, target)
     metadata_fix.move_file(conn, row["path"], target)
     _forget_file(row["path"])
+
+
+def delete_now(conn, deezer_id, now, reason) -> None:
+    """End of the trial with Delete permanently on: straight from the trial folder."""
+    row = get(conn, deezer_id)
+    if row is None or row["state"] not in (ON_TRIAL, PENDING):
+        raise TrialError("This track is not waiting for a decision")
+    source = _inside(row["path"], trial_dir())
+    with FILES_LOCK:
+        source.unlink(missing_ok=True)
+    _set(conn, deezer_id, DELETED, now, reason)
+    _forget_file(row["path"])
+
+
+def keep_all_pending(conn, now, deezer_ids) -> int:
+    """The tracks shown under To review, kept in one go."""
+    count = 0
+    for deezer_id in deezer_ids:
+        row = get(conn, deezer_id)
+        if row is None or row["state"] != PENDING:
+            continue
+        try:
+            keep(conn, deezer_id, now)
+            count += 1
+        except (TrialError, OSError) as e:
+            logger.warning("Could not keep %s: %s", deezer_id, e)
+    return count
 
 
 def remove_all_pending(conn, now) -> int:
@@ -204,11 +261,20 @@ def restore(conn, deezer_id, now) -> None:
     metadata_fix.move_file(conn, row["path"], target)
 
 
-def purge(conn, now) -> int:
-    """The only automatic deletion: what you removed, after 30 days in the trash."""
-    count = 0
-    limit = int(now) - TRASH_DAYS * DAY
+def purge(conn, now, trash_days=TRASH_DAYS) -> int:
+    """What is in the trash, after its days there."""
+    limit = int(now) - trash_days * DAY
     rows = conn.execute("SELECT * FROM trial_tracks WHERE state=? AND state_at<=?", (TRASH, limit)).fetchall()
+    return _delete_from_trash(conn, rows, now)
+
+
+def empty_trash(conn, now) -> int:
+    rows = conn.execute("SELECT * FROM trial_tracks WHERE state=?", (TRASH,)).fetchall()
+    return _delete_from_trash(conn, rows, now)
+
+
+def _delete_from_trash(conn, rows, now) -> int:
+    count = 0
     for row in rows:
         try:
             _inside(row["path"], trash_dir()).unlink(missing_ok=True)
@@ -220,11 +286,44 @@ def purge(conn, now) -> int:
     return count
 
 
-def evaluate(conn, plays, marks, used_paths, owned_keys, now) -> dict:
-    """The daily pass. plays: deezer id -> plays since download. marks: deezer id ->
+def _plays_text(count) -> str:
+    return "Never played" if not count else "Played once" if count == 1 else f"Played {count} times"
+
+
+def _earned(row, plays, mark, used_paths, owned_keys, rules):
+    """Why this track has earned its place, or None."""
+    played = plays.get(row["deezer_id"], 0)
+    if row["path"] in used_paths:
+        return "In one of your playlists"
+    if row["track_key"] in owned_keys:
+        return "Also in your library"
+    if played >= rules.plays_needed:
+        return _plays_text(played)
+    if rules.marks_count and mark.get("starred"):
+        return "Starred in Navidrome"
+    if rules.marks_count and (mark.get("rating") or 0) >= KEEP_RATING:
+        return f"Rated {mark['rating']} in Navidrome"
+    return None
+
+
+def _end_trial(conn, row, now, reason, rules, report) -> None:
+    try:
+        if rules.delete_at_end:
+            delete_now(conn, row["deezer_id"], now, reason)
+            report["deleted"] += 1
+        else:
+            remove(conn, row["deezer_id"], now, reason)
+            report["trashed"] += 1
+    except (TrialError, OSError) as e:
+        logger.warning("Could not end the trial of %s: %s", row["deezer_id"], e)
+
+
+def evaluate(conn, plays, marks, used_paths, owned_keys, now, rules=Rules(), migrate=False) -> dict:
+    """The regular pass. plays: deezer id -> plays since download. marks: deezer id ->
     Navidrome's star and rating. used_paths: files regular playlists rely on.
-    owned_keys: tracks you also have outside the quarantine."""
-    report = {"kept": 0, "pending": 0, "gone": 0}
+    owned_keys: tracks you also have outside the quarantine. migrate: To review
+    still holds tracks whose trial failed under the rules before 1.15."""
+    report = {"kept": 0, "review": 0, "trashed": 0, "deleted": 0, "gone": 0}
     rows = conn.execute("SELECT * FROM trial_tracks WHERE state IN (?, ?)", (ON_TRIAL, PENDING)).fetchall()
     for row in rows:
         deezer_id = row["deezer_id"]
@@ -232,34 +331,30 @@ def evaluate(conn, plays, marks, used_paths, owned_keys, now) -> dict:
             _set(conn, deezer_id, GONE, now, "The file is gone")
             report["gone"] += 1
             continue
+        if not rules.auto:
+            continue
         mark = marks.get(deezer_id) or {}
-        reason = None
-        if row["path"] in used_paths:
-            reason = "In one of your playlists"
-        elif row["track_key"] in owned_keys:
-            reason = "Also in your library"
-        elif plays.get(deezer_id, 0) >= KEEP_PLAYS:
-            reason = f"Played {plays[deezer_id]} times"
-        elif mark.get("starred"):
-            reason = "Starred in Navidrome"
-        elif (mark.get("rating") or 0) >= KEEP_RATING:
-            reason = f"Rated {mark['rating']} in Navidrome"
-        if reason:
+        reason = _earned(row, plays, mark, used_paths, owned_keys, rules)
+        if reason and rules.bypass:
             try:
                 keep(conn, deezer_id, now, reason)
                 report["kept"] += 1
             except (TrialError, OSError) as e:
                 logger.warning("Could not keep %s: %s", deezer_id, e)
             continue
-        if row["state"] == ON_TRIAL:
-            rating = mark.get("rating") or 0
-            if 0 < rating < 3:
-                _set(conn, deezer_id, PENDING, now, f"Rated {rating} in Navidrome")
-                report["pending"] += 1
-            elif now >= row["trial_ends_at"]:
-                played = plays.get(deezer_id, 0)
-                _set(conn, deezer_id, PENDING, now, "Played once" if played else "Never played")
-                report["pending"] += 1
+        if reason:
+            if row["state"] == ON_TRIAL or migrate:
+                _set(conn, deezer_id, PENDING, now, reason)
+                report["review"] += row["state"] == ON_TRIAL
+            continue
+        # Validated once, it waits for you: a stricter rule later does not take it back.
+        if row["state"] == PENDING and not migrate:
+            continue
+        rating = mark.get("rating") or 0
+        if rules.marks_count and 0 < rating <= BAD_RATING:
+            _end_trial(conn, row, now, f"Rated {rating} in Navidrome", rules, report)
+        elif now >= trial_ends_at(row, rules) or row["state"] == PENDING:
+            _end_trial(conn, row, now, _plays_text(plays.get(deezer_id, 0)), rules, report)
     return report
 
 
@@ -291,32 +386,48 @@ def plays_since_download(conn, stats_conn) -> dict:
     return found
 
 
-def navidrome_marks(conn):
-    """deezer id -> star and rating in Navidrome, from a copy of its database; None
-    when it is not mounted. Only the files on trial are looked at."""
+_marks_cache = {}
+_marks_lock = threading.Lock()
+
+
+def _read_annotations(source) -> list:
+    """(path, starred, rating) of every file Navidrome has a mark for, from a copy."""
     from core import stats_import
 
-    source = stats_import._navidrome_path()
-    if not source.is_file():
-        return None
-    by_name = {f"trial/{Path(r['path']).name}": r["deezer_id"] for r in active(conn)}
-    marks = {}
     with tempfile.TemporaryDirectory(dir=config.DATA_DIR) as folder:
         nd = stats_import._open_copy(source, Path(folder), "navidrome.db",
                                      {"media_file": {"id", "path"}, "annotation": {"item_id", "starred", "rating"}},
                                      "Navidrome")
         try:
-            rows = nd.execute(
+            return [(r["path"], r["starred"], r["rating"]) for r in nd.execute(
                 "SELECT m.path, MAX(a.starred) AS starred, MAX(a.rating) AS rating FROM annotation a"
                 " JOIN media_file m ON m.id = a.item_id WHERE a.item_type='media_file' GROUP BY m.path"
-            ).fetchall()
+            )]
         finally:
             nd.close()
-    for row in rows:
-        parts = Path(row["path"]).as_posix().split("/")
+
+
+def navidrome_marks(conn, now=None):
+    """deezer id -> star and rating in Navidrome; None when its database is not
+    mounted. Copying that database takes a while: it is read once an hour at most."""
+    from core import stats_import
+
+    source = stats_import._navidrome_path()
+    if not source.is_file():
+        return None
+    now = now if now is not None else time.time()
+    with _marks_lock:
+        read_at, rows = _marks_cache.get(str(source), (None, None))
+        if read_at is None or now - read_at >= MARKS_EVERY:
+            rows = _read_annotations(source)
+            _marks_cache[str(source)] = (now, rows)
+    by_name = {f"trial/{Path(r['path']).name}": r["deezer_id"] for r in active(conn)}
+    marks = {}
+    for path, starred, rating in rows:
+        parts = Path(path).as_posix().split("/")
         deezer_id = by_name.get("/".join(parts[-2:]))
         if deezer_id:
-            marks[deezer_id] = {"starred": bool(row["starred"]), "rating": row["rating"] or 0}
+            marks[deezer_id] = {"starred": bool(starred), "rating": rating or 0}
     return marks
 
 
