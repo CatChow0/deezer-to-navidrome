@@ -63,6 +63,11 @@ services:
       # Optional: session signing key (else a random one is kept in /data).
       # SECRET_KEY: ""
 
+      # Optional: the key the saved credentials (Deezer ARLs, Navidrome
+      # passwords, tokens) are encrypted with. Any long random string. Without
+      # it, a key is generated in /data, so a copy of /data carries it along.
+      # D2N_ENCRYPTION_KEY: ""
+
       # Optional: listening stats. Sources for Settings > Listening stats, and the
       # token Navidrome sends new plays with (else create one in Settings).
       # STATS_NAVIDROME_DB: "/import/navidrome/navidrome.db"

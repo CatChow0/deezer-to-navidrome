@@ -2,7 +2,7 @@
 
 **A self-hosted web app that turns your Deezer playlists into Navidrome `.m3u8` playlists, matches them against your local library, and downloads what is missing straight from Deezer.**
 
-[![Docker Image Version](https://img.shields.io/badge/version-1.15.0-blue)](https://hub.docker.com/r/catchow/deezer-to-navidrome)
+[![Docker Image Version](https://img.shields.io/badge/version-1.16.0-blue)](https://hub.docker.com/r/catchow/deezer-to-navidrome)
 [![Python 3](https://img.shields.io/badge/python-3-blue)](https://www.python.org/)
 [![Flask](https://img.shields.io/badge/flask-web%20app-brightgreen)](https://flask.palletsprojects.com/)
 
@@ -364,9 +364,11 @@ Both back up `stats.db` first (the last 3, as `stats.db.bak-*` in `DATA_DIR`) an
 | `stats_covers/` | Cached artist, album and track covers | Survives **Reset data**; can be deleted, it fills again |
 | `covers/` | Playlist artwork | Until cleaned up |
 | `config.json` | App configuration | Survives restarts |
-| `secrets.json` | Password hash, API token, Deezer ARLs, webhook URL, session key | Survives restarts |
+| `secrets.json` | Password hash, API token, Deezer ARLs, webhook URL, session key, encrypted | Survives restarts |
+| `navidrome_accounts.json` | Navidrome accounts, their passwords encrypted | Survives restarts |
+| `encryption.key` | The encryption key, only when `D2N_ENCRYPTION_KEY` is not set | Keep it: without it, saved credentials must be entered again |
 
-> `secrets.json` holds your Deezer session cookies and other credentials. Keep `/data` private and out of any backup you share.
+> Credentials are encrypted, but with `encryption.key` in the same folder a copy of `/data` still reveals them. Set `D2N_ENCRYPTION_KEY`, and keep `/data` private and out of any backup you share.
 
 ### Library Cache Structure
 
@@ -577,6 +579,9 @@ services:
       # DEEZER_ARL_PREMIUM: ""       # premium account used only for downloads
       # SCROBBLE_TOKEN: ""           # token Navidrome sends new plays with
 
+      # Optional: the key credentials are encrypted with (else one is kept in /data)
+      # D2N_ENCRYPTION_KEY: ""
+
       # Optional: the sign-in account (else the first visit asks for it)
       # APP_USERNAME: "admin"
       # APP_PASSWORD: "a-long-password"
@@ -637,6 +642,7 @@ The folder and performance variables are read **on first start** to create `conf
 | `DEEZER_ARL` | — | `arl` cookie of the Deezer account (mixes, release feed, downloads) |
 | `DEEZER_ARL_PREMIUM` | — | `arl` of a premium account, used only for downloads |
 | `SECRET_KEY` | random, kept in `secrets.json` | Session signing key |
+| `D2N_ENCRYPTION_KEY` | random, kept in `encryption.key` | Key the saved credentials are encrypted with: any long random string |
 | `APP_USERNAME` / `APP_PASSWORD` | — | The sign-in account; else the first visit asks you to create it |
 | `API_TOKEN` | — | Token for other apps; else create one in Settings |
 | `SCROBBLE_TOKEN` | — | Token Navidrome sends plays with; else create one in Settings |
@@ -686,7 +692,16 @@ The web interface asks for a sign-in. On the first visit, the app asks you to cr
 - Changing the password (**Settings → Sign-in and other apps**) signs out your other browsers.
 - The API token is sent as `Authorization: Bearer <token>` and only opens `GET /api/releases`, `POST /search/library-check` and `GET /api/version`.
 
-Generate a `SECRET_KEY` or a token with:
+#### Navidrome accounts
+
+**Settings → Navidrome accounts** lists the Navidrome users this app works for: the address of your Navidrome, a user name and its password (Navidrome does not accept API keys yet). **Test** signs in through the Subsonic API and says whether the user is an admin and which libraries it sees; with Navidrome's database mounted, it also finds the user there, so its plays and stars can be told apart.
+
+- Your install becomes the first account and keeps working as before.
+- With two accounts or more, a picker at the top of the page chooses the account of this browser. Each browser, and the phone, keeps its own.
+- Passwords are encrypted with `D2N_ENCRYPTION_KEY`, else with a key generated in `data/encryption.key`. They are never shown again, never sent back by the API, and never written in a log. Requests to Navidrome carry them in a POST body, never in a URL.
+- Playlists, history and mixes per account come in the next steps of this version.
+
+Generate a `SECRET_KEY`, a `D2N_ENCRYPTION_KEY` or a token with:
 ```bash
 python -c "import secrets; print(secrets.token_urlsafe(32))"
 ```
@@ -1066,7 +1081,7 @@ static/
 - **Deezer's private gateway is undocumented** - downloads and mixes may break if Deezer changes it
 - **Folder settings come from the environment only on first start** - then from Settings
 - **Path mappings are critical** - they must match exactly how Navidrome sees the files
-- **Keep `/data` private** - `secrets.json` holds your Deezer cookies
+- **Keep `/data` private** - credentials are encrypted, but the key is in it unless you set `D2N_ENCRYPTION_KEY`
 - **Download only what you are allowed to** - respect Deezer's terms and the copyright of the music
 
 ---

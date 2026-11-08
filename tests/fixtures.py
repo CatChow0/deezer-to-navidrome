@@ -62,3 +62,17 @@ def make_maloja(path, plays):
         conn.execute("INSERT INTO scrobbles(timestamp, origin, track_id) VALUES (?, 'client:test', ?)", (play["ts"], track_id))
     conn.commit()
     conn.close()
+
+
+def add_navidrome_users(path, users):
+    """users: (id, user_name, is_admin) tuples, in Navidrome's user table."""
+    conn = sqlite3.connect(path)
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS user (id TEXT PRIMARY KEY, user_name TEXT, name TEXT, email TEXT,
+                                         password TEXT, is_admin INTEGER DEFAULT 0);
+    """)
+    for user_id, name, admin in users:
+        conn.execute("INSERT INTO user(id, user_name, name, is_admin) VALUES (?, ?, ?, ?)",
+                     (user_id, name, name.title(), int(admin)))
+    conn.commit()
+    conn.close()

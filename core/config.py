@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 import threading
 import time
@@ -6,6 +7,8 @@ import uuid
 from pathlib import Path
 
 from core.patch_notes import RELEASES
+
+logger = logging.getLogger(__name__)
 
 DATA_DIR = Path(os.environ.get("DATA_DIR", "./data"))
 COVERS_DIR = DATA_DIR / "covers"
@@ -244,14 +247,42 @@ def follow_task(task_id, start=0, keepalive=15):
             return
 
 
+_secrets_lock = threading.RLock()
+
+
+def _read_secrets() -> dict:
+    try:
+        data = json.loads(SECRETS_FILE.read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def _write_secrets(secrets: dict) -> None:
+    ensure_dirs()
+    partial = SECRETS_FILE.with_name(f".{SECRETS_FILE.name}.part")
+    partial.write_text(json.dumps(secrets, indent=2), encoding="utf-8")
+    try:
+        partial.chmod(0o600)
+    except OSError:
+        pass
+    os.replace(partial, SECRETS_FILE)
+
+
 def load_secret(name):
-    """A credential from the environment (upper-case, DEEZER_ARL for "deezer_arl") or secrets.json."""
+    """A credential from the environment (upper-case, DEEZER_ARL for "deezer_arl")
+    or secrets.json, where it is kept encrypted (core/crypto.py)."""
+    from core import crypto
+
     env = os.environ.get(name.upper())
     if env:
         return env.strip()
+    with _secrets_lock:
+        value = str(_read_secrets().get(name) or "").strip()
     try:
-        return (json.loads(SECRETS_FILE.read_text(encoding="utf-8")).get(name) or "").strip()
-    except Exception:
+        return crypto.decrypt(value).strip()
+    except crypto.DecryptError:
+        logger.error("The secret %s was encrypted with another key: enter it again", name)
         return ""
 
 
@@ -260,20 +291,39 @@ def secret_from_env(name):
 
 
 def save_secret(name, value):
-    ensure_dirs()
-    try:
-        secrets = json.loads(SECRETS_FILE.read_text(encoding="utf-8"))
-    except Exception:
-        secrets = {}
-    if value:
-        secrets[name] = value
-    else:
-        secrets.pop(name, None)
-    SECRETS_FILE.write_text(json.dumps(secrets, indent=2), encoding="utf-8")
-    try:
-        SECRETS_FILE.chmod(0o600)
-    except OSError:
-        pass
+    from core import crypto
+
+    with _secrets_lock:
+        secrets = _read_secrets()
+        if value:
+            secrets[name] = crypto.encrypt(str(value))
+        else:
+            secrets.pop(name, None)
+        _write_secrets(secrets)
+
+
+def encrypt_stored_secrets() -> int:
+    """Start-up: values written in clear by older versions, or with a key
+    replaced since (D2N_ENCRYPTION_KEY set later), are encrypted with the key in
+    use. A value no key can read is left as it is. Returns how many changed."""
+    from core import crypto
+
+    with _secrets_lock:
+        secrets = _read_secrets()
+        changed = 0
+        for name, value in list(secrets.items()):
+            if not isinstance(value, str) or not crypto.needs_rewrap(value):
+                continue
+            try:
+                plain = crypto.decrypt(value)
+            except crypto.DecryptError:
+                logger.error("The secret %s was encrypted with another key: enter it again", name)
+                continue
+            secrets[name] = crypto.encrypt(plain)
+            changed += 1
+        if changed:
+            _write_secrets(secrets)
+    return changed
 
 
 def load_config():

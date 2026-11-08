@@ -2,7 +2,7 @@
 
 **Turn your Deezer playlists into Navidrome `.m3u8` playlists, match them against your local library, and download what is missing straight from Deezer.**
 
-[![Version](https://img.shields.io/badge/version-1.15.0-blue)](https://hub.docker.com/r/catchow/deezer-to-navidrome)
+[![Version](https://img.shields.io/badge/version-1.16.0-blue)](https://hub.docker.com/r/catchow/deezer-to-navidrome)
 [![Python 3](https://img.shields.io/badge/python-3-blue)](https://www.python.org/)
 [![Flask](https://img.shields.io/badge/flask-web%20app-brightgreen)](https://flask.palletsprojects.com/)
 [![GitHub](https://img.shields.io/badge/GitHub-source%20%26%20full%20docs-black)](https://github.com/CatChow0/deezer-to-navidrome)
@@ -128,6 +128,7 @@ The **Stats** tab keeps its own play history in `stats.db`. No Maloja, lb-enrich
 | `DEEZER_ARL` | — | Deezer account cookie (downloads, mixes, release feed) |
 | `DEEZER_ARL_PREMIUM` | — | Premium account cookie, used only for downloads |
 | `SECRET_KEY` | random, kept in `secrets.json` | Session key |
+| `D2N_ENCRYPTION_KEY` | random, kept in `encryption.key` | Key the saved credentials are encrypted with |
 | `APP_USERNAME` / `APP_PASSWORD` | — | The sign-in account; else the first visit asks you to create it |
 | `API_TOKEN` | — | Token for other apps (CatBoard); else create one in Settings |
 | `SCROBBLE_TOKEN` | — | Token Navidrome sends plays with; else create one in Settings |

@@ -364,3 +364,119 @@ body.has-player .save-bar {
 .set-columns > .form-field {
   align-content: start;
 }
+
+/* Settings: Navidrome accounts */
+.nd-accounts {
+  display: grid;
+  gap: 10px;
+}
+
+.nd-account {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px 16px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-control);
+  background: var(--glass-raised);
+}
+
+.nd-account-main {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.nd-account-main > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nd-account-main .chips {
+  margin-top: 4px;
+}
+
+.nd-account-main p,
+.nd-account-test p {
+  margin: 4px 0 0;
+}
+
+.nd-account-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.nd-account-test {
+  grid-column: 1 / -1;
+}
+
+.nd-account-test:empty {
+  display: none;
+}
+
+.nd-test-ok {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-soft);
+}
+
+.nd-warn {
+  color: var(--miss);
+}
+
+.nd-form {
+  display: grid;
+  gap: 14px;
+  margin-top: 14px;
+  padding: 16px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-control);
+  background: var(--glass-raised);
+}
+
+.nd-form h3 {
+  margin: 0;
+  font-size: var(--step-0);
+}
+
+.nd-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px 18px;
+}
+
+.nd-form-test:empty {
+  display: none;
+}
+
+.nd-form-test p {
+  margin: 0;
+}
+
+.nd-footer {
+  margin-top: 14px;
+  font-size: var(--step--1);
+}
+
+.nd-footer p {
+  margin: 4px 0 0;
+}
+
+@media (max-width: 640px) {
+  .nd-account {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .nd-account-actions {
+    justify-content: flex-start;
+  }
+
+  .nd-form-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

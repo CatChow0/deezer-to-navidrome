@@ -1,0 +1,15 @@
+<p>The app gets ready to work for several Navidrome users. This first step adds the accounts; playlists, history and mixes per user come next.</p>
+
+<ul class="help-list">
+  <li><strong>Navidrome accounts.</strong> <b>Settings → Navidrome accounts</b> lists the Navidrome users this app works for. Add one with the address of your Navidrome, a user name and its password, test the connection, edit it, make it the default, or remove it.</li>
+  <li><strong>Your install becomes the first account.</strong> It keeps working exactly as before, with its .m3u8 playlists, history and mixes. Add its address and password when you want it to be ready for per-user playlists.</li>
+  <li><strong>A picker per browser.</strong> With two accounts or more, a picker at the top of the page chooses the account this browser works on. Another browser, or the phone, keeps its own choice.</li>
+  <li><strong>Encrypted credentials.</strong> Passwords are kept encrypted, and so are the secrets already saved in <code>secrets.json</code> (Deezer ARLs, tokens). None of them is ever shown again or written in a log.</li>
+</ul>
+
+<h4 class="help-h">After the update</h4>
+<ul class="help-todo">
+  <li>For stronger protection, set <code>D2N_ENCRYPTION_KEY</code> to a long random string. Without it, the key is kept in <code>/data/encryption.key</code>, so a copy of the whole data folder carries it along.</li>
+  <li>Going back to an older version means entering your Deezer ARL and tokens again: older versions cannot read the encrypted values.</li>
+  <li>Navidrome does not accept API keys yet: sign accounts in with their password.</li>
+</ul>
