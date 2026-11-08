@@ -9,6 +9,7 @@
   data-cover="{{ cover }}"
   data-delete-url="{{ url_for('playlists.delete_playlist', playlist_id=playlist.id) }}"
   data-accounts="{{ (playlist.accounts or []) | join(',') }}"
+  data-deezer-title="{{ playlist.deezer_title or '' }}"
   data-auto-scan="{{ 'true' if playlist.auto_scan_enabled else 'false' }}"
   data-auto-interval="{{ playlist.auto_scan_interval_minutes | default(60) }}"
   data-auto-download="{{ 'true' if playlist.auto_download_after_scan else 'false' }}">
@@ -23,5 +24,25 @@
   </span>
   <span class="tile-title">{{ playlist.title }}</span>
   {% if playlist.subtitle %}<span class="tile-sub">{{ playlist.subtitle }}</span>{% endif %}
+</button>
+{% endmacro %}
+
+{% macro navidrome_tile(playlist, profile) %}
+{% set cover = url_for('navidrome_playlists.cover', account_id=profile, cover_id=playlist.cover_art) if playlist.cover_art else '' %}
+<button type="button" class="tile tile--navidrome"
+  data-navidrome-playlist="{{ playlist.navidrome_id }}"
+  data-profile="{{ profile }}"
+  data-title="{{ playlist.name }}"
+  data-cover="{{ cover }}"
+  data-count="{{ playlist.song_count }}">
+  <span class="tile-cover">
+    {% if cover %}
+    <img src="{{ cover }}" alt="" loading="lazy" data-navidrome-cover>
+    {% endif %}
+    <span class="placeholder" aria-hidden="true">{{ playlist.name[:1] }}</span>
+    <span class="tile-source">Navidrome</span>
+  </span>
+  <span class="tile-title">{{ playlist.name }}</span>
+  <span class="tile-sub">{{ playlist.song_count }} track{{ '' if playlist.song_count == 1 else 's' }}</span>
 </button>
 {% endmacro %}

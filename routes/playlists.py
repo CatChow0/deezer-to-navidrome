@@ -53,12 +53,22 @@ def _label(account_id):
 
 def render_app(view):
     """Dashboard and settings live on the same page; `view` picks the one shown
-    first. The dashboard shows the playlists of this browser's account."""
+    first. The dashboard shows the playlists of this browser's account, with the
+    names its user gave them in Navidrome, and the ones the user made there."""
     active = _active()
     playlists = [p for p in load_playlists() if not active or not p.get("accounts") or active in p["accounts"]]
+    handmade = []
+    if active:
+        names = publish.custom_titles(active)
+        playlists = [{**p, "title": names[p["id"]], "deezer_title": p["title"]} if p["id"] in names else p
+                     for p in playlists]
+        handmade = publish.handmade(active)
+        publish.sync_soon(active)
     return render_template(
         "home.html",
         playlists=playlists,
+        navidrome_playlists=handmade,
+        nd_profile=active,
         config=load_config(),
         view=view,
         download_dir=deezer_dl.download_dir_status(),

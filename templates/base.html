@@ -26,9 +26,9 @@
       </a>
       <div class="topbar-right">
         <a id="new-version-tag" class="update-badge hidden" href="#" target="_blank" rel="noopener">Update available</a>
-        {% if nd_accounts and nd_accounts|length > 1 %}
-        <label class="nd-picker" title="The Navidrome account this browser works on">
-          <span class="nd-picker-label">Navidrome</span>
+        {% if nd_accounts %}
+        <label class="nd-picker" title="The Navidrome profile this browser works on: its playlists, stats and releases">
+          <span class="nd-picker-label">Profile</span>
           <select data-nd-account aria-label="Navidrome account">
             {% for account in nd_accounts %}<option value="{{ account.id }}" {% if account.id == nd_active %}selected{% endif %}>{{ account.label }}{% if account.username and account.username != account.label %} ({{ account.username }}){% endif %}</option>{% endfor %}
             <option value="" data-nd-manage>Manage accounts…</option>

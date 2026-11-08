@@ -88,6 +88,27 @@ class Client:
             raise SubsonicError(code, _MESSAGES.get(code) or self._clean(error.get("message") or "The server refused the request."))
         return body
 
+    def binary(self, endpoint: str, **params):
+        """(bytes, content type) for a call that answers a file, like getCoverArt.
+        An error answer is raised as a SubsonicError, as with call()."""
+        data = {"v": API_VERSION, "c": CLIENT_NAME, "f": "json", **self._auth()}
+        data.update({key: value for key, value in params.items() if value is not None})
+        try:
+            response = self.session.post(f"{self.url}/rest/{endpoint}", data=data, timeout=self.timeout)
+        except requests.RequestException as e:
+            host = urlsplit(self.url).netloc or self.url
+            raise SubsonicError(0, self._clean(f"Could not reach {host}: {type(e).__name__}")) from None
+        kind = response.headers.get("Content-Type", "")
+        if response.status_code >= 400 or "json" in kind or "xml" in kind:
+            message = "Not found."
+            try:
+                error = response.json()["subsonic-response"].get("error") or {}
+                message = _MESSAGES.get(int(error.get("code") or 0)) or message
+            except (ValueError, KeyError, TypeError):
+                pass
+            raise SubsonicError(70, message)
+        return response.content, kind or "application/octet-stream"
+
     # --- Calls -------------------------------------------------------------------
 
     def ping(self) -> dict:

@@ -39,6 +39,26 @@ function statusChip(account) {
     : `<span class="chip chip--miss" title="${escapeHtml(test.error || '')}">Connection failed</span>`;
 }
 
+function ago(seconds) {
+  const minutes = Math.round((Date.now() / 1000 - seconds) / 60);
+  if (minutes < 1) return 'just now';
+  if (minutes < 60) return `${minutes} min ago`;
+  if (minutes < 60 * 24) return `${Math.round(minutes / 60)} h ago`;
+  return when(seconds);
+}
+
+function syncLine(account) {
+  const sync = account.sync;
+  if (!sync) return '';
+  if (sync.error) return `<p class="nd-warn">Last sync with Navidrome failed: ${escapeHtml(sync.error)}</p>`;
+  const parts = [`Synced with Navidrome ${ago(sync.at)}`];
+  if (sync.removed?.length) parts.push(`${plural(sync.removed.length, 'playlist')} removed, deleted in Navidrome (${sync.removed.map(escapeHtml).join(', ')})`);
+  if (sync.renamed) parts.push(`${plural(sync.renamed, 'playlist')} renamed there`);
+  if (sync.handmade) parts.push(`${sync.handmade} made by hand`);
+  const warning = sync.warning ? `<p class="nd-warn">${escapeHtml(sync.warning)}</p>` : '';
+  return `<p class="muted">${parts.join(' · ')}</p>${warning}`;
+}
+
 function accountRow(account, state) {
   const where = [account.username, account.url].filter(Boolean).map(escapeHtml).join(' · ') || 'No address or user yet';
   const mode = account.publish_mode === 'm3u8'
@@ -60,6 +80,7 @@ function accountRow(account, state) {
           ${mode}
         </div>
         ${legacy}
+        ${syncLine(account)}
       </div>
       <div class="nd-account-actions">
         ${account.publish_mode === 'm3u8' && account.complete && account.last_test?.ok

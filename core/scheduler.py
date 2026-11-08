@@ -175,9 +175,10 @@ def _scheduler_loop():
             try:
                 from core import publish
 
+                publish.sync_all()
                 publish.retry_pending()
             except Exception as e:
-                logger.error(f"[navidrome] Could not retry the playlists waiting for Navidrome: {e}")
+                logger.error(f"[navidrome] Could not sync the playlists with Navidrome: {e}")
 
         now = int(time.time())
         due = []

@@ -25,6 +25,8 @@ logger = logging.getLogger(__name__)
 
 COMMENT = "Managed by Deezer → Navidrome"
 RETRY_AFTER = 600
+SYNC_EVERY = 300        # a dashboard opened later than this asks for a new sync
+MASS_LOSS = 3           # this many playlists of the app gone at once: Navidrome lost them
 _cond = threading.Condition()
 _jobs = {}
 _busy = [0]
@@ -116,12 +118,13 @@ def _save(conn, playlist_id, account_id, **fields) -> dict:
     current = _row(conn, playlist_id, account_id)
     values = dict(current) if current else {"playlist_id": playlist_id, "account_id": account_id, "navidrome_id": "",
                                             "title": "", "content_hash": "", "song_count": 0, "missing": 0,
-                                            "hidden": 0, "published_at": 0, "tried_at": 0, "error": ""}
+                                            "hidden": 0, "published_at": 0, "tried_at": 0, "error": "",
+                                            "custom_title": ""}
     values.update(fields)
-    conn.execute("INSERT OR REPLACE INTO publications(playlist_id, account_id, navidrome_id, title, content_hash,"
-                 " song_count, missing, hidden, published_at, tried_at, error) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-                 tuple(values[k] for k in ("playlist_id", "account_id", "navidrome_id", "title", "content_hash",
-                                            "song_count", "missing", "hidden", "published_at", "tried_at", "error")))
+    columns = ("playlist_id", "account_id", "navidrome_id", "title", "content_hash", "song_count", "missing", "hidden",
+               "published_at", "tried_at", "error", "custom_title")
+    conn.execute(f"INSERT OR REPLACE INTO publications({', '.join(columns)}) VALUES ({', '.join('?' * len(columns))})",
+                 tuple(values[k] for k in columns))
     conn.commit()
     return values
 
@@ -221,12 +224,16 @@ def publish_api(playlist_id, title, rows, account_id, force=False, now=None) -> 
                 try:
                     # With playlistId, createPlaylist replaces the songs and keeps the ID.
                     client.call("createPlaylist", playlistId=navidrome_id, songId=ids)
-                    if current["title"] != title:
+                    # A name given in Navidrome is kept: only the app's own name follows Deezer.
+                    if not current["custom_title"] and current["title"] != title:
                         client.call("updatePlaylist", playlistId=navidrome_id, name=title)
                 except subsonic.SubsonicError as e:
                     if e.code != 70:
                         raise
-                    navidrome_id = ""  # Deleted in Navidrome: made again.
+                    # Deleted in Navidrome by its user: it leaves this account.
+                    conn.close()
+                    deleted_in_navidrome(playlist_id, account_id)
+                    return {"deleted": True, "error": ""}
             if not navidrome_id:
                 created = client.call("createPlaylist", name=title, songId=ids)
                 navidrome_id = str((created.get("playlist") or {}).get("id") or "")
@@ -239,7 +246,10 @@ def publish_api(playlist_id, title, rows, account_id, force=False, now=None) -> 
         return _save(conn, playlist_id, account_id, navidrome_id=navidrome_id, title=title, content_hash=digest,
                      song_count=len(ids), missing=missing, hidden=hidden, published_at=now, tried_at=now, error="")
     finally:
-        conn.close()
+        try:
+            conn.close()
+        except Exception:
+            pass
 
 
 def unpublish(playlist_id, accounts=None) -> None:
@@ -349,6 +359,208 @@ def retry_pending(now=None) -> int:
                                       "force": False})
         queued += 1
     return queued
+
+
+# --- Following what happens in Navidrome ---------------------------------------------
+
+_sync_locks = {}
+_sync_guard = threading.Lock()
+
+
+def deleted_in_navidrome(playlist_id, account_id) -> str:
+    """Its user deleted the playlist in Navidrome: it leaves this account. With no
+    account left, it leaves the app, as with Delete. Returns its title."""
+    from core.deezer import accounts_for, load_playlists, playlist_title, save_playlists, set_accounts
+
+    title = playlist_title(playlist_id)
+    remaining = [a for a in accounts_for(playlist_id) if a != account_id]
+    conn = mixes_db.connect()
+    try:
+        conn.execute("DELETE FROM publications WHERE playlist_id=? AND account_id=?", (playlist_id, account_id))
+        conn.commit()
+    finally:
+        conn.close()
+    if remaining:
+        set_accounts(playlist_id, remaining)
+    else:
+        save_playlists([p for p in load_playlists() if p["id"] != playlist_id])
+        config.delete_playlist_cache(playlist_id)
+    logger.info("Playlist %s deleted in Navidrome by %s: removed from it", title, account_id)
+    return title
+
+
+def _listed(client) -> list:
+    found = (client.call("getPlaylists").get("playlists") or {}).get("playlist") or []
+    return found if isinstance(found, list) else [found]
+
+
+def _app_file_ids(account) -> set:
+    """Playlists Navidrome imported from the .m3u8 files of this app: they are
+    the app's, not made by hand."""
+    folder = _navidrome_path(config.get_paths_from_config()[1])
+    return {p["id"] for p in (navidrome_db.file_playlists(folder) or [])} if folder else set()
+
+
+def sync_account(account_id, now=None):
+    """Brings back what the user did in Navidrome: a playlist of the app deleted
+    there leaves this account, a new name given there is kept, and the playlists
+    made by hand are listed. Returns the report, also kept for Settings; None
+    when the account cannot sign in."""
+    now = int(now or time.time())
+    account = nd_accounts.get(account_id)
+    if account is None:
+        return None
+    try:
+        client = _client(account_id)
+    except (nd_accounts.AccountError, crypto.DecryptError):
+        return None
+    report = {"at": now, "removed": [], "renamed": 0, "republished": 0, "handmade": 0, "warning": "", "error": ""}
+    try:
+        listed = _listed(client)
+    except subsonic.SubsonicError as e:
+        report["error"] = e.message
+        _keep_report(account_id, report)
+        return report
+    user = account["username"].lower()
+    mine = {str(p.get("id")): p for p in listed if str(p.get("owner") or "").lower() == user}
+    conn = mixes_db.connect()
+    try:
+        publications = [dict(r) for r in conn.execute(
+            "SELECT * FROM publications WHERE account_id=? AND navidrome_id != ''", (account_id,))]
+    finally:
+        conn.close()
+    if account["publish_mode"] == "api":
+        gone = [p for p in publications if p["navidrome_id"] not in mine]
+        if len(publications) >= MASS_LOSS and len(gone) == len(publications):
+            # Every one at once: Navidrome was reset or restored, the user did not
+            # delete them all. They are made again rather than taken away.
+            conn = mixes_db.connect()
+            try:
+                conn.execute("UPDATE publications SET navidrome_id='', content_hash='' WHERE account_id=?", (account_id,))
+                conn.commit()
+            finally:
+                conn.close()
+            for publication in gone:
+                state = config.get_preview_state(publication["playlist_id"]) or {}
+                if isinstance(state.get("rows"), list):
+                    _enqueue(publication["playlist_id"], {"title": state.get("playlist_title") or publication["title"],
+                                                          "rows": state["rows"], "accounts": [account_id], "force": True})
+            report["republished"] = len(gone)
+            report["warning"] = (f"Navidrome no longer had any of the {len(gone)} playlists made for this user: "
+                                 "they are published again.")
+        else:
+            for publication in gone:
+                report["removed"].append(deleted_in_navidrome(publication["playlist_id"], account_id))
+            conn = mixes_db.connect()
+            try:
+                for publication in publications:
+                    listed_playlist = mine.get(publication["navidrome_id"])
+                    if not listed_playlist:
+                        continue
+                    name = str(listed_playlist.get("name") or "")
+                    custom = "" if name == publication["title"] else name
+                    if custom != publication["custom_title"]:
+                        conn.execute("UPDATE publications SET custom_title=? WHERE playlist_id=? AND account_id=?",
+                                     (custom, publication["playlist_id"], account_id))
+                conn.commit()
+                report["renamed"] = conn.execute(
+                    "SELECT COUNT(*) FROM publications WHERE account_id=? AND custom_title != ''", (account_id,)).fetchone()[0]
+            finally:
+                conn.close()
+    ours = {p["navidrome_id"] for p in publications}
+    app_files = _app_file_ids(account)
+    handmade = [p for pid, p in mine.items()
+                if pid not in ours and pid not in app_files and (p.get("comment") or "") != COMMENT]
+    conn = mixes_db.connect()
+    try:
+        conn.execute("DELETE FROM navidrome_playlists WHERE account_id=?", (account_id,))
+        conn.executemany(
+            "INSERT INTO navidrome_playlists(account_id, navidrome_id, name, song_count, duration, cover_art, changed,"
+            " synced_at) VALUES (?,?,?,?,?,?,?,?)",
+            [(account_id, str(p.get("id")), str(p.get("name") or ""), int(p.get("songCount") or 0),
+              int(p.get("duration") or 0), str(p.get("coverArt") or ""), str(p.get("changed") or ""), now)
+             for p in handmade])
+        conn.commit()
+    finally:
+        conn.close()
+    report["handmade"] = len(handmade)
+    _keep_report(account_id, report)
+    return report
+
+
+def _keep_report(account_id, report) -> None:
+    conn = mixes_db.connect()
+    try:
+        mixes_db.set_meta(conn, f"sync:{account_id}", report)
+    finally:
+        conn.close()
+
+
+def sync_report(account_id):
+    conn = mixes_db.connect()
+    try:
+        return mixes_db.get_meta(conn, f"sync:{account_id}")
+    finally:
+        conn.close()
+
+
+def sync_all(now=None) -> int:
+    """Every account that can sign in. From the scheduler."""
+    done = 0
+    for account in nd_accounts.list_accounts():
+        if nd_accounts.public(account)["complete"]:
+            try:
+                if sync_account(account["id"], now) is not None:
+                    done += 1
+            except Exception:
+                logger.exception("Could not sync %s with Navidrome", account["id"])
+    return done
+
+
+def sync_soon(account_id) -> bool:
+    """A dashboard opened: the account is synced in the background when its last
+    sync is old. True when one was started."""
+    report = sync_report(account_id) or {}
+    if time.time() - int(report.get("at") or 0) < SYNC_EVERY:
+        return False
+    account = nd_accounts.get(account_id)
+    if account is None or not nd_accounts.public(account)["complete"]:
+        return False
+    with _sync_guard:
+        lock = _sync_locks.setdefault(account_id, threading.Lock())
+    if not lock.acquire(blocking=False):
+        return False
+
+    def run():
+        try:
+            sync_account(account_id)
+        except Exception:
+            logger.exception("Could not sync %s with Navidrome", account_id)
+        finally:
+            lock.release()
+
+    threading.Thread(target=run, daemon=True, name=f"navidrome-sync-{account_id}").start()
+    return True
+
+
+def custom_titles(account_id) -> dict:
+    """playlist ID -> the name its user gave it in Navidrome."""
+    conn = mixes_db.connect()
+    try:
+        return {r["playlist_id"]: r["custom_title"] for r in conn.execute(
+            "SELECT playlist_id, custom_title FROM publications WHERE account_id=? AND custom_title != ''", (account_id,))}
+    finally:
+        conn.close()
+
+
+def handmade(account_id) -> list:
+    """The playlists this user made in Navidrome, as of the last sync."""
+    conn = mixes_db.connect()
+    try:
+        return [dict(r) for r in conn.execute(
+            "SELECT * FROM navidrome_playlists WHERE account_id=? ORDER BY name COLLATE NOCASE", (account_id,))]
+    finally:
+        conn.close()
 
 
 # --- Switching an account from files to the API -----------------------------------
@@ -480,6 +692,6 @@ def status(playlist_id) -> dict:
         accounts.append({"id": account["id"], "label": account["label"], "member": account["id"] in members,
                          "mode": account["publish_mode"], "complete": public["complete"],
                          "publication": {k: pub[k] for k in ("song_count", "missing", "hidden", "published_at",
-                                                             "tried_at", "error")} | {"in_navidrome": bool(pub["navidrome_id"])}
-                         if pub else None})
+                                                             "tried_at", "error", "custom_title")}
+                         | {"in_navidrome": bool(pub["navidrome_id"])} if pub else None})
     return {"accounts": accounts}

@@ -698,12 +698,13 @@ The web interface asks for a sign-in. On the first visit, the app asks you to cr
 **Settings → Navidrome accounts** lists the Navidrome users this app works for: the address of your Navidrome, a user name and its password (Navidrome does not accept API keys yet). **Test** signs in through the Subsonic API and says whether the user is an admin and which libraries it sees; with Navidrome's database mounted, it also finds the user there, so its plays and stars can be told apart.
 
 - Your install becomes the first account and keeps working as before.
-- With two accounts or more, a picker at the top of the page chooses the account of this browser. Each browser, and the phone, keeps its own.
+- **Profile**, at the top of the page, chooses the Navidrome user of this browser. Each browser, and the phone, keeps its own.
 - Passwords are encrypted with `D2N_ENCRYPTION_KEY`, else with a key generated in `data/encryption.key`. They are never shown again, never sent back by the API, and never written in a log. Requests to Navidrome carry them in a POST body, never in a URL.
 - **Playlists per user.** A playlist goes to the accounts ticked under **In Navidrome** in its drawer. For each, the app creates a private playlist as that user through the Subsonic API and replaces its content at each update, in place (the playlist keeps its ID in every app). Tracks are found by their path in Navidrome's database (mounted at `/import/navidrome`); without it, by their tags. Tracks Navidrome has not scanned yet are added later, and failures are tried again every 10 minutes. Only playlists the app made itself are ever touched.
 - **The install's account keeps its `.m3u8` files** (owned by Navidrome's first admin) until **Publish as this user…** in Settings: the app publishes its playlists through the API, then removes its own `.m3u8` files and the copies Navidrome imported from them. If Navidrome refuses one, what was made is undone and nothing changes.
 - Playlists added go to the account of the browser, the dashboard shows that account's playlists, and **Delete** takes a shared playlist away from this account only. A deleted playlist also leaves Navidrome: Navidrome keeps a playlist it imported from a `.m3u8` even once the file is gone, so the app removes that copy through the API when the account has its password.
-- History and mixes per account come in the next steps of this version.
+- **In step with Navidrome.** Every 10 minutes, and when the dashboard opens, the app reads each user's playlists: a playlist of the app deleted there leaves that profile (and the app when no other profile has it), and one renamed there keeps its new name. If every playlist of the app vanishes at once, the app takes it as a reset of Navidrome and publishes them again. **Also in Navidrome** shows, read-only, the playlists the user made by hand there.
+- Several Deezer accounts, history and mixes per profile come in the next steps of this version.
 
 Generate a `SECRET_KEY`, a `D2N_ENCRYPTION_KEY` or a token with:
 ```bash

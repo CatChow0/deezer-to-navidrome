@@ -1,5 +1,5 @@
 {% extends 'base.html' %}
-{% from '_macros.html' import tile %}
+{% from '_macros.html' import tile, navidrome_tile %}
 
 {% block content %}
 <div class="views" data-view="{{ view }}">
@@ -63,6 +63,15 @@
         </div>
         {% else %}
         <p class="empty">No playlists yet. Paste a Deezer or Spotify playlist link above, or import a CSV.</p>
+        {% endif %}
+        {% if navidrome_playlists %}
+        <div class="navidrome-own">
+          <h3 class="section-title">Also in Navidrome</h3>
+          <p class="cell-sub">Made by hand in Navidrome by this profile: shown here, changed there.</p>
+          <div class="tiles">
+            {% for playlist in navidrome_playlists %}{{ navidrome_tile(playlist, nd_profile) }}{% endfor %}
+          </div>
+        </div>
         {% endif %}
       </div>
     </section>

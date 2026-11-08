@@ -3,7 +3,9 @@
 <ul class="help-list">
   <li><strong>Navidrome accounts.</strong> <b>Settings → Navidrome accounts</b> lists the Navidrome users this app works for. Add one with the address of your Navidrome, a user name and its password, test the connection, edit it, make it the default, or remove it.</li>
   <li><strong>Your install becomes the first account.</strong> It keeps working exactly as before, with its .m3u8 playlists, history and mixes. Add its address and password when you want it to be ready for per-user playlists.</li>
-  <li><strong>A picker per browser.</strong> With two accounts or more, a picker at the top of the page chooses the account this browser works on. Another browser, or the phone, keeps its own choice.</li>
+  <li><strong>Profiles.</strong> <b>Profile</b>, at the top of the page, chooses the Navidrome user this browser works for: the dashboard shows that user's playlists. Another browser, or the phone, keeps its own choice.</li>
+  <li><strong>In step with Navidrome.</strong> A playlist of the app that its user deletes in Navidrome leaves that profile, and the app if no other profile has it; one renamed there keeps its new name, shown in the dashboard. Checked every 10 minutes and when the dashboard opens.</li>
+  <li><strong>Playlists made by hand.</strong> <b>Also in Navidrome</b> shows, read-only, the playlists the user made in Navidrome, with their cover and tracks.</li>
   <li><strong>Playlists for each user.</strong> A playlist goes to the accounts ticked under <b>In Navidrome</b> in its drawer. For each one, it is published as that user's own private playlist through Navidrome's API, kept up to date in place, and tracks Navidrome has not scanned yet are added as soon as it has.</li>
   <li><strong>Your playlists stay as they are until you choose.</strong> Your install's account keeps writing .m3u8 files, which Navidrome gives to its first admin. <b>Publish as this user…</b> in <b>Settings → Navidrome accounts</b> moves them to the API: the app publishes them, then removes its .m3u8 files and the copies Navidrome had imported from them. If Navidrome refuses one, nothing changes.</li>
   <li><strong>Per account in the dashboard.</strong> Playlists added go to the account of this browser, and the dashboard shows that account's playlists. Adding a playlist another account already has shares it. <b>Delete</b> takes a shared playlist away from this account only.</li>
@@ -17,6 +19,7 @@
   <li>Going back to an older version means entering your Deezer ARL and tokens again: older versions cannot read the encrypted values.</li>
   <li>Navidrome does not accept API keys yet: sign accounts in with their password.</li>
   <li>Publishing through the API finds each track by its file path in Navidrome's database, which must be mounted at <code>/import/navidrome</code>, as for the history import. Without it, tracks are searched by their tags, which misses some.</li>
-  <li>The app replaces its playlists in Navidrome at each update: a change made to them in Navidrome is lost at the next one.</li>
+  <li>The app replaces the tracks of its playlists in Navidrome at each update: tracks changed there are lost at the next one. A new name or a deletion made there is kept.</li>
+  <li>If every playlist of the app vanishes at once from a Navidrome user, the app takes it as a reset of Navidrome and publishes them again rather than removing them.</li>
   <li>Your saved playlists are first copied to <code>/data/backups/pre-1.16.0/</code>.</li>
 </ul>

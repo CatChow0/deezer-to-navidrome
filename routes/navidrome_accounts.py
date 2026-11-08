@@ -11,10 +11,15 @@ BASE = "/api/navidrome"
 
 
 def _state():
+    from core import publish
+
     users = navidrome_db.users()
+    accounts = [nd_accounts.public(a) for a in nd_accounts.list_accounts()]
+    for account in accounts:
+        account["sync"] = publish.sync_report(account["id"])
     return {
         "ok": True,
-        "accounts": [nd_accounts.public(a) for a in nd_accounts.list_accounts()],
+        "accounts": accounts,
         "active": account_context.resolve(request, session),
         "default": nd_accounts.default_id(),
         "encryption": {"source": crypto.key_source()},

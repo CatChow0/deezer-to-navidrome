@@ -79,9 +79,27 @@ CREATE TABLE IF NOT EXISTS publications (
     published_at INTEGER NOT NULL DEFAULT 0,
     tried_at INTEGER NOT NULL DEFAULT 0,
     error TEXT NOT NULL DEFAULT '',
+    custom_title TEXT NOT NULL DEFAULT '',
     PRIMARY KEY (playlist_id, account_id)
 );
+CREATE TABLE IF NOT EXISTS navidrome_playlists (
+    account_id TEXT NOT NULL,
+    navidrome_id TEXT NOT NULL,
+    name TEXT NOT NULL DEFAULT '',
+    song_count INTEGER NOT NULL DEFAULT 0,
+    duration INTEGER NOT NULL DEFAULT 0,
+    cover_art TEXT NOT NULL DEFAULT '',
+    changed TEXT NOT NULL DEFAULT '',
+    synced_at INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (account_id, navidrome_id)
+);
 """
+
+# Columns added after a table was first made: CREATE TABLE IF NOT EXISTS leaves
+# an existing table as it is.
+_ADDED_COLUMNS = {
+    "publications": {"custom_title": "TEXT NOT NULL DEFAULT ''"},
+}
 
 
 def db_path() -> Path:
@@ -96,6 +114,11 @@ def connect() -> sqlite3.Connection:
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA synchronous=NORMAL")
     conn.executescript(_SCHEMA)
+    for table, columns in _ADDED_COLUMNS.items():
+        present = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
+        for name, kind in columns.items():
+            if name not in present:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {kind}")
     return conn
 
 

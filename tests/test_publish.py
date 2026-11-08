@@ -149,13 +149,14 @@ class Api(Base):
         self.assertEqual([p["id"] for p in made], [first])
         self.assertEqual((made[0]["name"], made[0]["songs"]), ("Mix renamed", ["s2", "s4"]))
 
-    def test_deleted_in_navidrome_it_is_made_again(self):
-        self.save("115", "Mix", [self.alice])
+    def test_deleted_in_navidrome_an_update_takes_it_off_this_account(self):
+        self.save("115", "Mix", ["nd1", self.alice])
         publish.publish("115", "Mix", self.rows([1]), wait=True)
         self.server.playlists.clear()
         publish.publish("115", "Mix", self.rows([1, 2]), wait=True)
-        self.assertEqual(len(self.made()), 1)
-        self.assertEqual(self.made()[0]["songs"], ["s1", "s2"])
+        self.assertEqual(self.made(), [])
+        self.assertEqual(accounts_for("115"), ["nd1"])
+        self.assertIsNone(self.publication("115", self.alice))
 
     def test_forced_publication_replaces_an_edit_made_in_navidrome(self):
         self.save("116", "Mix", [self.alice])
@@ -261,6 +262,109 @@ class RemovingAFile(Base):
         self.assertTrue(publish.remove_from("143", "Never written", ["nd1"]))
 
 
+class Sync(Base):
+    """What the user does in Navidrome comes back to the app."""
+
+    def publish_three(self):
+        for pid, title in (("151", "One"), ("152", "Two"), ("153", "Three")):
+            self.save(pid, title, ["nd1", self.alice])
+            publish.publish(pid, title, self.rows([1]), wait=True)
+
+    def by_name(self, name):
+        return next(p for p in self.server.playlists.values() if p["name"] == name)
+
+    def test_deleted_there_it_leaves_the_account_and_the_app_when_it_was_the_last(self):
+        self.publish_three()
+        self.save("154", "Alone", [self.alice])
+        publish.publish("154", "Alone", self.rows([2]), wait=True)
+        del self.server.playlists[self.by_name("Two")["id"]]
+        del self.server.playlists[self.by_name("Alone")["id"]]
+        report = publish.sync_account(self.alice)
+        self.assertEqual(sorted(report["removed"]), ["Alone", "Two"])
+        self.assertEqual(accounts_for("152"), ["nd1"])
+        self.assertNotIn("154", {p["id"] for p in load_playlists()})
+        self.assertEqual(accounts_for("151"), ["nd1", self.alice])
+
+    def test_all_gone_at_once_is_navidrome_losing_them_so_they_come_back(self):
+        self.publish_three()
+        self.server.playlists.clear()
+        report = publish.sync_account(self.alice)
+        self.assertEqual((report["removed"], report["republished"]), ([], 3))
+        self.assertIn("published again", report["warning"])
+        self.assertTrue(publish.flush(30))
+        self.assertEqual(sorted(p["name"] for p in self.made()), ["One", "Three", "Two"])
+        self.assertEqual(accounts_for("152"), ["nd1", self.alice])
+
+    def test_a_name_given_there_is_kept_and_never_sent_back(self):
+        self.save("155", "Deezer name", [self.alice])
+        publish.publish("155", "Deezer name", self.rows([1]), wait=True)
+        self.by_name("Deezer name")["name"] = "My name"
+        self.assertEqual(publish.sync_account(self.alice)["renamed"], 1)
+        self.assertEqual(publish.custom_titles(self.alice), {"155": "My name"})
+        publish.publish("155", "New Deezer name", self.rows([1, 2]), wait=True)
+        self.assertEqual(self.made()[0]["name"], "My name")
+        self.assertEqual(self.made()[0]["songs"], ["s1", "s2"])
+
+    def test_the_original_name_given_back_hands_the_name_back_to_the_app(self):
+        self.save("156", "Original", [self.alice])
+        publish.publish("156", "Original", self.rows([1]), wait=True)
+        self.by_name("Original")["name"] = "Mine"
+        publish.sync_account(self.alice)
+        self.by_name("Mine")["name"] = "Original"
+        publish.sync_account(self.alice)
+        self.assertEqual(publish.custom_titles(self.alice), {})
+        publish.publish("156", "Renamed on Deezer", self.rows([1]), wait=True)
+        self.assertEqual(self.made()[0]["name"], "Renamed on Deezer")
+
+    def test_playlists_made_by_hand_are_listed_but_not_those_of_the_app_or_others(self):
+        self.save("157", "From the app", [self.alice])
+        publish.publish("157", "From the app", self.rows([1]), wait=True)
+        for pid, owner, name, comment in (("hand-1", "alice", "By hand", ""), ("bob-1", "bob", "Bob's", ""),
+                                          ("lost-1", "alice", "Lost app copy", publish.COMMENT)):
+            self.server.playlists[pid] = {"id": pid, "name": name, "owner": owner, "comment": comment, "public": False,
+                                          "songs": ["s1", "s2"], "created": "", "changed": ""}
+        report = publish.sync_account(self.alice)
+        self.assertEqual(report["handmade"], 1)
+        handmade = publish.handmade(self.alice)
+        self.assertEqual([(p["navidrome_id"], p["name"], p["song_count"]) for p in handmade], [("hand-1", "By hand", 2)])
+        self.assertEqual(handmade[0]["cover_art"], "pl-hand-1")
+
+    def test_an_account_with_m3u8_files_is_never_taken_off_anything(self):
+        nd_accounts.delete(self.alice)
+        nd_accounts.update("nd1", {"url": self.server.url, "username": "alice", "secret": ALICE[1]})
+        self.save("158", "File one", ["nd1"])
+        publish.publish("158", "File one", self.rows([1]))
+        report = publish.sync_account("nd1")
+        self.assertEqual(report["removed"], [])
+        self.assertEqual(accounts_for("158"), ["nd1"])
+
+    def test_the_m3u8_copies_of_the_app_are_not_made_by_hand(self):
+        nd_accounts.delete(self.alice)
+        nd_accounts.update("nd1", {"url": self.server.url, "username": "alice", "secret": ALICE[1]})
+        navidrome_database(self.nav, [("s1", "A/1.flac", 1)],
+                           playlists=[("file-1", "Road trip", "/playlists/Road trip/Road trip.m3u8", "uid-alice")])
+        for pid, name in (("file-1", "Road trip"), ("own-1", "Own")):
+            self.server.playlists[pid] = {"id": pid, "name": name, "owner": "alice", "comment": "", "public": False,
+                                          "songs": [], "created": "", "changed": ""}
+        publish.sync_account("nd1")
+        self.assertEqual([p["name"] for p in publish.handmade("nd1")], ["Own"])
+
+    def test_navidrome_down_is_said_and_changes_nothing(self):
+        self.publish_three()
+        self.server.stop()
+        report = publish.sync_account(self.alice)
+        self.assertIn("Could not reach", report["error"])
+        self.assertEqual(accounts_for("151"), ["nd1", self.alice])
+        self.assertEqual(publish.sync_report(self.alice)["error"], report["error"])
+
+    def test_an_account_without_its_password_is_not_synced(self):
+        self.assertIsNone(publish.sync_account("nd1"))
+
+    def test_a_recent_sync_is_not_started_again(self):
+        publish.sync_account(self.alice)
+        self.assertFalse(publish.sync_soon(self.alice))
+
+
 class WithoutTheDatabase(Base):
     def test_songs_are_searched_by_their_tags(self):
         self.nav.unlink()
@@ -336,6 +440,23 @@ class Migration(Base):
         self.assertNotIn("accounts", backup.read_text(encoding="utf-8").split('"201"')[1].split("}")[0])
         self.assertEqual(accounts_for("201"), ["nd1"])
         self.assertEqual(accounts_for("202"), [self.alice])
+
+    def test_a_publications_table_from_the_previous_build_gets_its_new_column(self):
+        import sqlite3
+
+        old = Path(tempfile.mkdtemp()) / "mixes.db"
+        conn = sqlite3.connect(old)
+        conn.execute("CREATE TABLE publications (playlist_id TEXT, account_id TEXT, navidrome_id TEXT, title TEXT,"
+                     " content_hash TEXT, song_count INTEGER, missing INTEGER, hidden INTEGER, published_at INTEGER,"
+                     " tried_at INTEGER, error TEXT, PRIMARY KEY (playlist_id, account_id))")
+        conn.execute("INSERT INTO publications VALUES ('1', 'nd2', 'pl', 'T', '', 0, 0, 0, 0, 0, '')")
+        conn.commit()
+        conn.close()
+        with mock.patch("core.mixes_db.db_path", return_value=old):
+            conn = mixes_db.connect()
+            row = dict(conn.execute("SELECT * FROM publications").fetchone())
+            conn.close()
+        self.assertEqual((row["title"], row["custom_title"]), ("T", ""))
 
     def test_a_save_keeps_the_accounts(self):
         self.save("203", "Kept", [self.alice])

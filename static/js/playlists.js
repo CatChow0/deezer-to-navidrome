@@ -38,6 +38,7 @@ function publicationLine(account) {
   if (!pub) return '<span class="muted">Waiting: published after the next scan</span>';
   if (pub.error) return `<span class="nd-warn">${escapeHtml(pub.error)}</span>`;
   const parts = [`${plural(pub.song_count, 'track')} in Navidrome`];
+  if (pub.custom_title) parts.unshift(`Named “${escapeHtml(pub.custom_title)}” in Navidrome`);
   if (pub.missing) parts.push(`${pub.missing} not in Navidrome yet, added once it scanned them`);
   if (pub.hidden) parts.push(`${pub.hidden} in a library this user cannot see`);
   return `<span class="muted">${parts.join(' · ')} · ${ago(pub.published_at)}</span>`;
@@ -58,6 +59,52 @@ function navidromeHtml(data, generated) {
     ? '<div class="button-row"><button type="button" class="btn btn--ghost btn--sm" data-nd-publish title="Replaces the playlist in Navidrome with this one, even unchanged">Publish again now</button></div>'
     : '';
   return `<p class="muted">${generated ? 'Where this playlist is in Navidrome.' : 'The Navidrome accounts this playlist goes to, each as its own private playlist.'}</p><div class="nd-pubs">${rows}</div>${again}`;
+}
+
+// A playlist its user made by hand in Navidrome: read-only, changed there.
+function formatDuration(seconds) {
+  const s = Math.max(0, Math.round(seconds || 0));
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+}
+
+async function openNavidromePlaylist(tile) {
+  const { navidromePlaylist: id, profile, title, cover, count } = tile.dataset;
+  openId = null;
+  drawer.open({
+    label: title,
+    html: `
+      <header class="detail-head">
+        ${cover ? `<img class="detail-cover" src="${escapeHtml(cover)}" alt="" data-navidrome-cover>` : '<div class="detail-cover"></div>'}
+        <div>
+          <p class="detail-kind">Made by hand in Navidrome: change it there.</p>
+          <h2 class="detail-title">${escapeHtml(title)}</h2>
+          <p class="muted">${plural(Number(count) || 0, 'track')}</p>
+        </div>
+      </header>
+      <section class="detail-section">
+        <div class="table-wrap">
+          <table class="table">
+            <thead><tr><th class="num">#</th><th>Track</th><th>Album</th><th class="num">Length</th></tr></thead>
+            <tbody data-navidrome-tracks><tr><td colspan="4" class="empty">Loading tracks…</td></tr></tbody>
+          </table>
+        </div>
+      </section>`,
+  });
+  const { ok, data } = await fetchJSON(`/api/navidrome/playlists/${encodeURIComponent(profile)}/${encodeURIComponent(id)}`);
+  const body = drawer.content.querySelector('[data-navidrome-tracks]');
+  if (!body) return;
+  if (!ok) {
+    body.innerHTML = `<tr><td colspan="4" class="empty">${escapeHtml(data?.error || 'Navidrome did not answer.')}</td></tr>`;
+    return;
+  }
+  const tracks = data.playlist.tracks;
+  body.innerHTML = tracks.length ? tracks.map((t, i) => `
+    <tr>
+      <td class="num">${i + 1}</td>
+      <td><strong>${escapeHtml(t.title)}</strong><br><span class="muted">${escapeHtml(t.artist)}</span></td>
+      <td>${escapeHtml(t.album)}</td>
+      <td class="num">${formatDuration(t.duration)}</td>
+    </tr>`).join('') : '<tr><td colspan="4" class="empty">This playlist is empty.</td></tr>';
 }
 
 function renderNavidrome(playlistId, data) {
@@ -497,6 +544,7 @@ function drawerHtml(tile) {
   const generated = tile.dataset.kind === 'auto';
   const shared = (tile.dataset.accounts || '').split(',').filter(Boolean).length > 1;
   let kindLine = `Deezer playlist ${escapeHtml(id)}`;
+  const renamed = tile.dataset.deezerTitle;
   if (generated) kindLine = `Made for you. ${escapeHtml(tile.dataset.subtitle)}`;
   if (tile.dataset.kind === 'mix') kindLine = 'Mix made for you by Deezer, refreshed at each scan';
   if (imported) {
@@ -509,7 +557,7 @@ function drawerHtml(tile) {
     <header class="detail-head">
       ${cover ? `<img class="detail-cover" src="${escapeHtml(cover)}" alt="">` : '<div class="detail-cover"></div>'}
       <div>
-        <p class="detail-kind">${kindLine}</p>
+        <p class="detail-kind">${kindLine}${renamed ? ` · named here as in Navidrome, “${escapeHtml(renamed)}” on Deezer` : ''}</p>
         <h2 class="detail-title">${escapeHtml(title)}</h2>
         <div class="chips detail-chips" data-drawer-chips>${automationChips(id, settings)}</div>
         <div class="breakdown" data-breakdown></div>
@@ -629,6 +677,19 @@ export function initPlaylists(drawerApi) {
   document.querySelectorAll('.tile[data-playlist-id]').forEach(tile => refreshChips(tile.dataset.playlistId));
 
   on(document, 'click', '.tile[data-playlist-id]', (_, tile) => openPlaylist(tile.dataset.playlistId));
+  on(document, 'click', '.tile[data-navidrome-playlist]', (_, tile) => openNavidromePlaylist(tile));
+  // A cover Navidrome does not have: the letter stays, or an empty square in the drawer.
+  const dropCover = img => {
+    if (img.classList.contains('detail-cover')) img.replaceWith(Object.assign(document.createElement('div'), { className: 'detail-cover' }));
+    else img.remove();
+  };
+  document.addEventListener('error', event => {
+    if (event.target.matches?.('[data-navidrome-cover]')) dropCover(event.target);
+  }, true);
+  // Those that failed before this script ran.
+  document.querySelectorAll('[data-navidrome-cover]').forEach(img => {
+    if (img.complete && !img.naturalWidth) dropCover(img);
+  });
 
   const content = drawer.content;
   on(content, 'click', '[data-action="scan"]', (_, btn) => openId && startScan(openId, btn.dataset.mode));

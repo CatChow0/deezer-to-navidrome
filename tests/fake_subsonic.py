@@ -123,7 +123,8 @@ class FakeSubsonic:
     def _playlist_view(self, playlist, with_songs=False):
         view = {"id": playlist["id"], "name": playlist["name"], "owner": playlist["owner"],
                 "comment": playlist["comment"], "public": playlist["public"], "songCount": len(playlist["songs"]),
-                "changed": playlist["changed"], "created": playlist["created"]}
+                "duration": sum(self.songs[s]["duration"] for s in playlist["songs"] if s in self.songs),
+                "coverArt": f"pl-{playlist['id']}", "changed": playlist["changed"], "created": playlist["created"]}
         if with_songs:
             view["entry"] = [self._song(s) for s in playlist["songs"]]
         return view
@@ -177,12 +178,22 @@ class FakeSubsonic:
         return self._reply(musicFolders={"musicFolder": folders})
 
     def _do_getPlaylists(self, user, params, lists):
-        mine = [self._playlist_view(p) for p in self.playlists.values() if p["owner"] == user or p["public"]]
+        # Like Navidrome, an admin sees the private playlists of the others too.
+        admin = self.users[user]["admin"]
+        mine = [self._playlist_view(p) for p in self.playlists.values() if admin or p["owner"] == user or p["public"]]
         return self._reply(playlists={"playlist": mine})
+
+    def _do_getCoverArt(self, user, params, lists):
+        from flask import Response
+
+        cover = params.get("id", "")
+        if cover.startswith("pl-") and cover[3:] in self.playlists:
+            return Response(b"\x89PNG\r\n\x1a\nfake-cover", mimetype="image/png")
+        return self._fail(70, "Artwork not found")
 
     def _do_getPlaylist(self, user, params, lists):
         playlist = self.playlists.get(params.get("id", ""))
-        if playlist is None or (playlist["owner"] != user and not playlist["public"]):
+        if playlist is None or (playlist["owner"] != user and not playlist["public"] and not self.users[user]["admin"]):
             return self._fail(70, "Playlist not found")
         return self._reply(playlist=self._playlist_view(playlist, with_songs=True))
 

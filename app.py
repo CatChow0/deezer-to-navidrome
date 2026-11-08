@@ -15,6 +15,7 @@ from routes.dedup import dedup_bp
 from routes.listenbrainz import listenbrainz_bp
 from routes.mixes import mixes_bp
 from routes.navidrome_accounts import navidrome_accounts_bp
+from routes.navidrome_playlists import navidrome_playlists_bp
 from routes.playlists import playlists_bp
 from routes.search import search_bp
 from routes.stats import stats_bp
@@ -42,6 +43,7 @@ app.register_blueprint(dedup_bp)
 app.register_blueprint(listenbrainz_bp)
 app.register_blueprint(mixes_bp)
 app.register_blueprint(navidrome_accounts_bp)
+app.register_blueprint(navidrome_playlists_bp)
 app.register_blueprint(search_bp)
 app.register_blueprint(stats_bp)
 app.register_blueprint(system_bp)
