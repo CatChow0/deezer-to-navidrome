@@ -3,8 +3,9 @@ import os
 from datetime import timedelta
 
 from flask import Flask, g, jsonify, redirect, request, session, url_for
+from werkzeug.exceptions import HTTPException
 
-from core import auth, devices
+from core import auth, content, devices
 from core.config import ensure_dirs
 from core import migrations
 from core import scheduler
@@ -20,7 +21,7 @@ from routes.navidrome_playlists import navidrome_playlists_bp
 from routes.playlists import playlists_bp
 from routes.search import search_bp
 from routes.stats import stats_bp
-from routes.system import system_bp
+from routes.system import SETTING_CHOICES, system_bp
 
 ensure_dirs()
 migrations.run()
@@ -35,6 +36,9 @@ app.config.update(
     SESSION_COOKIE_SAMESITE="Lax",
     SESSION_COOKIE_SECURE=os.environ.get("COOKIE_SECURE", "").strip().lower() in ("1", "true", "yes"),
 )
+
+app.jinja_env.globals["doc_sections"] = content.HELP_SECTIONS
+app.jinja_env.globals["setting_choices"] = SETTING_CHOICES
 
 app.register_blueprint(playlists_bp)
 app.register_blueprint(api_v1.api_v1_bp)
@@ -94,16 +98,16 @@ def require_sign_in():
     return jsonify({"ok": False, "error": "Sign in first"}), 401
 
 
-# Under /api/v1, even a missing route or a crash answers in the API's format.
-@app.errorhandler(404)
-def not_found(e):
-    return api_v1.error("not_found", "No such resource.", 404) if request.path.startswith(api_v1.PREFIX) else e
+# Under /api/v1, even a missing route, a body too large or a crash answers in
+# the API's format.
+_HTTP_MESSAGES = {404: "No such resource.", 405: "This resource does not take that method."}
 
 
-@app.errorhandler(405)
-def method_not_allowed(e):
-    return api_v1.error("method_not_allowed", "This resource does not take that method.", 405) \
-        if request.path.startswith(api_v1.PREFIX) else e
+@app.errorhandler(HTTPException)
+def http_error(e):
+    if not request.path.startswith(api_v1.PREFIX) or e.code is None:
+        return e
+    return api_v1.error(api_v1.code_for(e.code), _HTTP_MESSAGES.get(e.code, e.description), e.code)
 
 
 @app.errorhandler(500)

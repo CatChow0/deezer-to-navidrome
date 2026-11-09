@@ -8,7 +8,8 @@ import time
 from flask import request
 
 from core import config
-from routes.api_v1 import api_v1_bp, error, ok
+from routes import system
+from routes.api_v1 import COVERED, api_v1_bp, error, ok, replaces
 from routes.system import task_stream
 
 MAX_WAIT = 25
@@ -19,6 +20,7 @@ def _summary(task) -> dict:
 
 
 @api_v1_bp.get("/tasks")
+@replaces(system.tasks_route)
 def tasks_list():
     """The tasks listed in Activity; changed_since: those changed after this
     time (seconds), for an app catching up."""
@@ -64,9 +66,11 @@ def task_events(task_id):
 
 # The same stream as the web page's, under this prefix.
 api_v1_bp.add_url_rule("/tasks/<task_id>/stream", "task_stream", task_stream)
+COVERED.add(task_stream)
 
 
 @api_v1_bp.post("/tasks/<task_id>/cancel")
+@replaces(system.cancel_task_route)
 def task_cancel(task_id):
     if task_id not in config.TASKS:
         return error("not_found", "No such task.", 404)

@@ -38,6 +38,28 @@ components:
       in: path
       required: true
       schema: {type: string}
+    AccountId:
+      name: account_id
+      in: path
+      required: true
+      schema: {type: string}
+    PlaylistId:
+      name: playlist_id
+      in: path
+      required: true
+      schema: {type: string}
+    DeezerId:
+      name: deezer_id
+      in: path
+      required: true
+      description: The Deezer track on trial.
+      schema: {type: string}
+    Tz:
+      name: tz
+      in: query
+      required: true
+      description: The time zone the periods are counted in, e.g. Europe/Paris; without it, a 400.
+      schema: {type: string}
   schemas:
     Error:
       type: object
@@ -83,6 +105,44 @@ components:
         cancel_requested: {type: boolean}
         cancelled: {type: boolean}
         events: {type: integer, description: How many events the task has sent so far.}
+    NavidromeAccount:
+      type: object
+      properties:
+        label: {type: string}
+        url: {type: string}
+        username: {type: string}
+        auth_type: {type: string, enum: [password, apikey]}
+        secret: {type: string, description: Sent, never read back.}
+        deezer_account: {type: string, description: "The Deezer account of this profile; empty for the default one."}
+    DeezerAccount:
+      type: object
+      properties:
+        label: {type: string}
+        arl: {type: string, description: Sent, never read back.}
+    Playlist:
+      type: object
+      properties:
+        id: {type: string}
+        title: {type: string}
+        deezer_title: {type: string, description: The Deezer title, when its user renamed it in Navidrome.}
+        kind: {type: string, enum: [playlist, mix, xp, auto]}
+        source: {type: string}
+        subtitle: {type: string}
+        cover: {type: string}
+        accounts: {type: array, items: {type: string}}
+        automation:
+          type: object
+          properties:
+            scan: {type: boolean}
+            interval_minutes: {type: integer}
+            download: {type: boolean}
+        tracks:
+          type: [object, "null"]
+          properties:
+            total: {type: integer}
+            matched: {type: [integer, "null"]}
+            unmatched: {type: [integer, "null"]}
+            unchecked: {type: [integer, "null"]}
     TaskEvent:
       type: object
       description: One event of a task; `index` is its position, to resume after it.
@@ -103,6 +163,29 @@ components:
           schema: {$ref: "#/components/schemas/Error"}
     NotModified:
       description: The ETag sent in If-None-Match still matches.
+    Object:
+      description: A JSON object; GET answers carry an ETag.
+      content:
+        application/json:
+          schema: {type: object}
+    Task:
+      description: The work goes on as a task; follow it under /api/v1/tasks/{task_id}.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              task_id: {type: string}
+    Image:
+      description: A picture.
+      content:
+        image/jpeg:
+          schema: {type: string, format: binary}
+    File:
+      description: An audio file.
+      content:
+        application/octet-stream:
+          schema: {type: string, format: binary}
 paths:
   /api/v1/auth/status:
     get:
@@ -346,3 +429,789 @@ paths:
                   cancelling: {type: string}
         "404": {$ref: "#/components/responses/Error"}
         "409": {$ref: "#/components/responses/Error"}
+  /api/v1/navidrome/accounts:
+    get:
+      summary: The Navidrome accounts (the profiles), with their publishing and sync state
+      responses:
+        "200": {$ref: "#/components/responses/Object"}
+    post:
+      summary: Add a Navidrome account
+      requestBody:
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/NavidromeAccount"}
+      responses:
+        "200": {$ref: "#/components/responses/Object"}
+        "400": {$ref: "#/components/responses/Error"}
+  /api/v1/navidrome/accounts/test:
+    post:
+      summary: Test a Navidrome address and user before saving them
+      requestBody:
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/NavidromeAccount"}
+      responses:
+        "200": {$ref: "#/components/responses/Object"}
+  /api/v1/navidrome/accounts/{account_id}:
+    patch:
+      summary: Change a Navidrome account; a password left out is kept
+      parameters: [{$ref: "#/components/parameters/AccountId"}]
+      requestBody:
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/NavidromeAccount"}
+      responses:
+        "200": {$ref: "#/components/responses/Object"}
+        "404": {$ref: "#/components/responses/Error"}
+    delete:
+      summary: Remove a Navidrome account; its playlists leave its Navidrome and its history is kept aside
+      parameters: [{$ref: "#/components/parameters/AccountId"}]
+      responses:
+        "200": {$ref: "#/components/responses/Object"}
+        "409": {$ref: "#/components/responses/Error"}
+  /api/v1/navidrome/accounts/{account_id}/default:
+    post:
+      summary: Make this the default account
+      parameters: [{$ref: "#/components/parameters/AccountId"}]
+      responses:
+        "200": {$ref: "#/components/responses/Object"}
+  /api/v1/navidrome/accounts/{account_id}/test:
+    post:
+      summary: Test a saved account
+      parameters: [{$ref: "#/components/parameters/AccountId"}]
+      responses:
+        "200": {$ref: "#/components/responses/Object"}
+  /api/v1/navidrome/accounts/{account_id}/switch:
+    get:
+      summary: What publishing as this user would change (the account made from the install)
+      parameters: [{$ref: "#/components/parameters/AccountId"}]
+      responses:
+        "200": {$ref: "#/components/responses/Object"}
+    post:
+      summary: Publish as this user, then remove the .m3u8 files
+      parameters: [{$ref: "#/components/parameters/AccountId"}]
+      responses:
+        "200": {$ref: "#/components/responses/Object"}
+        "409": {$ref: "#/components/responses/Error"}
+  /api/v1/navidrome/playlists/{account_id}/{navidrome_id}:
+    get:
+      summary: The tracks of a playlist its user made in Navidrome (read-only)
+      parameters:
+        - {$ref: "#/components/parameters/AccountId"}
+        - {name: navidrome_id, in: path, required: true, schema: {type: string}}
+      responses:
+        "200": {$ref: "#/components/responses/Object"}
+        "404": {$ref: "#/components/responses/Error"}
+  /api/v1/navidrome/cover/{account_id}/{cover_id}:
+    get:
+      summary: The cover of a playlist made in Navidrome
+      parameters:
+        - {$ref: "#/components/parameters/AccountId"}
+        - {name: cover_id, in: path, required: true, schema: {type: string}}
+      responses:
+        "200": {$ref: "#/components/responses/Image"}
+        "404": {$ref: "#/components/responses/Error"}
+  /api/v1/deezer/account:
+    get:
+      summary: The Deezer account of the profile, signed in or not
+      parameters: [{$ref: "#/components/parameters/Profile"}]
+      responses:
+        "200": {$ref: "#/components/responses/Object"}
+  /api/v1/deezer/accounts:
+    get:
+      summary: The Deezer accounts, the default one and the one used for downloads
+      responses:
+        "200": {$ref: "#/components/responses/Object"}
+    post:
+      summary: Add a Deezer account; its ARL is checked by signing in, then kept encrypted
+      requestBody:
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/DeezerAccount"}
+      responses:
+        "200": {$ref: "#/components/responses/Object"}
+        "400": {$ref: "#/components/responses/Error"}
+  /api/v1/deezer/accounts/{account_id}:
+    patch:
+      summary: Change a Deezer account's name or ARL
+      parameters: [{$ref: "#/components/parameters/AccountId"}]
+      requestBody:
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/DeezerAccount"}
+      responses:
+        "200": {$ref: "#/components/responses/Object"}
+        "404": {$ref: "#/components/responses/Error"}
+    delete:
+      summary: Remove a Deezer account (not the last one)
+      parameters: [{$ref: "#/components/parameters/AccountId"}]
+      responses:
+        "200": {$ref: "#/components/responses/Object"}
+        "409": {$ref: "#/components/responses/Error"}
+  /api/v1/deezer/accounts/{account_id}/check:
+    post:
+      summary: Sign in again and refresh what Deezer says about the account
+      parameters: [{$ref: "#/components/parameters/AccountId"}]
+      responses:
+        "200": {$ref: "#/components/responses/Object"}
+  /api/v1/deezer/accounts/{account_id}/default:
+    post:
+      summary: Make this the default Deezer account
+      parameters: [{$ref: "#/components/parameters/AccountId"}]
+      responses:
+        "200": {$ref: "#/components/responses/Object"}
+  /api/v1/deezer/accounts/{account_id}/download:
+    post:
+      summary: Use this account for the downloads
+      parameters: [{$ref: "#/components/parameters/AccountId"}]
+      responses:
+        "200": {$ref: "#/components/responses/Object"}
+  /api/v1/deezer/mixes:
+    get:
+      summary: The Flow and the mixes Deezer makes for the profile's Deezer account
+      parameters: [{$ref: "#/components/parameters/Profile"}]
+      responses:
+        "200": {$ref: "#/components/responses/Object"}
+  /api/v1/deezer/mixes/follow:
+    post:
+      summary: Follow a mix like a playlist
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                kind: {type: string, enum: [stl, flow]}
+                source_id: {type: string}
+                title: {type: string}
+      responses:
+        "200": {$ref: "#/components/responses/Object"}
+  /api/v1/releases:
+    get:
+      summary: The release feed of the profile's Deezer account
+      parameters: [{$ref: "#/components/parameters/Profile"}]
+      responses:
+        "200": {$ref: "#/components/responses/Object"}
+        "304": {$ref: "#/components/responses/NotModified"}
+  /api/v1/releases/refresh:
+    post:
+      summary: Refresh that feed
+      responses:
+        "200": {$ref: "#/components/responses/Task"}
+        "409": {$ref: "#/components/responses/Error"}
+  /api/v1/releases/mute:
+    post:
+      summary: Mute or unmute an artist in the feed
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                artist_id: {type: string}
+                name: {type: string}
+                muted: {type: boolean}
+      responses:
+        "200": {$ref: "#/components/responses/Object"}
+  /api/v1/search:
+    get:
+      summary: Search Deezer
+      parameters:
+        - {name: q, in: query, required: true, schema: {type: string}}
+        - {name: type, in: query, required: false, schema: {type: string, enum: [track, album, artist], default: track}}
+      responses:
+        "200": {$ref: "#/components/responses/Object"}
+  /api/v1/search/album/{album_id}:
+    get:
+      summary: An album's details on Deezer
+      parameters: [{name: album_id, in: path, required: true, schema: {type: string}}]
+      responses:
+        "200": {$ref: "#/components/responses/Object"}
+  /api/v1/search/artist/{artist_id}:
+    get:
+      summary: An artist's details on Deezer
+      parameters: [{name: artist_id, in: path, required: true, schema: {type: string}}]
+      responses:
+        "200": {$ref: "#/components/responses/Object"}
+  /api/v1/preview/{track_id}:
+    get:
+      summary: The address of a track's 30-second preview
+      parameters: [{name: track_id, in: path, required: true, schema: {type: string}}]
+      responses:
+        "200": {$ref: "#/components/responses/Object"}
+  /api/v1/library/stats:
+    get:
+      summary: The library index's figures
+      responses:
+        "200": {$ref: "#/components/responses/Object"}
+  /api/v1/library/search:
+    get:
+      summary: Search the library
+      parameters: [{name: q, in: query, required: true, schema: {type: string}}]
+      responses:
+        "200": {$ref: "#/components/responses/Object"}
+  /api/v1/library/check:
+    post:
+      summary: Which Deezer tracks, albums and artists the library has (100 at most)
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                items:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      key: {type: string}
+                      type: {type: string, enum: [track, album, artist]}
+                      id: {type: string}
+                      title: {type: string}
+                      artist: {type: string}
+      responses:
+        "200": {$ref: "#/components/responses/Object"}
+  /api/v1/library/refresh:
+    post:
+      summary: Index new and changed files
+      responses:
+        "200": {$ref: "#/components/responses/Task"}
+  /api/v1/library/rebuild:
+    post:
+      summary: Read every file again
+      responses:
+        "200": {$ref: "#/components/responses/Task"}
+  /api/v1/library/metadata/fix:
+    post:
+      summary: Fix missing metadata (tempo, genre), then keep doing it for new files
+      responses:
+        "200": {$ref: "#/components/responses/Task"}
+  /api/v1/library/metadata/undo:
+    post:
+      summary: Undo the metadata fix
+      responses:
+        "200": {$ref: "#/components/responses/Task"}
+        "409": {$ref: "#/components/responses/Error"}
+  /api/v1/downloads:
+    get:
+      summary: The downloads in progress and those done
+      responses:
+        "200": {$ref: "#/components/responses/Object"}
+    post:
+      summary: Download a track, an album or an artist's discography
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                type: {type: string, enum: [track, album, artist]}
+                music_id: {type: string}
+      responses:
+        "200": {$ref: "#/components/responses/Task"}
+        "400": {$ref: "#/components/responses/Error"}
+  /api/v1/downloads/track/{track_id}:
+    post:
+      summary: Download one track
+      parameters: [{name: track_id, in: path, required: true, schema: {type: string}}]
+      responses:
+        "200": {$ref: "#/components/responses/Task"}
+  /api/v1/downloads/repair:
+    post:
+      summary: Find and download again the files the faulty decryption of 1.10 broke
+      responses:
+        "200": {$ref: "#/components/responses/Task"}
+        "400": {$ref: "#/components/responses/Error"}
+  /api/v1/dedup/start:
+    post:
+      summary: Look for duplicates in the library
+      responses:
+        "200": {$ref: "#/components/responses/Task"}
+  /api/v1/dedup/report:
+    get:
+      summary: The last duplicates report
+      responses:
+        "200": {$ref: "#/components/responses/Object"}
+        "404": {$ref: "#/components/responses/Error"}
+  /api/v1/dedup/apply:
+    post:
+      summary: Apply decisions on duplicates
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                decisions: {type: array, items: {type: object}}
+                mode: {type: string, default: quarantine}
+      responses:
+        "200": {$ref: "#/components/responses/Object"}
+        "400": {$ref: "#/components/responses/Error"}
+  /api/v1/stats/overview:
+    get:
+      summary: The profile's figures, tops, genres and habits for a period
+      parameters:
+        - {$ref: "#/components/parameters/Profile"}
+        - {name: period, in: query, required: true, schema: {type: string, enum: [week, month, year, all]}}
+        - {name: key, in: query, required: false, schema: {type: string}, description: "2026-W45, 2026-11, 2026"}
+        - {$ref: "#/components/parameters/Tz"}
+      responses:
+        "200": {$ref: "#/components/responses/Object"}
+        "400": {$ref: "#/components/responses/Error"}
+  /api/v1/stats/recaps:
+    get:
+      summary: The months and years that have a recap
+      parameters: [{$ref: "#/components/parameters/Profile"}, {$ref: "#/components/parameters/Tz"}]
+      responses:
+        "200": {$ref: "#/components/responses/Object"}
+  /api/v1/stats/recap:
+    get:
+      summary: A month's or a year's recap, with its story
+      parameters:
+        - {$ref: "#/components/parameters/Profile"}
+        - {name: type, in: query, required: true, schema: {type: string, enum: [month, year]}}
+        - {name: key, in: query, required: true, schema: {type: string}}
+        - {$ref: "#/components/parameters/Tz"}
+      responses:
+        "200": {$ref: "#/components/responses/Object"}
+        "400": {$ref: "#/components/responses/Error"}
+  /api/v1/stats/{kind}/{entity_id}:
+    get:
+      summary: An artist's, album's or track's plays over time and top tracks
+      parameters:
+        - {$ref: "#/components/parameters/Profile"}
+        - {name: kind, in: path, required: true, schema: {type: string, enum: [artist, album, track]}}
+        - {name: entity_id, in: path, required: true, schema: {type: integer}}
+        - {$ref: "#/components/parameters/Tz"}
+      responses:
+        "200": {$ref: "#/components/responses/Object"}
+        "404": {$ref: "#/components/responses/Error"}
+  /api/v1/stats/plays:
+    get:
+      summary: The plays, newest first, 25 a page
+      parameters:
+        - {$ref: "#/components/parameters/Profile"}
+        - {name: q, in: query, required: false, schema: {type: string}}
+        - {name: page, in: query, required: false, schema: {type: integer, default: 1}}
+      responses:
+        "200": {$ref: "#/components/responses/Object"}
+  /api/v1/stats/status:
+    get:
+      summary: The history's state, its sources and the profile's ListenBrainz token
+      parameters: [{$ref: "#/components/parameters/Profile"}]
+      responses:
+        "200": {$ref: "#/components/responses/Object"}
+  /api/v1/stats/import:
+    post:
+      summary: Rebuild the profile's history from Navidrome (and Maloja for the install's account)
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                mode: {type: string, enum: [merge, clean]}
+      responses:
+        "202": {$ref: "#/components/responses/Task"}
+        "409": {$ref: "#/components/responses/Error"}
+  /api/v1/stats/import/preview:
+    post:
+      summary: What Start clean would do, changing nothing
+      responses:
+        "200": {$ref: "#/components/responses/Object"}
+        "409": {$ref: "#/components/responses/Error"}
+  /api/v1/stats/token:
+    post:
+      summary: Make the profile's ListenBrainz token, or save one pasted
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                token: {type: string, description: "Leave out to make a new one."}
+      responses:
+        "200": {$ref: "#/components/responses/Object"}
+        "409": {$ref: "#/components/responses/Error"}
+    delete:
+      summary: Remove the profile's ListenBrainz token
+      responses:
+        "200": {$ref: "#/components/responses/Object"}
+        "409": {$ref: "#/components/responses/Error"}
+  /api/v1/stats/cover/{kind}/{item_id}:
+    get:
+      summary: A cover from the profile's history (the answers link to it)
+      parameters:
+        - {name: kind, in: path, required: true, schema: {type: string, enum: [track, album, artist]}}
+        - {name: item_id, in: path, required: true, schema: {type: integer}}
+        - {name: a, in: query, required: false, schema: {type: string}, description: The profile; the answers give it.}
+      responses:
+        "200": {$ref: "#/components/responses/Image"}
+        "404": {$ref: "#/components/responses/Error"}
+  /api/v1/stats/audio/{track_id}:
+    get:
+      summary: A track's own file, for the recaps
+      parameters:
+        - {name: track_id, in: path, required: true, schema: {type: integer}}
+        - {name: a, in: query, required: false, schema: {type: string}}
+      responses:
+        "200": {$ref: "#/components/responses/File"}
+        "404": {$ref: "#/components/responses/Error"}
+  /api/v1/mixes:
+    get:
+      summary: The profile's Made for you, its quarantine and the disk limits every profile shares
+      parameters: [{$ref: "#/components/parameters/Profile"}]
+      responses:
+        "200": {$ref: "#/components/responses/Object"}
+  /api/v1/mixes/settings:
+    post:
+      summary: Change the profile's versions, limits and trial rules
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                mix_mode: {type: string, enum: ["off", daily, blend]}
+                discover: {type: boolean}
+              additionalProperties: true
+      responses:
+        "200": {$ref: "#/components/responses/Object"}
+        "400": {$ref: "#/components/responses/Error"}
+  /api/v1/mixes/generate:
+    post:
+      summary: Build the profile's mixes now
+      responses:
+        "200": {$ref: "#/components/responses/Task"}
+        "409": {$ref: "#/components/responses/Error"}
+  /api/v1/mixes/trial/keep-pending:
+    post:
+      summary: Keep the tracks waiting under To review
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                ids: {type: array, items: {type: string}}
+      responses:
+        "200": {$ref: "#/components/responses/Object"}
+  /api/v1/mixes/trial/remove-pending:
+    post:
+      summary: Remove every track waiting under To review
+      responses:
+        "200": {$ref: "#/components/responses/Object"}
+  /api/v1/mixes/trial/empty-trash:
+    post:
+      summary: Empty the profile's trash
+      responses:
+        "200": {$ref: "#/components/responses/Object"}
+  /api/v1/mixes/trial/{deezer_id}/keep:
+    post:
+      summary: Keep a track; it goes to the library, for every profile
+      parameters: [{$ref: "#/components/parameters/DeezerId"}]
+      responses:
+        "200": {$ref: "#/components/responses/Object"}
+        "404": {$ref: "#/components/responses/Error"}
+  /api/v1/mixes/trial/{deezer_id}/remove:
+    post:
+      summary: Turn a track down, for this profile
+      parameters: [{$ref: "#/components/parameters/DeezerId"}]
+      responses:
+        "200": {$ref: "#/components/responses/Object"}
+        "404": {$ref: "#/components/responses/Error"}
+  /api/v1/mixes/trial/{deezer_id}/restore:
+    post:
+      summary: Take a track back out of the trash, into the library
+      parameters: [{$ref: "#/components/parameters/DeezerId"}]
+      responses:
+        "200": {$ref: "#/components/responses/Object"}
+        "404": {$ref: "#/components/responses/Error"}
+  /api/v1/mixes/trial/{deezer_id}/cover:
+    get:
+      summary: The picture inside a track's file
+      parameters: [{$ref: "#/components/parameters/DeezerId"}]
+      responses:
+        "200": {$ref: "#/components/responses/Image"}
+        "404": {description: No picture.}
+  /api/v1/playlists:
+    get:
+      summary: The profile's playlists, and the playlists its user made in Navidrome
+      parameters: [{$ref: "#/components/parameters/Profile"}]
+      responses:
+        "200":
+          description: Carries an ETag.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  profile: {type: string}
+                  playlists: {type: array, items: {$ref: "#/components/schemas/Playlist"}}
+                  navidrome: {type: array, items: {type: object}}
+        "304": {$ref: "#/components/responses/NotModified"}
+    post:
+      summary: Add a Deezer playlist (link or ID) or a Spotify playlist (link) for the profile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [link]
+              properties:
+                link: {type: string}
+      responses:
+        "201": {description: "Added; a Spotify playlist's scan is a task (task_id)."}
+        "200": {description: Already saved; now also this profile's.}
+        "400": {$ref: "#/components/responses/Error"}
+        "502": {$ref: "#/components/responses/Error"}
+  /api/v1/playlists/import:
+    post:
+      summary: Import a CSV export (Exportify, TuneMyMusic…) for the profile
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                csv_file: {type: string, format: binary}
+      responses:
+        "201": {description: Imported; finding its tracks on Deezer is a task (task_id).}
+        "400": {$ref: "#/components/responses/Error"}
+  /api/v1/playlists/{playlist_id}:
+    delete:
+      summary: Take a playlist off the profile; deleted when no other profile has it
+      parameters: [{$ref: "#/components/parameters/PlaylistId"}]
+      responses:
+        "200": {$ref: "#/components/responses/Object"}
+        "404": {$ref: "#/components/responses/Error"}
+  /api/v1/playlists/{playlist_id}/tracks:
+    get:
+      summary: A playlist's tracks and how each was matched in the library
+      parameters: [{$ref: "#/components/parameters/PlaylistId"}]
+      responses:
+        "200": {$ref: "#/components/responses/Object"}
+  /api/v1/playlists/{playlist_id}/navidrome:
+    get:
+      summary: Where a playlist is in Navidrome, for each account
+      parameters: [{$ref: "#/components/parameters/PlaylistId"}]
+      responses:
+        "200": {$ref: "#/components/responses/Object"}
+  /api/v1/playlists/{playlist_id}/accounts:
+    put:
+      summary: The Navidrome accounts a playlist goes to
+      parameters: [{$ref: "#/components/parameters/PlaylistId"}]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                accounts: {type: array, items: {type: string}}
+      responses:
+        "200": {$ref: "#/components/responses/Object"}
+        "409": {$ref: "#/components/responses/Error"}
+  /api/v1/playlists/{playlist_id}/automation:
+    put:
+      summary: Scan a playlist on a schedule, and download what it misses
+      parameters: [{$ref: "#/components/parameters/PlaylistId"}]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                auto_scan_enabled: {type: boolean}
+                auto_scan_interval_minutes: {type: integer}
+                auto_download_after_scan: {type: boolean}
+      responses:
+        "200": {$ref: "#/components/responses/Object"}
+        "404": {$ref: "#/components/responses/Error"}
+  /api/v1/playlists/{playlist_id}/scan:
+    post:
+      summary: Scan a playlist and write it out
+      parameters: [{$ref: "#/components/parameters/PlaylistId"}]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                mode: {type: string, enum: [quick, full]}
+      responses:
+        "200": {$ref: "#/components/responses/Task"}
+  /api/v1/playlists/{playlist_id}/download-missing:
+    post:
+      summary: Download the tracks a playlist misses
+      parameters: [{$ref: "#/components/parameters/PlaylistId"}]
+      responses:
+        "200": {$ref: "#/components/responses/Task"}
+        "400": {$ref: "#/components/responses/Error"}
+  /api/v1/playlists/{playlist_id}/match:
+    post:
+      summary: Fix a track's match by hand
+      parameters: [{$ref: "#/components/parameters/PlaylistId"}]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [track_id]
+              properties:
+                track_id: {type: string}
+                mode: {type: string}
+                path: {type: string}
+      responses:
+        "200": {$ref: "#/components/responses/Object"}
+        "400": {$ref: "#/components/responses/Error"}
+        "409": {$ref: "#/components/responses/Error"}
+  /api/v1/playlists/{playlist_id}/source-match:
+    post:
+      summary: Imported playlists, pick the Deezer track of one of their tracks
+      parameters: [{$ref: "#/components/parameters/PlaylistId"}]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                key: {type: string}
+                deezer_id: {type: [string, "null"], description: "A Deezer track, null for not on Deezer, auto to go back."}
+      responses:
+        "200": {$ref: "#/components/responses/Object"}
+        "400": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+  /api/v1/playlists/{playlist_id}/publish:
+    post:
+      summary: Publish a playlist again in Navidrome now
+      parameters: [{$ref: "#/components/parameters/PlaylistId"}]
+      responses:
+        "200": {$ref: "#/components/responses/Object"}
+  /api/v1/covers/{filename}:
+    get:
+      summary: A playlist's cover (the answers link to it)
+      parameters: [{name: filename, in: path, required: true, schema: {type: string}}]
+      responses:
+        "200": {$ref: "#/components/responses/Image"}
+        "404": {description: No such cover.}
+  /api/v1/settings:
+    get:
+      summary: The folders, mappings and limits, the values each limit takes, and the downloads folder's state
+      responses:
+        "200": {$ref: "#/components/responses/Object"}
+        "304": {$ref: "#/components/responses/NotModified"}
+    put:
+      summary: Change some settings; the others keep their value
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                scan_dirs: {type: array, items: {type: string}}
+                playlists_base_dir: {type: string}
+                playlist_ids_file: {type: string}
+                library_cache_file: {type: string}
+                preview_state_file: {type: string}
+                host_to_navidrome_roots:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      host: {type: string}
+                      navidrome: {type: string}
+                deezer_dl_dir: {type: string}
+                library_workers_per_dir: {type: integer, enum: [1, 2, 4, 6, 8, 12, 16]}
+                match_workers: {type: integer, enum: [1, 2, 4, 6, 8, 12, 16]}
+                release_refresh_hours: {type: integer, enum: [6, 12, 24, 48, 168, 0], description: 0 is never.}
+                download_workers: {type: integer, enum: [1, 2, 4, 6, 8]}
+                metadata_workers: {type: integer, enum: [1, 2, 4, 6, 8, 12, 16]}
+      responses:
+        "200": {$ref: "#/components/responses/Object"}
+        "400": {$ref: "#/components/responses/Error"}
+  /api/v1/settings/clear/{what}:
+    post:
+      summary: Reset data
+      parameters:
+        - {name: what, in: path, required: true, schema: {type: string, enum: [library-cache, preview-state, playlists, all, dedup-report, dedup-choices]}}
+      responses:
+        "200": {$ref: "#/components/responses/Object"}
+        "404": {$ref: "#/components/responses/Error"}
+  /api/v1/settings/security:
+    get:
+      summary: The account's name, the API token for other apps and the CatBoard webhook
+      responses:
+        "200": {$ref: "#/components/responses/Object"}
+  /api/v1/settings/password:
+    post:
+      summary: Change the password; every other browser and device is signed out
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                current: {type: string}
+                new: {type: string, minLength: 8}
+      responses:
+        "200": {$ref: "#/components/responses/Object"}
+        "400": {$ref: "#/components/responses/Error"}
+  /api/v1/settings/api-token:
+    post:
+      summary: Make a new API token for other apps (CatBoard)
+      responses:
+        "200": {$ref: "#/components/responses/Object"}
+        "400": {$ref: "#/components/responses/Error"}
+  /api/v1/settings/webhook:
+    put:
+      summary: Save the CatBoard webhook
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                url: {type: string}
+      responses:
+        "200": {$ref: "#/components/responses/Object"}
+        "400": {$ref: "#/components/responses/Error"}
+    delete:
+      summary: Remove the CatBoard webhook
+      responses:
+        "200": {$ref: "#/components/responses/Object"}
+  /api/v1/settings/webhook/test:
+    post:
+      summary: Send CatBoard a test
+      responses:
+        "200": {$ref: "#/components/responses/Object"}
+        "502": {$ref: "#/components/responses/Error"}
+  /api/v1/scheduler:
+    get:
+      summary: The profile's playlists scanned on a schedule, and when they run next
+      parameters: [{$ref: "#/components/parameters/Profile"}]
+      responses:
+        "200": {$ref: "#/components/responses/Object"}
+  /api/v1/version:
+    get:
+      summary: This version, and the newest one on Docker Hub
+      responses:
+        "200": {$ref: "#/components/responses/Object"}
+  /api/v1/content/notes:
+    get:
+      summary: The notes of each version (HTML), the newest first
+      responses:
+        "200": {$ref: "#/components/responses/Object"}
+        "304": {$ref: "#/components/responses/NotModified"}
+  /api/v1/content/notes/seen:
+    post:
+      summary: The newest notes were read
+      responses:
+        "200": {$ref: "#/components/responses/Object"}
+  /api/v1/content/help:
+    get:
+      summary: The help, by section (HTML)
+      responses:
+        "200": {$ref: "#/components/responses/Object"}
+        "304": {$ref: "#/components/responses/NotModified"}

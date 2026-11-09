@@ -172,7 +172,8 @@ class Format(Base):
         for rule in self.app.url_map.iter_rules():
             if rule.rule.startswith("/api/v1/"):
                 for method in rule.methods - {"HEAD", "OPTIONS"}:
-                    served.add((method, re.sub(r"<(?:[a-z]+:)?([a-z_]+)>", r"{\1}", rule.rule)))
+                    # <int:x>, <path:x> and <any(a, b):x> are all {x}.
+                    served.add((method, re.sub(r"<(?:[a-z]+(?:\([^)]*\))?:)?([a-z_]+)>", r"{\1}", rule.rule)))
         self.assertEqual(served - documented, set(), "routes missing from docs/api/openapi.yaml")
         self.assertEqual(documented - served, set(), "documented routes the app does not serve")
 

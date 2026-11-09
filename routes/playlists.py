@@ -51,19 +51,29 @@ def _label(account_id):
     return account["label"] if account else account_id
 
 
-def render_app(view):
-    """Dashboard and settings live on the same page; `view` picks the one shown
-    first. The dashboard shows the playlists of this browser's account, with the
-    names its user gave them in Navidrome, and the ones the user made there."""
-    active = _active()
-    playlists = [p for p in load_playlists() if not active or not p.get("accounts") or active in p["accounts"]]
+class PlaylistError(ValueError):
+    """Shown to the user as it is."""
+
+
+def dashboard_playlists(account):
+    """The playlists of this profile, with the names its user gave them in
+    Navidrome, and the ones the user made there. For the dashboard and the API."""
+    playlists = [p for p in load_playlists() if not account or not p.get("accounts") or account in p["accounts"]]
     handmade = []
-    if active:
-        names = publish.custom_titles(active)
+    if account:
+        names = publish.custom_titles(account)
         playlists = [{**p, "title": names[p["id"]], "deezer_title": p["title"]} if p["id"] in names else p
                      for p in playlists]
-        handmade = publish.handmade(active)
-        publish.sync_soon(active)
+        handmade = publish.handmade(account)
+        publish.sync_soon(account)
+    return playlists, handmade
+
+
+def render_app(view):
+    """Dashboard and settings live on the same page; `view` picks the one shown
+    first. The dashboard shows the playlists of this browser's account."""
+    active = _active()
+    playlists, handmade = dashboard_playlists(active)
     return render_template(
         "home.html",
         playlists=playlists,
@@ -104,41 +114,61 @@ def _share_existing(playlist_id, account_id):
     return f"Playlist added to {_label(account_id)}"
 
 
-@playlists_bp.post("/playlist/add")
-def add_playlist():
-    value = request.form.get("playlist_input", "")
-    account = _active()
+def add_playlist_for(value, account) -> dict:
+    """Adds a Deezer playlist by its link or ID, or a Spotify playlist by its
+    link, for this profile. {"id", "added", "message", "task_id", "open"}: a
+    Spotify playlist is scanned at once, and `open` says its drawer should open."""
     if spotify_playlist_id(value):
         try:
             pid, added = crossplatform.add_spotify(value, accounts=[account] if account else None)
         except SourceError as e:
-            flash(str(e))
-            return redirect(url_for("playlists.home"))
+            raise PlaylistError(str(e)) from e
         if not added:
-            flash(_share_existing(pid, account) if account else "Playlist already saved")
-            return _open_playlist(pid)
-        _start_scan(pid, quick=True, title=f"Finding on Deezer: {playlist_title(pid)}")
-        flash("Spotify playlist added: its tracks are being found on Deezer")
-        return _open_playlist(pid)
+            return {"id": pid, "added": False, "open": True, "task_id": None,
+                    "message": _share_existing(pid, account) if account else "Playlist already saved"}
+        task_id = _start_scan(pid, quick=True, title=f"Finding on Deezer: {playlist_title(pid)}")
+        return {"id": pid, "added": True, "open": True, "task_id": task_id,
+                "message": "Spotify playlist added: its tracks are being found on Deezer"}
 
     pid = extract_playlist_id(value)
     if not pid:
-        flash("Invalid ID or URL")
-        return redirect(url_for("playlists.home"))
-
+        raise PlaylistError("Invalid ID or URL")
     playlists = load_playlists()
     if any(p["id"] == pid for p in playlists):
-        flash(_share_existing(pid, account) if account else "Playlist already saved")
-        return redirect(url_for("playlists.home"))
-
-    info = fetch_deezer_playlist_info(pid)
+        return {"id": pid, "added": False, "open": False, "task_id": None,
+                "message": _share_existing(pid, account) if account else "Playlist already saved"}
+    try:
+        info = fetch_deezer_playlist_info(pid)
+    except RuntimeError as e:
+        # Deezer answered with an error: no such playlist, or a private one.
+        raise PlaylistError("Deezer has no public playlist with this ID") from e
     if account:
         info["accounts"] = [account]
     playlists.append(info)
     save_playlists(playlists)
     cache_cover(info)
-    flash("Playlist added")
-    return redirect(url_for("playlists.home"))
+    return {"id": pid, "added": True, "open": False, "task_id": None, "message": "Playlist added"}
+
+
+def import_csv_for(filename, data, account) -> dict:
+    """Imports a CSV export for this profile, and starts finding its tracks."""
+    try:
+        pid = crossplatform.add_csv(filename, data, accounts=[account] if account else None)
+    except SourceError as e:
+        raise PlaylistError(str(e)) from e
+    task_id = _start_scan(pid, quick=True, title=f"Finding on Deezer: {playlist_title(pid)}")
+    return {"id": pid, "task_id": task_id, "message": "Playlist imported: its tracks are being found on Deezer"}
+
+
+@playlists_bp.post("/playlist/add")
+def add_playlist():
+    try:
+        result = add_playlist_for(request.form.get("playlist_input", ""), _active())
+    except PlaylistError as e:
+        flash(str(e))
+        return redirect(url_for("playlists.home"))
+    flash(result["message"])
+    return _open_playlist(result["id"]) if result["open"] else redirect(url_for("playlists.home"))
 
 
 @playlists_bp.post("/playlist/import-csv")
@@ -147,15 +177,13 @@ def import_csv_playlist():
     if upload is None or not upload.filename:
         flash("Choose a CSV file to import")
         return redirect(url_for("playlists.home"))
-    account = _active()
     try:
-        pid = crossplatform.add_csv(upload.filename, upload.read(MAX_CSV_BYTES + 1), accounts=[account] if account else None)
-    except SourceError as e:
+        result = import_csv_for(upload.filename, upload.read(MAX_CSV_BYTES + 1), _active())
+    except PlaylistError as e:
         flash(str(e))
         return redirect(url_for("playlists.home"))
-    _start_scan(pid, quick=True, title=f"Finding on Deezer: {playlist_title(pid)}")
-    flash("Playlist imported: its tracks are being found on Deezer")
-    return _open_playlist(pid)
+    flash(result["message"])
+    return _open_playlist(result["id"])
 
 
 @playlists_bp.post("/playlist/<playlist_id>/source-match")
@@ -180,24 +208,34 @@ def source_match_route(playlist_id):
     return jsonify({"ok": True, "row": row, "xp": crossplatform.summary(playlist_id)})
 
 
-@playlists_bp.post("/playlist/<playlist_id>/delete")
-def delete_playlist(playlist_id):
-    """Removes the playlist from this browser's account. Saved for other
-    accounts too, it stays for them; otherwise it is deleted."""
-    account = _active()
+def delete_playlist_for(playlist_id, account) -> dict:
+    """Removes the playlist from this profile. Saved for other profiles too, it
+    stays for them; otherwise it is deleted. {"deleted", "complete", "message"}:
+    `complete` is False when Navidrome may keep a copy it imported."""
     members = accounts_for(playlist_id)
+    if account and members and account not in members:
+        # Another profile's playlist: never deleted from here.
+        raise PlaylistError("This playlist is not on this account")
     title = playlist_title(playlist_id)
     left_in_navidrome = " Navidrome keeps the copy it imported from the .m3u8: delete it there."
     if account in members and len(members) > 1:
         set_accounts(playlist_id, [a for a in members if a != account])
         complete = publish.remove_from(playlist_id, title, [account])
-        flash(f"Playlist removed from {_label(account)}." + ("" if complete else left_in_navidrome))
-        return redirect(url_for("playlists.home"))
+        return {"deleted": False, "complete": complete,
+                "message": f"Playlist removed from {_label(account)}." + ("" if complete else left_in_navidrome)}
     complete = publish.remove_from(playlist_id, title, members)
     playlists = [p for p in load_playlists() if p["id"] != playlist_id]
     save_playlists(playlists)
     delete_playlist_cache(playlist_id)
-    flash("Playlist deleted." + ("" if complete else left_in_navidrome))
+    return {"deleted": True, "complete": complete, "message": "Playlist deleted." + ("" if complete else left_in_navidrome)}
+
+
+@playlists_bp.post("/playlist/<playlist_id>/delete")
+def delete_playlist(playlist_id):
+    try:
+        flash(delete_playlist_for(playlist_id, _active())["message"])
+    except PlaylistError as e:
+        flash(str(e))
     return redirect(url_for("playlists.home"))
 
 

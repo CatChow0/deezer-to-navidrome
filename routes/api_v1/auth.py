@@ -2,7 +2,8 @@
 from flask import g, request
 
 from core import auth, devices
-from routes.api_v1 import API_VERSION, api_v1_bp, body, error, ok
+from routes import auth as sign_in
+from routes.api_v1 import API_VERSION, api_v1_bp, body, error, ok, replaces
 
 
 def _mode() -> str:
@@ -24,6 +25,7 @@ def auth_status():
 
 
 @api_v1_bp.post("/auth/login")
+@replaces(sign_in.login)
 def auth_login():
     """The account's username and password, and a name for this device. The
     same limit on failed attempts as the web sign-in."""
@@ -49,6 +51,7 @@ def auth_login():
 
 
 @api_v1_bp.post("/auth/setup")
+@replaces(sign_in.setup)
 def auth_setup():
     """First run from the app: the account, then this device's token. Only while
     the server has no account, as the web setup page."""
@@ -65,6 +68,7 @@ def auth_setup():
 
 
 @api_v1_bp.post("/auth/logout")
+@replaces(sign_in.logout)
 def auth_logout():
     """Signs this device out: its token stops working."""
     device = getattr(g, "device", None)

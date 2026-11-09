@@ -854,6 +854,7 @@ The API the Android app uses, described in [`docs/api/openapi.yaml`](docs/api/op
 
 - **Sign-in.** `POST /api/v1/auth/login` with the account's username and password and a name for the device returns a token (`d2n_…`), shown once; send it as `Authorization: Bearer <token>`. Only a SHA-256 digest is kept, in `data/devices.json`. The token opens every route; it stops working when the device signs out (`POST /api/v1/auth/logout`), is signed out in Settings, or when the password changes. Failed attempts count as on the web sign-in page. `GET /api/v1/auth/status` (public) says whether the server needs a sign-in, has no account yet (`POST /api/v1/auth/setup` creates it), or has sign-in turned off.
 - **Answers.** A JSON object; a failure is `{"error": {"code", "message"}}` with the matching HTTP status. Reads carry an ETag: send it back in `If-None-Match` to get a 304 when nothing changed. The profile comes from the `X-Navidrome-Account` header, else the default account.
+- **The whole web interface.** Each of its functions has its counterpart here, and a test checks that none is missing. Most are the web's own functions answering in this format, so the two cannot drift apart. The covers and the audio the answers link to are under `/api/v1/` too.
 - **Tasks.** `GET /api/v1/tasks/<id>/stream` is the event stream the web page follows (resume with `Last-Event-ID` or `?from=`). Without a stream, `GET /api/v1/tasks/<id>/events?after=N&wait=25` returns the events after index `N`, waiting up to 25 s for the next one, and `GET /api/v1/tasks?changed_since=<time>` lists the tasks that changed.
 - **Behind Authelia, or another login proxy.** The app cannot get through a login page. Let `/api/v1/` through without it: the device token protects it. For Authelia:
 
@@ -877,6 +878,28 @@ The API the Android app uses, described in [`docs/api/openapi.yaml`](docs/api/op
 | `/api/v1/tasks`, `/api/v1/tasks/<id>` | GET | Tasks and one task's state |
 | `/api/v1/tasks/<id>/events`, `/stream` | GET | A task's events: waiting for the next, or as a stream |
 | `/api/v1/tasks/<id>/cancel` | POST | Ask a task to stop |
+| `/api/v1/playlists` | GET/POST | The profile's playlists, and those its user made in Navidrome; add one by its link (`{"link"}`) |
+| `/api/v1/playlists/import` | POST | Import a CSV export (multipart `csv_file`) |
+| `/api/v1/playlists/<id>` | DELETE | Take a playlist off the profile; deleted when no other profile has it |
+| `/api/v1/playlists/<id>/tracks`, `/navidrome` | GET | Its tracks and their matches; where it is in Navidrome |
+| `/api/v1/playlists/<id>/scan`, `/download-missing`, `/publish` | POST | Scan it, download what it misses (tasks); publish it again |
+| `/api/v1/playlists/<id>/match`, `/source-match` | POST | Fix a match by hand; pick the Deezer track of an imported one |
+| `/api/v1/playlists/<id>/accounts`, `/automation` | PUT | The accounts it goes to; its schedule |
+| `/api/v1/navidrome/playlists/<account>/<id>` | GET | A playlist made in Navidrome, read-only |
+| `/api/v1/releases`, `/releases/refresh`, `/releases/mute` | GET/POST | The profile's release feed |
+| `/api/v1/deezer/mixes`, `/deezer/mixes/follow` | GET/POST | Deezer's mixes for the profile; follow one |
+| `/api/v1/search`, `/search/album/<id>`, `/search/artist/<id>`, `/preview/<id>` | GET | Deezer search, details and 30-second previews |
+| `/api/v1/library/stats`, `/search`, `/check`, `/refresh`, `/rebuild`, `/metadata/fix`, `/metadata/undo` | GET/POST | The library: figures, search, what it has, its index, its metadata |
+| `/api/v1/downloads`, `/downloads/track/<id>`, `/downloads/repair` | GET/POST | The queue; download a track, an album or an artist; repair |
+| `/api/v1/dedup/start`, `/dedup/report`, `/dedup/apply` | POST/GET | Duplicates |
+| `/api/v1/stats/…` | GET/POST/DELETE | Overview, recaps, an artist, album or track, plays, status, rebuild, ListenBrainz token, covers and audio |
+| `/api/v1/mixes`, `/mixes/settings`, `/mixes/generate`, `/mixes/trial/…` | GET/POST | The profile's Made for you and its quarantine |
+| `/api/v1/navidrome/accounts…`, `/api/v1/deezer/accounts…` | GET/POST/PATCH/DELETE | The accounts, as in Settings |
+| `/api/v1/settings` | GET/PUT | Folders, mappings and limits; a PUT changes only what it sends |
+| `/api/v1/settings/clear/<what>` | POST | Reset data: `library-cache`, `preview-state`, `playlists`, `all`, `dedup-report`, `dedup-choices` |
+| `/api/v1/settings/security`, `/password`, `/api-token`, `/webhook`, `/webhook/test` | GET/POST/PUT/DELETE | Sign-in and other apps |
+| `/api/v1/scheduler`, `/api/v1/version` | GET | The scheduled scans; this version and the newest one |
+| `/api/v1/content/help`, `/content/notes`, `/content/notes/seen` | GET/POST | The help and the notes of each version, in HTML |
 
 ### Web routes
 

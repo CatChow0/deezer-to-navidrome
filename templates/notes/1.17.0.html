@@ -3,9 +3,11 @@
 <ul class="help-list">
   <li><strong>Devices.</strong> A phone signs in with your account and gets its own token. <b>Settings → Sign-in and other apps</b> lists the devices signed in, with when each was last used, and signs one out, for a lost phone say. A new password signs them all out.</li>
   <li><strong>API v1.</strong> Everything the app needs lives under <code>/api/v1/</code>, described in <code>docs/api/openapi.yaml</code>: answers in one JSON format, reads that say when nothing changed, and long tasks followed without a stream.</li>
+  <li><strong>The whole web interface.</strong> Playlists, Releases, search, downloads, the library, Stats, Made for you, the accounts and Settings: each function of the web interface has its counterpart in the API, for the profile the app chooses. The help and these notes are there too.</li>
 </ul>
 
 <h4 class="help-h">After the update</h4>
 <ul class="help-todo">
   <li>Behind Authelia or another login proxy, let <code>/api/v1/</code> through without its login page, or the app cannot sign in: the device's token protects these routes. The README shows the rule for Authelia.</li>
+  <li>Nothing else to do: the web interface works as before.</li>
 </ul>
