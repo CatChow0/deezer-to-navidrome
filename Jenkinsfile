@@ -1,12 +1,14 @@
-// Deezer → Navidrome pipeline: every commit builds the image and checks the
-// container answers on /health; only `main` pushes the image.
+// Deezer → Navidrome pipeline: every commit builds the Android app and the
+// image that ships it, and checks the container answers on /health; only
+// `main` pushes the image.
 pipeline {
   agent { label 'docker' }
 
   options {
     disableConcurrentBuilds()
     buildDiscarder(logRotator(numToKeepStr: '20'))
-    timeout(time: 20, unit: 'MINUTES')
+    // The first Android build downloads the SDK and Gradle's dependencies.
+    timeout(time: 45, unit: 'MINUTES')
   }
 
   environment {
@@ -24,6 +26,39 @@ pipeline {
           currentBuild.displayName = "#${env.BUILD_NUMBER} v${env.VERSION} (${env.SHA})"
         }
         echo "Image : ${IMAGE} | version : ${VERSION} | commit : ${SHA} | publish : ${IS_MAIN}"
+      }
+    }
+
+    stage('Android') {
+      // Builds and signs the app in Docker (android/Dockerfile) into dist/android,
+      // which the image built next ships. The key lives in two credentials:
+      // android-keystore (secret file) and android-keystore-password (secret text).
+      steps {
+        sh 'rm -rf dist/android'
+        script {
+          def keyFound = true
+          try {
+            // Only a missing credential can fail this empty block.
+            withCredentials([file(credentialsId: 'android-keystore', variable: 'KS_PROBE'),
+                             string(credentialsId: 'android-keystore-password', variable: 'KS_PASS_PROBE')]) { }
+          } catch (err) {
+            keyFound = false
+          }
+          if (!keyFound) {
+            if (env.IS_MAIN == 'true') {
+              error('No Android signing key in Jenkins (android-keystore, android-keystore-password): an image from main must carry the app.')
+            }
+            echo 'WARNING: no Android signing key in Jenkins: this image is built without the app.'
+            env.HAS_APK = 'false'
+          } else {
+            withCredentials([file(credentialsId: 'android-keystore', variable: 'D2N_KEYSTORE_FILE'),
+                             string(credentialsId: 'android-keystore-password', variable: 'D2N_KEYSTORE_PASSWORD')]) {
+              sh 'bash android/scripts/build-apk.sh'
+            }
+            env.HAS_APK = 'true'
+          }
+        }
+        archiveArtifacts artifacts: 'dist/android/*', allowEmptyArchive: true, fingerprint: true
       }
     }
 
@@ -55,6 +90,14 @@ pipeline {
           echo "Container did not answer on /health"
           docker logs $CONTAINER
           exit 1
+        '''
+        // The app the Android stage built must be in the image.
+        sh '''
+          if [ "$HAS_APK" = "true" ]; then
+            docker exec $CONTAINER python -c "from core import android_app; import sys; sys.exit(0 if android_app.info()['available'] else 1)" \
+              || { echo "The image does not carry the Android app the Android stage built"; exit 1; }
+            echo "The image carries the Android app"
+          fi
         '''
       }
       post {

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!-- http:// is allowed for a server on the local network or Tailscale:
+         the app warns before using it. -->
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+            <!-- Certificates the user added to the phone, such as a home CA. -->
+            <certificates src="user" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

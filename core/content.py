@@ -15,6 +15,7 @@ HELP_SECTIONS = (
     ("made-for-you", "Made for you"),
     ("settings", "Settings"),
     ("sign-in", "Sign-in and other apps"),
+    ("android-app", "Android app"),
     ("troubleshooting", "Troubleshooting"),
 )
 

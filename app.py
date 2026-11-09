@@ -11,6 +11,7 @@ from core import migrations
 from core import scheduler
 from routes import api_v1
 from routes.account import account_bp
+from routes.android import android_bp
 from routes.auth import auth_bp
 from routes.cache import cache_bp
 from routes.dedup import dedup_bp
@@ -43,6 +44,7 @@ app.jinja_env.globals["setting_choices"] = SETTING_CHOICES
 app.register_blueprint(playlists_bp)
 app.register_blueprint(api_v1.api_v1_bp)
 app.register_blueprint(account_bp)
+app.register_blueprint(android_bp)
 app.register_blueprint(auth_bp)
 app.register_blueprint(cache_bp)
 app.register_blueprint(dedup_bp)

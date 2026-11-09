@@ -2,7 +2,7 @@
 
 **A self-hosted web app that turns your Deezer playlists into Navidrome `.m3u8` playlists, matches them against your local library, and downloads what is missing straight from Deezer.**
 
-[![Docker Image Version](https://img.shields.io/badge/version-1.17.0-blue)](https://hub.docker.com/r/catchow/deezer-to-navidrome)
+[![Docker Image Version](https://img.shields.io/badge/version-1.18.0-blue)](https://hub.docker.com/r/catchow/deezer-to-navidrome)
 [![Python 3](https://img.shields.io/badge/python-3-blue)](https://www.python.org/)
 [![Flask](https://img.shields.io/badge/flask-web%20app-brightgreen)](https://flask.palletsprojects.com/)
 
@@ -20,6 +20,7 @@
 - [Configuration](#configuration)
 - [Usage](#usage)
 - [API Reference](#api-reference)
+- [Android app](#android-app)
 - [Troubleshooting](#troubleshooting)
 - [Development](#development)
 - [Notes](#notes)
@@ -107,6 +108,7 @@ Two buttons in the topbar explain the app. **New** keeps the notes of each versi
 - **Sign-in** - One account, created on the first visit or set from the environment
 - **API token** - Read-only access for other apps
 - **API v1** - A JSON API for the Android app: each device signs in with its own token, listed and revocable in Settings
+- **Android app** - Shipped inside the image: download it from Settings, and it updates itself from your server
 - **[CatBoard](https://github.com/CatChow0/catboard)** - Shows the release feed; a webhook tells it when the feed or the library changed
 - **Update badge** - The topbar shows when a newer version is on Docker Hub
 
@@ -900,6 +902,7 @@ The API the Android app uses, described in [`docs/api/openapi.yaml`](docs/api/op
 | `/api/v1/settings/security`, `/password`, `/api-token`, `/webhook`, `/webhook/test` | GET/POST/PUT/DELETE | Sign-in and other apps |
 | `/api/v1/scheduler`, `/api/v1/version` | GET | The scheduled scans; this version and the newest one |
 | `/api/v1/content/help`, `/content/notes`, `/content/notes/seen` | GET/POST | The help and the notes of each version, in HTML |
+| `/api/v1/app`, `/api/v1/app/apk` | GET | The Android app in this image (version, size, SHA-256), and its APK |
 
 ### Web routes
 
@@ -991,6 +994,59 @@ The API the Android app uses, described in [`docs/api/openapi.yaml`](docs/api/op
 | `/login`, `/logout`, `/setup` | GET/POST | Sign-in |
 | `/api/auth/password`, `/api/auth/token` | POST | Change the password, create the API token |
 | `/api/webhook`, `/api/webhook/test` | PUT/DELETE/POST | CatBoard webhook |
+| `/app/android.apk` | GET | The Android app's APK, for a signed-in browser |
+
+---
+<a id ="android-app"></a>
+## 📱 Android app
+
+The app for your phone, in Kotlin and Jetpack Compose (Android 8 or later). This version signs in, picks the profile and follows the tasks in Activity; the rest of the web interface comes to it in the next versions.
+
+### Installing
+
+Each image built by Jenkins carries the app built with the same version.
+
+1. On your phone, open the web interface signed in, then **Settings → Android app → Download the app**. Android asks once to allow installs from your browser.
+2. Open the app, enter the server's address as you open it in a browser, and sign in with your account. The phone appears in **Settings → Sign-in and other apps**, where you can sign it out.
+3. Pick the profile at the top: the Navidrome account the app shows.
+
+An `http://` address works, with a warning: only on your local network or Tailscale. Behind Authelia, or another login proxy, let `^/api/v1/` through as shown under [API v1](#api-reference): the app cannot pass a login page, and says so.
+
+### Updates
+
+The app shares the server's version. When the server is newer, the app shows a banner: **Update** downloads the APK from your server, checks its SHA-256 and opens Android's installer; Android asks once to allow installs from D2N. **More → Check for updates** asks at once.
+
+- `versionCode` is `MAJOR×10000 + MINOR×100 + PATCH` (1.18.0 gives 11800).
+- A rebuild of the same version (another commit, or the same one built again) is offered too; a lower version never is.
+- An image built without the signing key (a fork, say) carries no app, and Settings says so.
+
+### The signing key
+
+Every build is signed with one key, so each version installs over the previous one. **Back it up with its password: without them, phones must uninstall the app to update it.**
+
+- **Create it once,** in a PowerShell window of your own: `powershell -File android\scripts\new-keystore.ps1`. It writes `%USERPROFILE%\.d2n-android\release.jks`, and saves the password encrypted for your Windows account (`keystore-password.dpapi`). On Linux or macOS: `android/scripts/new-keystore.sh`.
+- **Restore it** on a new PC: put `release.jks` back in `%USERPROFILE%\.d2n-android\`, then save its password again:
+
+  ```powershell
+  Read-Host "Password" -AsSecureString | ConvertFrom-SecureString | Set-Content -Encoding ascii "$env:USERPROFILE\.d2n-android\keystore-password.dpapi"
+  ```
+
+### Building
+
+The build runs in Docker (`android/Dockerfile`), the same in Jenkins and on a PC, and writes `dist/android/deezer-to-navidrome.apk` with `app.json`. `docker build .` then puts them in the image.
+
+- **On Windows:** `powershell -File android\scripts\build-apk.ps1`, with the saved key.
+- **Elsewhere:** `D2N_KEYSTORE_FILE=… D2N_KEYSTORE_PASSWORD=… android/scripts/build-apk.sh`.
+
+`android/README.md` covers working on the app itself: the local SDK, the tests and the emulator.
+
+### Jenkins
+
+The `Android` stage builds the app before the image, keeps the APK as a build artifact, and the smoke test checks the image carries it.
+
+- **Credentials:** `android-keystore`, a secret file holding `release.jks`, and `android-keystore-password`, a secret text.
+- **Without them,** `main` fails, since an image on Docker Hub without its app would break updates; other branches build without the app, with a warning.
+- **The agent** needs Docker with buildx (build secrets and `--output`), access to `dl.google.com`, `maven.google.com`, Maven Central and `services.gradle.org`, and about 6 GB free. The first build downloads the SDK and takes several minutes; the pipeline's timeout is 45 minutes.
 
 ---
 <a id ="troubleshooting"></a>

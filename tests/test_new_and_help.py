@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parent.parent
 NOTES = ROOT / "templates" / "notes"
 HELP = ROOT / "templates" / "help"
 HELP_SECTIONS = ("getting-started", "playlists", "other-platforms", "search-player", "downloads", "library",
-                 "releases", "stats", "made-for-you", "settings", "sign-in", "troubleshooting")
+                 "releases", "stats", "made-for-you", "settings", "sign-in", "android-app", "troubleshooting")
 
 
 def version_key(version):

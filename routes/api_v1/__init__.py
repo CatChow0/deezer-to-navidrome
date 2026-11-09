@@ -139,5 +139,5 @@ def replaces(*views):
 
 # The resources register their routes on the blueprint.
 from routes.api_v1 import (  # noqa: E402,F401
-    accounts, auth, info, library, mixes, playlists, releases, settings, stats, tasks,
+    accounts, app, auth, info, library, mixes, playlists, releases, settings, stats, tasks,
 )

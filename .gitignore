@@ -1,5 +1,5 @@
 # Runtime data: config, library index, covers, secrets (ARL)… each install has its own
-data/
+/data/
 
 # Python
 __pycache__/
@@ -7,3 +7,14 @@ __pycache__/
 
 # IDE
 .idea/
+
+# Android: signing keys never go in the repository, nor build outputs
+*.jks
+*.keystore
+android/keystore.properties
+android/local.properties
+android/**/build/
+android/.gradle/
+android/.kotlin/
+# The APK and app.json the build writes, which the server image picks up
+/dist/

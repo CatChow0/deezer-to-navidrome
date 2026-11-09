@@ -105,6 +105,22 @@ components:
         cancel_requested: {type: boolean}
         cancelled: {type: boolean}
         events: {type: integer, description: How many events the task has sent so far.}
+    AppInfo:
+      type: object
+      description: The Android app in this image; without one, only available and reason.
+      required: [available]
+      properties:
+        available: {type: boolean}
+        reason: {type: string}
+        version: {type: string, description: The server's version, which the app shares.}
+        version_code: {type: integer, description: "MAJOR×10000 + MINOR×100 + PATCH"}
+        build:
+          type: object
+          properties:
+            commit: {type: string}
+            built_at: {type: string, format: date-time}
+        size: {type: integer, description: Bytes, read from the file.}
+        sha256: {type: string, description: Of the file, to check the download.}
     NavidromeAccount:
       type: object
       properties:
@@ -1215,3 +1231,24 @@ paths:
       responses:
         "200": {$ref: "#/components/responses/Object"}
         "304": {$ref: "#/components/responses/NotModified"}
+  /api/v1/app:
+    get:
+      summary: The Android app in this image, for the first install and for updates
+      responses:
+        "200":
+          description: Carries an ETag.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/AppInfo"}
+        "304": {$ref: "#/components/responses/NotModified"}
+  /api/v1/app/apk:
+    get:
+      summary: The Android app's APK, named deezer-to-navidrome-<version>.apk
+      responses:
+        "200":
+          description: The signed APK, with an ETag.
+          content:
+            application/vnd.android.package-archive:
+              schema: {type: string, format: binary}
+        "304": {$ref: "#/components/responses/NotModified"}
+        "404": {$ref: "#/components/responses/Error"}

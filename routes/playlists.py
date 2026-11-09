@@ -27,7 +27,7 @@ from core.deezer import (
     rematch_track,
     save_playlists,
 )
-from core import account_context, crossplatform, nd_accounts, publish
+from core import account_context, android_app, crossplatform, nd_accounts, publish
 from core.deezer import accounts_for, give_to_account, is_auto_id, set_accounts
 from core.utils import extract_playlist_id
 from core.xp_sources import MAX_CSV_BYTES, SourceError, spotify_playlist_id
@@ -82,6 +82,7 @@ def render_app(view):
         config=load_config(),
         view=view,
         download_dir=deezer_dl.download_dir_status(),
+        android_app=android_app.info(),
         whats_new=whats_new_state(),
         releases=RELEASES,
     )

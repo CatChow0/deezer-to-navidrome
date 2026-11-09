@@ -1,0 +1,7 @@
+# Scripts run on Linux (Jenkins, the Docker build) need LF even on a Windows checkout.
+*.sh text eol=lf
+android/gradlew text eol=lf
+*.bat text eol=crlf
+*.jar binary
+*.ttf binary
+*.png binary

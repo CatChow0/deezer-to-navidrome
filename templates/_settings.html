@@ -246,6 +246,26 @@
       </div>
     </section>
     </div>
+
+    <div class="set-row">
+<section class="cell set-12" id="android-app" aria-labelledby="android-title">
+      <div class="cell-head">
+        <div>
+          <h2 class="cell-title" id="android-title">Android app</h2>
+          <p class="cell-sub">The app for your phone, built with this version of the server. It updates itself from here.</p>
+        </div>
+      </div>
+      <div class="cell-body android-app">
+        {% if android_app.available %}
+        <p>Version <b>{{ android_app.version }}</b> · {{ '%.1f' | format(android_app.size / 1048576) }} MB · build {{ android_app.build.commit }}</p>
+        <a class="btn" href="{{ url_for('android.apk') }}" download>Download the app</a>
+        <p class="muted">Open this page on your phone to install it. Android asks once to allow installs from your browser.</p>
+        {% else %}
+        <p class="muted">{{ android_app.reason }}</p>
+        {% endif %}
+      </div>
+    </section>
+    </div>
   </div>
 
   <h2 class="settings-group span-12">Maintenance</h2>

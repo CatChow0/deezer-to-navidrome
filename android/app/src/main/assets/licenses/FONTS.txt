@@ -1,0 +1,3 @@
+Unbounded[wght].ttf (res/font/unbounded.ttf) and InstrumentSans[wdth,wght].ttf (res/font/instrument_sans.ttf)
+come from https://github.com/google/fonts at commit 5bb28733cec313b63fbd415b574b5ae35c8aa8b8
+(ofl/unbounded and ofl/instrumentsans), under the SIL Open Font License beside this file.
