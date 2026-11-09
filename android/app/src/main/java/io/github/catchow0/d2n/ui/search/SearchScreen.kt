@@ -61,7 +61,7 @@ fun SearchScreen(viewModel: SearchViewModel, queryState: SearchState? = null) {
         s.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             items(s.results, key = { "${it.type}:${it.id}" }) { item ->
-                SearchResultRow(item, s.inLibrary["${item.type}:${item.id}"] == true)
+                SearchResultRow(item, s.inLibrary["${item.type}:${item.id}"] == true, onPreview = { viewModel.preview(item.id) })
             }
         }
     }
