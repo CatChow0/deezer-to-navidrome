@@ -319,6 +319,43 @@ def _delete_imported(account_id, playlist_file) -> bool:
     return removed
 
 
+def forget_account(account_id) -> dict:
+    """A Navidrome account about to be removed: every playlist leaves it in
+    Navidrome, while its password is still known. One only it had, its
+    generated playlists among them, leaves the app too; the others stay for
+    their other accounts. {"left": n, "removed": n}."""
+    from core.deezer import accounts_for, load_playlists, save_playlists, set_accounts
+
+    left, removed = 0, []
+    for playlist in load_playlists():
+        members = accounts_for(playlist["id"])
+        if account_id not in members:
+            continue
+        try:
+            remove_from(playlist["id"], playlist["title"], [account_id])
+        except Exception as e:
+            logger.warning("Could not remove %s from %s in Navidrome: %s", playlist["id"], account_id, e)
+        others = [a for a in members if a != account_id]
+        if others:
+            set_accounts(playlist["id"], others)
+            left += 1
+        else:
+            removed.append(playlist["id"])
+    if removed:
+        save_playlists([p for p in load_playlists() if p["id"] not in removed])
+        for playlist_id in removed:
+            config.delete_playlist_cache(playlist_id)
+    conn = mixes_db.connect()
+    try:
+        conn.execute("DELETE FROM publications WHERE account_id=?", (account_id,))
+        conn.execute("DELETE FROM navidrome_playlists WHERE account_id=?", (account_id,))
+        conn.execute("DELETE FROM meta WHERE key=?", (f"sync:{account_id}",))
+        conn.commit()
+    finally:
+        conn.close()
+    return {"left": left, "removed": len(removed)}
+
+
 def remove_from(playlist_id, title, accounts) -> bool:
     """The playlist leaves these accounts in Navidrome: for the account that uses
     files, its .m3u8 and the copy Navidrome imported from it; for the others,
@@ -327,9 +364,10 @@ def remove_from(playlist_id, title, accounts) -> bool:
     known = _accounts()
     complete = True
     file_accounts = [a for a in accounts if known.get(a, {}).get("publish_mode") == "m3u8"]
-    if file_accounts:
+    # As publish(): with no account at all, the playlist was written as a file.
+    if file_accounts or not known:
         playlist_file = remove_file(playlist_id, title)
-        if playlist_file is not None:
+        if playlist_file is not None and file_accounts:
             complete = any(_delete_imported(a, playlist_file) for a in file_accounts)
     unpublish(playlist_id, [a for a in accounts if known.get(a, {}).get("publish_mode") == "api"])
     return complete

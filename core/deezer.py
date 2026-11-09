@@ -54,12 +54,30 @@ def parse_xp_id(playlist_id: str):
     return parse(playlist_id)
 
 
-# Playlists this app generates from your listening (core/mix_builder.py).
-AUTO_ID = re.compile(r"^auto-(daily|blend)-[1-9]$|^auto-(discover|trial)$")
+# Playlists this app generates from your listening (core/mix_builder.py), one set
+# per Navidrome account: "auto-daily-1" for the account made from the install,
+# as before profiles, and "auto-nd2-daily-1" for the others.
+AUTO_ID = re.compile(r"^auto-(?:(nd[1-9][0-9]*)-)?(?:(daily|blend)-([1-9])|(discover|trial))$")
+FIRST_NAVIDROME_ACCOUNT = "nd1"
+
+
+def auto_id(account, name, slot=None) -> str:
+    """The ID of a generated playlist ("daily", 2), or without a slot, the name
+    its history is kept under."""
+    prefix = f"{account}-" if account and account != FIRST_NAVIDROME_ACCOUNT else ""
+    return f"auto-{prefix}{name}" + (f"-{slot}" if slot else "")
+
+
+def parse_auto_id(playlist_id):
+    """(account, name, slot) of a generated playlist, or None."""
+    m = AUTO_ID.match(str(playlist_id))
+    if not m:
+        return None
+    return m.group(1) or FIRST_NAVIDROME_ACCOUNT, m.group(2) or m.group(4), int(m.group(3)) if m.group(3) else None
 
 
 def is_auto_id(playlist_id: str) -> bool:
-    return bool(AUTO_ID.match(str(playlist_id)))
+    return parse_auto_id(playlist_id) is not None
 
 
 def _valid_playlist_id(pid: str) -> bool:

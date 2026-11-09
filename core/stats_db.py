@@ -127,7 +127,7 @@ def accounts_with_history() -> list:
     from core import nd_accounts
 
     try:
-        ids = [a["id"] for a in nd_accounts.list_accounts()]
+        ids = [a["id"] for a in nd_accounts.list_accounts()] or [FIRST_ACCOUNT]
     except Exception as e:
         logger.error("Could not read the Navidrome accounts: %s", e)
         ids = [FIRST_ACCOUNT]

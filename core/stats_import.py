@@ -733,11 +733,11 @@ def run_import(account, mode: str, progress=None, dry_run=False) -> dict:
             raise
     finally:
         conn.close()
-    if not dry_run and account == maloja_account():
-        # Plays just merged may decide tracks in quarantine: no need to wait.
+    if not dry_run:
+        # Plays just merged may decide tracks in this profile's quarantine: no need to wait.
         try:
             from core import mix_builder
-            mix_builder.review_quarantine()
+            mix_builder.review_quarantine(accounts=[account])
         except Exception as e:
             logger.warning("Could not review the quarantine after the import: %s", e)
     return report

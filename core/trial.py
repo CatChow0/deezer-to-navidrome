@@ -88,19 +88,21 @@ def _free_name(folder: Path, name: str) -> Path:
     return target
 
 
-def add_download(conn, deezer_id, artist, title, album, path, mix_id, now) -> None:
-    """Registers a file saved in the trial folder. A track already decided keeps
-    its decision. Plays carry the file's tags, which can differ from Deezer's names
-    ("Blooming" and "Blooming Kitty"), so the key comes from the file when it can."""
+def add_download(conn, account, deezer_id, artist, title, album, path, mix_id, now) -> None:
+    """Registers a file saved in the trial folder, in this account's quarantine.
+    A track already decided keeps its decision, and its owner. Plays carry the
+    file's tags, which can differ from Deezer's names ("Blooming" and "Blooming
+    Kitty"), so the key comes from the file when it can."""
     path = Path(path)
     tags = read_tags(path) if path.exists() else {}
     names = stats_db.split_artists(tags.get("artist") or artist)
     title_for_key = tags.get("title") or title
     conn.execute(
         "INSERT OR IGNORE INTO trial_tracks(deezer_id, track_key, artist, title, album, path, size, mix_id,"
-        " downloaded_at, trial_ends_at, state, state_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+        " downloaded_at, trial_ends_at, state, state_at, account_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
         (str(deezer_id), stats_db.track_key(names, title_for_key), artist, title, album or "", str(path),
-         path.stat().st_size if path.exists() else 0, mix_id, int(now), int(now) + TRIAL_DAYS * DAY, ON_TRIAL, int(now)),
+         path.stat().st_size if path.exists() else 0, mix_id, int(now), int(now) + TRIAL_DAYS * DAY, ON_TRIAL, int(now),
+         stats_db.checked_account(account)),
     )
     conn.commit()
 
@@ -222,12 +224,12 @@ def delete_now(conn, deezer_id, now, reason) -> None:
     _forget_file(row["path"])
 
 
-def keep_all_pending(conn, now, deezer_ids) -> int:
+def keep_all_pending(conn, account, now, deezer_ids) -> int:
     """The tracks shown under To review, kept in one go."""
     count = 0
     for deezer_id in deezer_ids:
         row = get(conn, deezer_id)
-        if row is None or row["state"] != PENDING:
+        if row is None or row["state"] != PENDING or row["account_id"] != account:
             continue
         try:
             keep(conn, deezer_id, now)
@@ -237,9 +239,9 @@ def keep_all_pending(conn, now, deezer_ids) -> int:
     return count
 
 
-def remove_all_pending(conn, now) -> int:
+def remove_all_pending(conn, account, now) -> int:
     count = 0
-    for row in conn.execute("SELECT deezer_id FROM trial_tracks WHERE state=?", (PENDING,)).fetchall():
+    for row in conn.execute("SELECT deezer_id FROM trial_tracks WHERE state=? AND account_id=?", (PENDING, account)).fetchall():
         try:
             remove(conn, row["deezer_id"], now)
             count += 1
@@ -263,15 +265,16 @@ def restore(conn, deezer_id, now) -> None:
     metadata_fix.move_file(conn, row["path"], target)
 
 
-def purge(conn, now, trash_days=TRASH_DAYS) -> int:
-    """What is in the trash, after its days there."""
+def purge(conn, account, now, trash_days=TRASH_DAYS) -> int:
+    """What is in this account's trash, after its days there."""
     limit = int(now) - trash_days * DAY
-    rows = conn.execute("SELECT * FROM trial_tracks WHERE state=? AND state_at<=?", (TRASH, limit)).fetchall()
+    rows = conn.execute("SELECT * FROM trial_tracks WHERE state=? AND state_at<=? AND account_id=?",
+                        (TRASH, limit, account)).fetchall()
     return _delete_from_trash(conn, rows, now)
 
 
-def empty_trash(conn, now) -> int:
-    rows = conn.execute("SELECT * FROM trial_tracks WHERE state=?", (TRASH,)).fetchall()
+def empty_trash(conn, account, now) -> int:
+    rows = conn.execute("SELECT * FROM trial_tracks WHERE state=? AND account_id=?", (TRASH, account)).fetchall()
     return _delete_from_trash(conn, rows, now)
 
 
@@ -320,13 +323,15 @@ def _end_trial(conn, row, now, reason, rules, report) -> None:
         logger.warning("Could not end the trial of %s: %s", row["deezer_id"], e)
 
 
-def evaluate(conn, plays, marks, used_paths, owned_keys, now, rules=Rules(), migrate=False) -> dict:
-    """The regular pass. plays: deezer id -> plays since download. marks: deezer id ->
-    Navidrome's star and rating. used_paths: files regular playlists rely on.
+def evaluate(conn, account, plays, marks, used_paths, owned_keys, now, rules=Rules(), migrate=False) -> dict:
+    """The regular pass over one account's quarantine, with its owner's signals.
+    plays: deezer id -> plays since download. marks: deezer id -> Navidrome's
+    star and rating. used_paths: files regular playlists rely on, whoever's.
     owned_keys: tracks you also have outside the quarantine. migrate: To review
     still holds tracks whose trial failed under the rules before 1.15."""
     report = {"kept": 0, "review": 0, "trashed": 0, "deleted": 0, "gone": 0}
-    rows = conn.execute("SELECT * FROM trial_tracks WHERE state IN (?, ?)", (ON_TRIAL, PENDING)).fetchall()
+    rows = conn.execute("SELECT * FROM trial_tracks WHERE state IN (?, ?) AND account_id=?",
+                        (ON_TRIAL, PENDING, account)).fetchall()
     for row in rows:
         deezer_id = row["deezer_id"]
         if not Path(row["path"]).exists():
@@ -360,25 +365,54 @@ def evaluate(conn, plays, marks, used_paths, owned_keys, now, rules=Rules(), mig
     return report
 
 
-def rejected(conn) -> dict:
-    """What must never be proposed again."""
-    rows = conn.execute("SELECT deezer_id, track_key FROM trial_tracks WHERE state IN (?, ?)", (TRASH, DELETED)).fetchall()
+def rejected(conn, account) -> dict:
+    """What must never be proposed to this account again."""
+    rows = conn.execute("SELECT deezer_id, track_key FROM trial_tracks WHERE state IN (?, ?) AND account_id=?",
+                        (TRASH, DELETED, account)).fetchall()
     return {"ids": {r["deezer_id"] for r in rows}, "keys": {r["track_key"] for r in rows}}
 
 
-def active(conn) -> list:
-    return conn.execute("SELECT * FROM trial_tracks WHERE state IN (?, ?) ORDER BY downloaded_at DESC",
-                        (ON_TRIAL, PENDING)).fetchall()
+def active(conn, account) -> list:
+    """The tracks of this account's quarantine waiting for a verdict; None for
+    everyone's (the disk limits are the same for all)."""
+    if account is None:
+        return conn.execute("SELECT * FROM trial_tracks WHERE state IN (?, ?) ORDER BY downloaded_at DESC",
+                            (ON_TRIAL, PENDING)).fetchall()
+    return conn.execute("SELECT * FROM trial_tracks WHERE state IN (?, ?) AND account_id=? ORDER BY downloaded_at DESC",
+                        (ON_TRIAL, PENDING, account)).fetchall()
 
 
-def listing(conn, state) -> list:
-    return conn.execute("SELECT * FROM trial_tracks WHERE state=? ORDER BY state_at DESC", (state,)).fetchall()
+def listing(conn, state, account) -> list:
+    return conn.execute("SELECT * FROM trial_tracks WHERE state=? AND account_id=? ORDER BY state_at DESC",
+                        (state, account)).fetchall()
 
 
-def plays_since_download(conn, stats_conn) -> dict:
-    """deezer id -> plays since the track arrived, found by the key its plays carry."""
+def owners(conn) -> list:
+    """The accounts with tracks waiting for a verdict or in the trash."""
+    return [row[0] for row in conn.execute(
+        "SELECT DISTINCT account_id FROM trial_tracks WHERE state IN (?, ?, ?) ORDER BY account_id", (ON_TRIAL, PENDING, TRASH))]
+
+
+def plays_of_everyone(conn) -> dict:
+    """deezer id -> plays since download, every track counted in its owner's
+    history: for the disk limits, which every profile shares."""
     found = {}
-    for row in active(conn):
+    for account in {row["account_id"] for row in active(conn, None)}:
+        if not stats_db.has_history(account):
+            continue
+        stats = stats_db.connect(account)
+        try:
+            found.update(plays_since_download(conn, stats, account))
+        finally:
+            stats.close()
+    return found
+
+
+def plays_since_download(conn, stats_conn, account) -> dict:
+    """deezer id -> plays since the track arrived, found by the key its plays
+    carry in its owner's history (stats_conn)."""
+    found = {}
+    for row in active(conn, account):
         count = stats_conn.execute(
             "SELECT COUNT(*) FROM plays p JOIN tracks t ON t.id = p.track_id WHERE t.key=? AND p.listened_at>=?",
             (row["track_key"], row["downloaded_at"]),
@@ -392,26 +426,58 @@ _marks_cache = {}
 _marks_lock = threading.Lock()
 
 
-def _read_annotations(source) -> list:
-    """(path, starred, rating) of every file Navidrome has a mark for, from a copy."""
+def _read_annotations(source) -> tuple:
+    """({user id: name}, [(user id, path, starred, rating)]) of every file a
+    Navidrome user marked, from a copy."""
+    import sqlite3
+
     from core import stats_import
 
     with tempfile.TemporaryDirectory(dir=config.DATA_DIR) as folder:
         nd = stats_import._open_copy(source, Path(folder), "navidrome.db",
-                                     {"media_file": {"id", "path"}, "annotation": {"item_id", "starred", "rating"}},
+                                     {"media_file": {"id", "path"}, "annotation": {"item_id", "starred", "rating", "user_id"}},
                                      "Navidrome")
         try:
-            return [(r["path"], r["starred"], r["rating"]) for r in nd.execute(
-                "SELECT m.path, MAX(a.starred) AS starred, MAX(a.rating) AS rating FROM annotation a"
-                " JOIN media_file m ON m.id = a.item_id WHERE a.item_type='media_file' GROUP BY m.path"
+            try:
+                users = {r["id"]: r["user_name"] or "" for r in nd.execute('SELECT id, user_name FROM "user"')}
+            except sqlite3.DatabaseError:
+                users = {}
+            rows = [(r["user_id"], r["path"], r["starred"], r["rating"]) for r in nd.execute(
+                "SELECT a.user_id, m.path, a.starred, a.rating FROM annotation a"
+                " JOIN media_file m ON m.id = a.item_id WHERE a.item_type='media_file'"
             )]
+            return users, rows
         finally:
             nd.close()
 
 
-def navidrome_marks(conn, now=None):
-    """deezer id -> star and rating in Navidrome; None when its database is not
-    mounted. Copying that database takes a while: it is read once an hour at most."""
+def _user_of(account, users, rows):
+    """The Navidrome user whose stars decide for this account: the one its test
+    found, else the one with its user name. When Navidrome has a single user,
+    or a single user ever marked anything, those marks are the install's."""
+    from core import nd_accounts
+
+    profile = nd_accounts.get(account) or {}
+    if profile.get("navidrome_user_id") in users:
+        return profile["navidrome_user_id"]
+    name = (profile.get("username") or "").strip().casefold()
+    for user_id, user_name in users.items():
+        if name and user_name.casefold() == name:
+            return user_id
+    if account == (nd_accounts.owner_fallback() or stats_db.FIRST_ACCOUNT):
+        if len(users) == 1:
+            return next(iter(users))
+        markers = {row[0] for row in rows}
+        if len(markers) == 1:
+            return next(iter(markers))
+    return None
+
+
+def navidrome_marks(conn, account, now=None):
+    """deezer id -> star and rating its owner gave in Navidrome, for this
+    account's quarantine; None when Navidrome's database is not mounted. Another
+    user's stars do not count. Copying that database takes a while: it is read
+    once an hour at most."""
     from core import stats_import
 
     source = stats_import._navidrome_path()
@@ -419,13 +485,17 @@ def navidrome_marks(conn, now=None):
         return None
     now = now if now is not None else time.time()
     with _marks_lock:
-        read_at, rows = _marks_cache.get(str(source), (None, None))
+        read_at, found = _marks_cache.get(str(source), (None, None))
         if read_at is None or now - read_at >= MARKS_EVERY:
-            rows = _read_annotations(source)
-            _marks_cache[str(source)] = (now, rows)
-    by_name = {f"trial/{Path(r['path']).name}": r["deezer_id"] for r in active(conn)}
+            found = _read_annotations(source)
+            _marks_cache[str(source)] = (now, found)
+    users, rows = found
+    user = _user_of(account, users, rows)
+    by_name = {f"trial/{Path(r['path']).name}": r["deezer_id"] for r in active(conn, account)}
     marks = {}
-    for path, starred, rating in rows:
+    for user_id, path, starred, rating in rows:
+        if user_id != user:
+            continue
         parts = Path(path).as_posix().split("/")
         deezer_id = by_name.get("/".join(parts[-2:]))
         if deezer_id:
@@ -445,10 +515,12 @@ def paths_in_regular_playlists() -> set:
     return found
 
 
-def usage(conn, plays) -> dict:
-    """What the download limits look at. A track waiting for your decision still
-    takes space, so it counts in the size."""
-    rows = active(conn)
+def usage(conn, plays, account=None) -> dict:
+    """What the download limits look at, for everyone's quarantine unless an
+    account is named: the limits are the same for every profile, as they share
+    the disk. A track waiting for a decision still takes space, so it counts in
+    the size."""
+    rows = active(conn, account)
     return {
         "unheard": sum(1 for r in rows if r["state"] == ON_TRIAL and not plays.get(r["deezer_id"])),
         "bytes": sum(r["size"] for r in rows),

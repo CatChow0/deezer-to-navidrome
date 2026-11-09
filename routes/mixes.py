@@ -1,22 +1,26 @@
-"""The generated playlists: which versions run, and the tracks in quarantine."""
+"""The generated playlists: which versions run, and the tracks in quarantine, for
+the profile of this browser. Each profile has its own."""
 import logging
 import time
 
-from flask import Blueprint, Response, jsonify, request
+from flask import Blueprint, Response, jsonify, request, session
 
-from core import account_context, mix_builder, metadata_fix, mixes_db, stats_db, stats_import, trial
+from core import account_context, mix_builder, metadata_fix, mixes_db, nd_accounts, stats_db, stats_import, trial
 
 logger = logging.getLogger(__name__)
 
 mixes_bp = Blueprint("mixes", __name__)
 
 
+def _profile():
+    return account_context.resolve(request, session)
+
+
 def _source(mix_id) -> str:
-    if mix_id.startswith("auto-discover"):
-        return "Discover"
-    if mix_id.startswith("auto-blend"):
-        return "Daily Mix+"
-    return "Other"
+    from core.deezer import parse_auto_id
+
+    parsed = parse_auto_id(mix_id)
+    return {"discover": "Discover", "blend": "Daily Mix+"}.get(parsed[1] if parsed else "", "Other")
 
 
 def _track(row, plays, now, rules) -> dict:
@@ -36,30 +40,32 @@ def _track(row, plays, now, rules) -> dict:
     }
 
 
-def _state(conn) -> dict:
+def _state(conn, account) -> dict:
     now = int(time.time())
-    stats = stats_db.connect(account_context.made_for_you_account())
+    stats = stats_db.connect(account)
     try:
-        plays = trial.plays_since_download(conn, stats)
+        plays = trial.plays_since_download(conn, stats, account)
     finally:
         stats.close()
     entries = mix_builder.library_entries()
     analysis = metadata_fix.status(conn, entries)
     analysis["running"] = metadata_fix.is_running()
-    usage = trial.usage(conn, plays)
-    settings = mix_builder.load_settings(conn)
+    settings = mix_builder.load_settings(conn, account)
     rules = trial.rules_from(settings)
+    profile = nd_accounts.get(account) or {}
     return {
+        "profile": {"id": account, "label": profile.get("label") or account, "several": len(mix_builder.accounts()) > 1},
         "settings": settings,
         "downloads_blocked": mix_builder.downloads_possible(),
         "analysis": analysis,
         "running": mix_builder.is_running(),
-        "last_run": mixes_db.get_meta(conn, "last_run"),
+        "last_run": mix_builder.last_run(conn, account),
         "navidrome_mounted": stats_import._navidrome_path().is_file(),
-        "usage": usage,
-        "on_trial": [_track(r, plays, now, rules) for r in trial.listing(conn, trial.ON_TRIAL)],
-        "pending": [_track(r, plays, now, rules) for r in trial.listing(conn, trial.PENDING)],
-        "trash": [_track(r, plays, now, rules) for r in trial.listing(conn, trial.TRASH)],
+        # The disk limits are every profile's: so is what they count.
+        "usage": trial.usage(conn, trial.plays_of_everyone(conn)),
+        "on_trial": [_track(r, plays, now, rules) for r in trial.listing(conn, trial.ON_TRIAL, account)],
+        "pending": [_track(r, plays, now, rules) for r in trial.listing(conn, trial.PENDING, account)],
+        "trash": [_track(r, plays, now, rules) for r in trial.listing(conn, trial.TRASH, account)],
     }
 
 
@@ -67,7 +73,7 @@ def _state(conn) -> dict:
 def state():
     conn = mixes_db.connect()
     try:
-        return jsonify(_state(conn))
+        return jsonify(_state(conn, _profile()))
     finally:
         conn.close()
 
@@ -85,25 +91,26 @@ def settings():
         blocked = mix_builder.downloads_possible()
         if blocked:
             return jsonify({"ok": False, "error": blocked}), 400
+    account = _profile()
     conn = mixes_db.connect()
     try:
         try:
-            mix_builder.save_settings(conn, body)
+            mix_builder.save_settings(conn, account, body)
         except (TypeError, ValueError):
             return jsonify({"ok": False, "error": "Limits must be numbers"}), 400
         if mode is not None:
-            mix_builder.set_mix_mode(conn, mode)
+            mix_builder.set_mix_mode(conn, account, mode)
         if discover is not None:
-            mix_builder.set_discover(conn, bool(discover))
+            mix_builder.set_discover(conn, account, bool(discover))
         if mix_builder.TRIAL_KEYS & set(body):
-            # New rules apply to what is already in quarantine, now.
+            # New rules apply to what is already in this quarantine, now.
             conn.close()
-            mix_builder.review_quarantine()
+            mix_builder.review_quarantine(accounts=[account])
             conn = mixes_db.connect()
         if mode in ("daily", "blend") or discover:
             mixes_db.set_meta(conn, "metadata_fix_paused", False)
             metadata_fix.start_background(mix_builder.library_entries)
-        return jsonify({"ok": True, **_state(conn)})
+        return jsonify({"ok": True, **_state(conn, account)})
     finally:
         conn.close()
 
@@ -141,33 +148,38 @@ def undo_metadata():
 @mixes_bp.post("/api/mixes/generate")
 def generate():
     if mix_builder.is_running():
-        return jsonify({"ok": False, "error": "Your mixes are already being generated"}), 409
+        return jsonify({"ok": False, "error": "Mixes are already being generated: try again when they are done"}), 409
+    account = _profile()
     conn = mixes_db.connect()
     try:
-        current = mix_builder.load_settings(conn)
+        current = mix_builder.load_settings(conn, account)
     finally:
         conn.close()
     versions = mix_builder.enabled_versions(current)
     if not versions:
         return jsonify({"ok": False, "error": "Turn on at least one version first"}), 400
-    return jsonify({"ok": True, "task_id": mix_builder.start_task(versions)})
+    return jsonify({"ok": True, "task_id": mix_builder.start_task(account, versions)})
 
 
-def _update_trial_playlist(conn) -> None:
+def _update_trial_playlist(conn, account) -> None:
     """The decision is made and the file has moved: a playlist that cannot be
     written (an unmapped folder, say) must not make it look like a failure."""
     try:
-        mix_builder.publish_trial_playlist(conn)
+        mix_builder.publish_trial_playlist(conn, account)
     except (OSError, ValueError) as e:
         logger.warning("Could not update the On trial playlist: %s", e)
 
 
 def _decide(action, deezer_id):
+    account = _profile()
     conn = mixes_db.connect()
     try:
+        row = trial.get(conn, deezer_id)
+        if row is None or row["account_id"] != account:
+            return jsonify({"ok": False, "error": "This track is not in this profile's quarantine"}), 404
         action(conn, deezer_id, int(time.time()))
-        _update_trial_playlist(conn)
-        return jsonify({"ok": True, **_state(conn)})
+        _update_trial_playlist(conn, account)
+        return jsonify({"ok": True, **_state(conn, account)})
     except (trial.TrialError, OSError) as e:
         return jsonify({"ok": False, "error": str(e)}), 400
     finally:
@@ -214,31 +226,34 @@ def keep_pending():
     ids = body.get("ids")
     if not isinstance(ids, list):
         return jsonify({"ok": False, "error": "Expected the tracks to keep"}), 400
+    account = _profile()
     conn = mixes_db.connect()
     try:
-        kept = trial.keep_all_pending(conn, int(time.time()), [str(i) for i in ids])
-        _update_trial_playlist(conn)
-        return jsonify({"ok": True, "kept": kept, **_state(conn)})
+        kept = trial.keep_all_pending(conn, account, int(time.time()), [str(i) for i in ids])
+        _update_trial_playlist(conn, account)
+        return jsonify({"ok": True, "kept": kept, **_state(conn, account)})
     finally:
         conn.close()
 
 
 @mixes_bp.post("/api/mixes/trial/empty-trash")
 def empty_trash():
+    account = _profile()
     conn = mixes_db.connect()
     try:
-        deleted = trial.empty_trash(conn, int(time.time()))
-        return jsonify({"ok": True, "deleted": deleted, **_state(conn)})
+        deleted = trial.empty_trash(conn, account, int(time.time()))
+        return jsonify({"ok": True, "deleted": deleted, **_state(conn, account)})
     finally:
         conn.close()
 
 
 @mixes_bp.post("/api/mixes/trial/remove-pending")
 def remove_pending():
+    account = _profile()
     conn = mixes_db.connect()
     try:
-        removed = trial.remove_all_pending(conn, int(time.time()))
-        _update_trial_playlist(conn)
-        return jsonify({"ok": True, "removed": removed, **_state(conn)})
+        removed = trial.remove_all_pending(conn, account, int(time.time()))
+        _update_trial_playlist(conn, account)
+        return jsonify({"ok": True, "removed": removed, **_state(conn, account)})
     finally:
         conn.close()

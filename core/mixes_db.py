@@ -1,6 +1,12 @@
 """The generated playlists' own state, in SQLite: what each mix already proposed
 and the tracks on trial. Kept apart from stats.db, since Start clean empties the
-listening history and a trial must outlive that."""
+listening history and a trial must outlive that.
+
+Each Navidrome account has its own settings, mixes and quarantine: the tracks
+on trial say whose they are, and meta keys carry the account (core/mix_builder
+.py), except the install's, which keeps the names it always had. What concerns
+the library itself is shared: tempo and genres, the related artists, the
+publications in Navidrome."""
 import json
 import sqlite3
 from pathlib import Path
@@ -99,6 +105,9 @@ CREATE TABLE IF NOT EXISTS navidrome_playlists (
 # an existing table as it is.
 _ADDED_COLUMNS = {
     "publications": {"custom_title": "TEXT NOT NULL DEFAULT ''"},
+    # Whose quarantine the track is in: the tracks from before profiles are the
+    # install's account's.
+    "trial_tracks": {"account_id": "TEXT NOT NULL DEFAULT 'nd1'"},
 }
 
 

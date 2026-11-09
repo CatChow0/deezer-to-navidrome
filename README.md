@@ -60,7 +60,7 @@ If you self-host your music with Navidrome but discover it on Deezer, this app k
 
 The interface has four views: **Dashboard**, **Stats**, **Releases** and **Settings**. Long tasks (scans, downloads, library refreshes) run in the background and show their progress in the **Activity** cell, so the rest of the page stays usable.
 
-**Made for you** builds playlists from what you listen to: Daily Mix from music you already have, Daily Mix+ with a share of tracks to download (a third by default), and Discover with only tracks you never heard. Mixes form around a track, an album or an artist that keeps coming back, using tempo and genre. One switch chooses Off, Daily Mix or Daily Mix+, Discover has its own, and **Manage** sets how often they refresh, their length, the share of new tracks and the disk limits. **Fix missing metadata** finds what your files lack (tempo measured from the audio, genre from Deezer) and adds it to their tags without replacing anything: in the free space of a FLAC header, saved first so a brutal stop can put it back, or on a copy checked against the original. What these playlists download stays on trial: played enough, or starred or well rated in Navidrome, it waits under To review for you to keep it; otherwise it goes to the trash at the end of its trial. Every rule can be changed in **Manage**, and the lists can be searched, sorted and filtered. Everything is off until you turn it on.
+**Made for you** builds playlists from what you listen to: Daily Mix from music you already have, Daily Mix+ with a share of tracks to download (a third by default), and Discover with only tracks you never heard. Mixes form around a track, an album or an artist that keeps coming back, using tempo and genre. One switch chooses Off, Daily Mix or Daily Mix+, Discover has its own, and **Manage** sets how often they refresh, their length, the share of new tracks and the disk limits. **Fix missing metadata** finds what your files lack (tempo measured from the audio, genre from Deezer) and adds it to their tags without replacing anything: in the free space of a FLAC header, saved first so a brutal stop can put it back, or on a copy checked against the original. What these playlists download stays on trial: played enough, or starred or well rated in Navidrome, it waits under To review for you to keep it; otherwise it goes to the trash at the end of its trial. Every rule can be changed in **Manage**, and the lists can be searched, sorted and filtered. Everything is off until you turn it on. Each Navidrome profile has its own mixes, settings and quarantine (see [Made for you per profile](#made-for-you-per-profile)).
 
 Two buttons in the topbar explain the app. **New** keeps the notes of each version, one tab each, and shows a dot after an upgrade until you open it. **Help** is a full guide with a search: how each part works, every setting, and what to do when something goes wrong, with live checks of your Deezer account and downloads folder.
 
@@ -316,7 +316,16 @@ The route checks the tokens itself, even with `DISABLE_AUTH`: the token says who
 - **Maloja is the install's.** It kept one person's plays, so only the install's account reads it.
 - **Shared work.** Covers and what Deezer said about a track are found once and serve every history.
 - **A removed account** takes its history to `backups/removed-accounts/` and its token stops working.
-- Made for you and the quarantine still read the install's history, until they are made per profile in a next step.
+- Made for you reads each profile's own history: see below.
+
+### Made for you per profile
+
+- **Each profile its own mixes.** Daily Mix, Daily Mix+ and Discover are built from the profile's listening history, Discover from the releases of its Deezer account, and published for that Navidrome user only. The install's playlists keep their IDs (`auto-daily-1`); the other profiles' carry theirs (`auto-nd2-daily-1`).
+- **Its own settings and quarantine.** **Manage** shows those of the profile chosen at the top of the page: its versions, refresh rate, length and trial rules, and the tracks it downloaded. A track is decided with its owner's plays and its owner's stars in Navidrome only; another profile cannot keep or remove it.
+- **Shared disk limits.** The unheard tracks and the quarantine size count every profile together, since they share the disk.
+- **Shared library.** A track on trial for one profile is never fetched for another and never shows in another's mixes. A file used by anyone's own playlist is never deleted.
+- **One profile at a time.** Mixes are built for one profile after the other, as they share the Deezer quota.
+- **A removed profile** takes its playlists out of Navidrome and of the app (a playlist shared with other profiles stays for them), and its tracks in quarantine go to the install's account.
 
 ### Importing your history
 
@@ -368,7 +377,7 @@ Both back up the profile's history first (the last 3, as `stats.db.bak-*` in `DA
 | `stats/nd2.db`… | Listening history of the other Navidrome accounts | As above |
 | `stats.db.bak-*`, `stats/*.db.bak-*` | Backups made before each rebuild (the last 3 of each history) | Replaced by newer ones |
 | `backups/removed-accounts/` | The history of each removed Navidrome account | Delete it when you no longer need it |
-| `mixes.db` | Made for you (quarantine, mix history, settings), tempo and genre results, and the playlists published in Navidrome | Survives **Reset data** and Start clean |
+| `mixes.db` | Made for you of every profile (quarantine, mix history, settings), tempo and genre results, and the playlists published in Navidrome | Survives **Reset data** and Start clean |
 | `backups/pre-1.16.0/` | The saved playlists and `secrets.json` as they were before 1.16 | Can be deleted once 1.16 works for you |
 | `metadata_journal/` | Saved FLAC headers while Fix missing metadata writes them | Emptied as each file is done, or at the next start |
 | `trial_trash/` | Tracks removed from quarantine | Deleted after the days chosen in Manage, 30 by default |
@@ -719,7 +728,7 @@ The web interface asks for a sign-in. On the first visit, the app asks you to cr
 - Playlists added go to the account of the browser, the dashboard shows that account's playlists, and **Delete** takes a shared playlist away from this account only. A deleted playlist also leaves Navidrome: Navidrome keeps a playlist it imported from a `.m3u8` even once the file is gone, so the app removes that copy through the API when the account has its password.
 - **In step with Navidrome.** Every 10 minutes, and when the dashboard opens, the app reads each user's playlists: a playlist of the app deleted there leaves that profile (and the app when no other profile has it), and one renamed there keeps its new name. If every playlist of the app vanishes at once, the app takes it as a reset of Navidrome and publishes them again. **Also in Navidrome** shows, read-only, the playlists the user made by hand there.
 - Each account chooses its Deezer account under **Deezer account** in its form: see below.
-- Each profile has its own listening history: see [Histories per profile](#histories-per-profile). Made for you per profile comes in the next step of this version.
+- Each profile has its own listening history and its own Made for you: see [Histories per profile](#histories-per-profile) and [Made for you per profile](#made-for-you-per-profile).
 
 #### Deezer accounts
 
@@ -899,7 +908,7 @@ All routes need a signed-in session, except `/health` and the three routes the A
 
 | Endpoint | Method | Purpose |
 |----------|--------|---------|
-| `/api/mixes` | GET | Settings, metadata status and quarantine |
+| `/api/mixes` | GET | Settings, metadata status and quarantine of this browser's profile |
 | `/api/mixes/settings` | POST | Mode (`mix_mode`: `off`, `daily`, `blend`), `discover`, limits and trial rules (`trial_*`, `trash_days`) |
 | `/api/mixes/generate` | POST | Build what is turned on now |
 | `/api/mixes/trial/<id>/keep`, `/remove`, `/restore` | POST | Decide about one track |

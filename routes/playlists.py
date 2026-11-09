@@ -28,7 +28,7 @@ from core.deezer import (
     save_playlists,
 )
 from core import account_context, crossplatform, nd_accounts, publish
-from core.deezer import accounts_for, give_to_account, set_accounts
+from core.deezer import accounts_for, give_to_account, is_auto_id, set_accounts
 from core.utils import extract_playlist_id
 from core.xp_sources import MAX_CSV_BYTES, SourceError, spotify_playlist_id
 from core import scheduler
@@ -206,6 +206,8 @@ def playlist_accounts_route(playlist_id):
     """The Navidrome accounts this playlist goes to."""
     body = request.get_json(silent=True) or {}
     wanted = body.get("accounts")
+    if is_auto_id(playlist_id):
+        return jsonify({"ok": False, "error": "A generated playlist belongs to its profile"}), 409
     known = {a["id"] for a in nd_accounts.list_accounts()}
     if not isinstance(wanted, list) or not wanted or any(a not in known for a in wanted):
         return jsonify({"ok": False, "error": "Choose at least one Navidrome account"}), 400

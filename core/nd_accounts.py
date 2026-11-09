@@ -246,17 +246,48 @@ def update(account_id, fields: dict, now=None) -> dict:
 
 
 def delete(account_id) -> None:
+    """Removes an account. Its playlists first leave its Navidrome, while its
+    password is still known, and its tracks in quarantine go to the install's
+    account; then its history is kept aside."""
     with _lock:
         data = _read()
         if not any(a["id"] == account_id for a in data["accounts"]):
             raise AccountError("Unknown Navidrome account.")
         if len(data["accounts"]) == 1:
             raise AccountError("The last Navidrome account cannot be removed.")
+    _before_removal(account_id)
+    with _lock:
+        data = _read()
         data["accounts"] = [a for a in data["accounts"] if a["id"] != account_id]
-        if data.get("default") == account_id:
+        if data["accounts"] and data.get("default") == account_id:
             data["default"] = data["accounts"][0]["id"]
         _write(data)
     _after_removal(account_id)
+
+
+def _heir(account_id):
+    """Who takes over what a removed account leaves: the install's account, else
+    the default one, else the first."""
+    others = [a for a in list_accounts() if a["id"] != account_id]
+    legacy = next((a["id"] for a in others if a.get("legacy")), None)
+    default = default_id()
+    return legacy or (default if default != account_id else None) or (others[0]["id"] if others else None)
+
+
+def _before_removal(account_id) -> None:
+    from core import mix_builder, publish
+
+    try:
+        report = publish.forget_account(account_id)
+        logger.info("Playlists of %s: %s", account_id, report)
+    except Exception as e:
+        logger.error("The playlists of %s could not all leave Navidrome: %s", account_id, e)
+    heir = _heir(account_id)
+    if heir:
+        try:
+            mix_builder.forget_account(account_id, heir)
+        except Exception as e:
+            logger.error("The quarantine of %s could not go to %s: %s", account_id, heir, e)
 
 
 def _after_removal(account_id) -> None:

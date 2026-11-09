@@ -178,7 +178,7 @@ class FixCancel(unittest.TestCase):
                 mock.patch("core.metadata_fix.start_background") as start:
             mixes_db.set_meta(self.conn, "metadata_fix_on", True)
             mb.tick(1_800_000_000)
-            mb.save_settings(self.conn, {"mix_mode": "daily"})
+            mb.save_settings(self.conn, "nd1", {"mix_mode": "daily"})
             mb.tick(1_800_000_000)
         start.assert_not_called()
 
@@ -259,7 +259,7 @@ class MixCancel(unittest.TestCase):
         for suffix in ("", "-wal", "-shm"):
             Path(f"{mixes_db.db_path()}{suffix}").unlink(missing_ok=True)
         with mock.patch("core.mix_builder.generate", side_effect=TaskCancelled()):
-            task = mb.start_task(["daily"])
+            task = mb.start_task("nd1", ["daily"])
             for _ in range(100):
                 if config.TASKS[task]["done"]:
                     break

@@ -33,13 +33,6 @@ def deezer_account(request, session):
     return deezer_account_of(resolve(request, session))
 
 
-def made_for_you_account():
-    """Whose history Made for you and the quarantine read: still one set of
-    mixes, the install's account (else the default one), until they are made
-    per profile."""
-    return nd_accounts.owner_fallback() or "nd1"
-
-
 def select(session, account_id) -> None:
     if nd_accounts.get(account_id) is None:
         raise nd_accounts.AccountError("Unknown Navidrome account.")

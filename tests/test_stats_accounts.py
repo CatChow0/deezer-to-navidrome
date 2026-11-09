@@ -317,11 +317,8 @@ class Shared(Base):
         with closing(stats_db.connect("nd2")) as conn:
             self.assertEqual(conn.execute("SELECT file_path FROM tracks").fetchone()[0], str(Path("/music/new.flac")))
 
-    def test_made_for_you_reads_the_installs_history_until_it_is_per_profile(self):
-        from core import account_context
-
+    def test_maloja_stays_the_installs_whatever_the_default(self):
         nd_accounts.set_default(self.bob)
-        self.assertEqual(account_context.made_for_you_account(), "nd1")
         self.assertEqual(stats_import.maloja_account(), "nd1")
 
 

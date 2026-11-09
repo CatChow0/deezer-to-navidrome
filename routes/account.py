@@ -259,7 +259,7 @@ def accounts_with_stale_feeds() -> list:
 def refresh_releases_route():
     account_id = _deezer_account()
     if not account_id or not deezer_accounts.arl(account_id):
-        return jsonify({"ok": False, "error": "Connect a Deezer account in Settings first"}), 400
+        return jsonify({"ok": False, "error": "Add a Deezer account in Settings → Deezer accounts first"}), 400
     label = deezer_accounts.get(account_id)["label"]
     task_id = start_release_refresh(f"Release feed refresh: {label}", account=account_id)
     if task_id is None:

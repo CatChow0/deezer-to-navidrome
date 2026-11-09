@@ -1,4 +1,4 @@
-<p>The app now works for several Navidrome users and several Deezer accounts: each playlist goes to the users you choose, as their own playlist, and each user follows the releases and mixes of their own Deezer account. Each user also has their own listening history and recaps. Made for you per user comes next.</p>
+<p>The app now works for several Navidrome users and several Deezer accounts: each playlist goes to the users you choose, as their own playlist, and each user follows the releases and mixes of their own Deezer account. Each user also has their own listening history, recaps and Made for you.</p>
 
 <ul class="help-list">
   <li><strong>Navidrome accounts.</strong> <b>Settings → Navidrome accounts</b> lists the Navidrome users this app works for. Add one with the address of your Navidrome, a user name and its password, test the connection, edit it, make it the default, or remove it.</li>
@@ -15,6 +15,9 @@
   <li><strong>Releases and mixes per profile.</strong> Each Navidrome account chooses its Deezer account in its form, the default one otherwise. The Releases tab, its muted artists and <b>Choose mixes</b> follow it, and a mix of another account is read with that account. CatBoard keeps reading the default profile's feed.</li>
   <li><strong>A history for each user.</strong> Each Navidrome account has its own listening history, recaps and token: the Stats tab follows the profile chosen at the top of the page. Settings → Listening stats shows the token of that profile, to paste in Navidrome by its user.</li>
   <li><strong>Imports read each user's plays.</strong> A rebuild takes only the plays of the profile's Navidrome user, where it used to take everyone's. Maloja's plays stay your install's.</li>
+  <li><strong>Made for you for each user.</strong> Daily Mix, Daily Mix+ and Discover are built from each user's own listening history, Discover from the releases of their Deezer account, and published for them only. <b>Manage</b> shows the settings and the quarantine of the profile chosen at the top of the page.</li>
+  <li><strong>A quarantine for each user.</strong> A track on trial is decided with its owner's plays and their own stars in Navidrome: another user's stars no longer count. The disk limits stay common to everyone, since the disk is.</li>
+  <li><strong>Removing a Navidrome account</strong> takes its playlists out of Navidrome and of the app (a playlist shared with other accounts stays for them), sends its tracks in quarantine to your install's account, and keeps its history aside.</li>
   <li><strong>Encrypted credentials.</strong> Passwords are kept encrypted, and so are the secrets already saved in <code>secrets.json</code> (Deezer ARLs, tokens). None of them is ever shown again or written in a log.</li>
 </ul>
 
@@ -28,6 +31,7 @@
   <li>If every playlist of the app vanishes at once from a Navidrome user, the app takes it as a reset of Navidrome and publishes them again rather than removing them.</li>
   <li>Your Deezer account becomes the first Deezer account, the default one. The premium account you had for downloads becomes a second account, marked for the downloads. <code>DEEZER_ARL</code> and <code>DEEZER_ARL_PREMIUM</code> keep working: their ARL is changed there, not in Settings.</li>
   <li>Your listening history stays in <code>stats.db</code>, unchanged: it is your install's account's. Your token keeps working. For another Navidrome user, choose their profile, make their token in Settings → Listening stats, and link ListenBrainz in Navidrome as that user.</li>
+  <li>Your mixes, settings and quarantine stay as they were: they are your install's account's. Another user's Made for you starts off: turn it on in <b>Manage</b> with their profile chosen.</li>
   <li>Start clean now keeps only your own Navidrome user's plays: if someone else's plays were imported into your history before, it takes them out.</li>
   <li>Your saved playlists and <code>secrets.json</code> are first copied to <code>/data/backups/pre-1.16.0/</code>.</li>
 </ul>
