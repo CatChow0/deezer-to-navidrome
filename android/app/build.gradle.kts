@@ -111,6 +111,11 @@ dependencies {
     implementation(libs.compose.foundation)
     implementation(libs.compose.material3)
 
+    implementation(libs.coil.compose)
+    implementation(libs.media3.exoplayer)
+    implementation(libs.media3.ui)
+    implementation(libs.media3.common)
+
     implementation(libs.okhttp)
     implementation(libs.retrofit)
     implementation(libs.retrofit.kotlinx.serialization)

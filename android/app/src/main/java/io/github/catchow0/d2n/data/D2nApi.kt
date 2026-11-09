@@ -38,4 +38,20 @@ interface D2nApi {
 
     @GET("api/v1/app")
     suspend fun app(): AppInfo
+
+    // Phase 7: Deezer search.
+    @GET("api/v1/search")
+    suspend fun search(@Query("q") query: String, @Query("type") type: String = "track"): SearchResponse
+
+    @GET("api/v1/search/album/{album_id}")
+    suspend fun searchAlbum(@Path("album_id") albumId: String): SearchAlbumResponse
+
+    @GET("api/v1/search/artist/{artist_id}")
+    suspend fun searchArtist(@Path("artist_id") artistId: String): SearchArtistResponse
+
+    @GET("api/v1/preview/{track_id}")
+    suspend fun preview(@Path("track_id") trackId: String): Preview
+
+    @POST("api/v1/library/check")
+    suspend fun libraryCheck(@Body body: LibraryCheckRequest): LibraryCheckResponse
 }

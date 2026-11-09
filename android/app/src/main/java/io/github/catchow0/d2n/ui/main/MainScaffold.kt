@@ -37,6 +37,8 @@ import io.github.catchow0.d2n.ui.about.AboutViewModel
 import io.github.catchow0.d2n.ui.activity.ActivityScreen
 import io.github.catchow0.d2n.ui.activity.ActivityViewModel
 import io.github.catchow0.d2n.ui.activity.TaskScreen
+import io.github.catchow0.d2n.ui.search.SearchScreen
+import io.github.catchow0.d2n.ui.search.SearchViewModel
 import io.github.catchow0.d2n.ui.activity.TaskViewModel
 import io.github.catchow0.d2n.ui.components.Aurora
 import io.github.catchow0.d2n.ui.components.Banner
@@ -52,6 +54,15 @@ object ActivityRoute
 
 @Serializable
 data class TaskRoute(val id: String)
+
+@Serializable
+object SearchRoute
+
+@Serializable
+object PlaylistsRoute
+
+@Serializable
+object MadeForYouRoute
 
 @Serializable
 object AboutRoute
@@ -129,6 +140,15 @@ fun MainScaffold(graph: AppGraph, onSignedOut: (notice: String?) -> Unit, onOthe
                             onBack = { inner.popBackStack() },
                         )
                     }
+                    composable<SearchRoute> {
+                        SearchScreen(viewModel { SearchViewModel(graph::requireApi) })
+                    }
+                    composable<PlaylistsRoute> {
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("Playlists — phase 7", color = D2nColors.Text) }
+                    }
+                    composable<MadeForYouRoute> {
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("Made for you — phase 7", color = D2nColors.Text) }
+                    }
                     composable<AboutRoute> {
                         AboutScreen(
                             viewModel { AboutViewModel(graph::requireApi, graph.store, graph.own) },
@@ -153,6 +173,20 @@ fun MainScaffold(graph: AppGraph, onSignedOut: (notice: String?) -> Unit, onOthe
                     onClick = { inner.navigate(ActivityRoute) { popUpTo(inner.graph.id) { inclusive = true } } },
                     icon = { Icon(painterResource(R.drawable.ic_activity), contentDescription = null) },
                     label = { Text("Activity") },
+                    colors = colors,
+                )
+                NavigationBarItem(
+                    selected = false,
+                    onClick = { inner.navigate(SearchRoute) { launchSingleTop = true } },
+                    icon = { Icon(painterResource(R.drawable.ic_search), contentDescription = null) },
+                    label = { Text("Search") },
+                    colors = colors,
+                )
+                NavigationBarItem(
+                    selected = false,
+                    onClick = { inner.navigate(MadeForYouRoute) { launchSingleTop = true } },
+                    icon = { Icon(painterResource(R.drawable.ic_activity), contentDescription = null) },
+                    label = { Text("Made for you") },
                     colors = colors,
                 )
                 NavigationBarItem(

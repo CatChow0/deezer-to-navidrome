@@ -104,3 +104,91 @@ data class ApiErrorDetail(val code: String, val message: String, @SerialName("re
 
 @Serializable
 data class ApiErrorBody(val error: ApiErrorDetail)
+
+// Phase 7: Deezer search.
+
+@Serializable
+data class SearchResult(
+    val id: String,
+    val type: String = "track",
+    val title: String = "",
+    val subtitle: String? = null,
+    val artist: String? = null,
+    val album: String? = null,
+    val duration: Int? = null,
+    val explicit: Boolean? = null,
+    val cover: String? = null,
+    @SerialName("track_count") val trackCount: Int? = null,
+    @SerialName("nb_album") val nbAlbum: Int? = null,
+    @SerialName("download_type") val downloadType: String? = null,
+    @SerialName("download_id") val downloadId: String? = null,
+)
+
+@Serializable
+data class SearchResponse(val results: List<SearchResult> = emptyList())
+
+@Serializable
+data class SearchAlbumTrack(
+    val id: String = "",
+    val title: String = "",
+    val duration: Int? = null,
+    val artist: String? = null,
+    val preview: String? = null,
+)
+
+@Serializable
+data class SearchAlbum(
+    val id: String = "",
+    val title: String = "",
+    val artist: String? = null,
+    val cover: String? = null,
+    val tracks: List<SearchAlbumTrack> = emptyList(),
+)
+
+@Serializable
+data class SearchAlbumResponse(val album: SearchAlbum? = null)
+
+@Serializable
+data class SearchArtist(val id: String = "", val title: String = "", val cover: String? = null)
+@Serializable
+data class SearchArtistResponse(val artist: SearchArtist? = null)
+
+@Serializable
+data class Preview(
+    val id: String,
+    val title: String = "",
+    val artist: String = "",
+    val album: String = "",
+    val cover: String = "",
+    val preview: String = "",
+    val gain: Int = 0,
+    val link: String = "",
+)
+
+// Phase 7: library check.
+
+@Serializable
+data class LibraryCheckItem(
+    val key: String,
+    val type: String,
+    val id: String = "",
+    val title: String = "",
+    val artist: String = "",
+    val album: String = "",
+    val duration: Int? = null,
+)
+
+@Serializable
+data class LibraryCheckResult(
+    val owned: Boolean? = null,
+    @SerialName("owned_count") val ownedCount: Int? = null,
+    val total: Int? = null,
+    @SerialName("albums_owned") val albumsOwned: Int? = null,
+    @SerialName("tracks_owned") val tracksOwned: Int? = null,
+)
+
+@Serializable
+data class LibraryCheckRequest(val items: List<LibraryCheckItem> = emptyList())
+
+@Serializable
+data class LibraryCheckResponse(val results: Map<String, LibraryCheckResult> = emptyMap())
