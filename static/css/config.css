@@ -425,7 +425,8 @@ body.has-player .save-bar {
   color: var(--text-soft);
 }
 
-.nd-warn {
+.nd-warn,
+.dz-warn {
   color: var(--miss);
 }
 

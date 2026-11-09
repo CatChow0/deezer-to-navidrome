@@ -356,7 +356,7 @@ def download_missing_start(playlist_id: str):
         return jsonify({"error": "No missing tracks to download"}), 400
 
     if not deezer_dl.download_arl():
-        return jsonify({"error": "No Deezer account connected. Add your ARL in Settings."}), 400
+        return jsonify({"error": "No Deezer account for the downloads: add one in Settings → Deezer accounts."}), 400
 
     task_id = create_task(f"Download missing: {playlist_title(playlist_id)}", kind="download-missing", playlist_id=playlist_id)
 

@@ -48,6 +48,31 @@ def playlist_accounts() -> int:
     return len(missing)
 
 
+def deezer_accounts_from_secrets() -> int:
+    """The Deezer account of older versions (deezer_arl), and its premium one used
+    for the downloads (deezer_arl_premium), become Deezer accounts. They then
+    leave secrets.json, after a backup. The environment variables keep working:
+    such an account reads its ARL there."""
+    from core import config, deezer_accounts
+
+    stored = config._read_secrets()
+    fresh = not deezer_accounts.exists()
+    main = config.load_secret("deezer_arl") if fresh and "deezer_arl" in stored else ""
+    download = config.load_secret("deezer_arl_premium") if fresh and "deezer_arl_premium" in stored else ""
+    if fresh and (main or download):
+        backup(config.SECRETS_FILE)
+    if os.environ.get(deezer_accounts.ENV_MAIN, "").strip():
+        main = ""  # The environment variable wins, as it did.
+    if os.environ.get(deezer_accounts.ENV_DOWNLOAD, "").strip():
+        download = ""
+    made = deezer_accounts.ensure_initial(stored_main=main, stored_download=download)
+    if fresh:
+        for name in ("deezer_arl", "deezer_arl_premium"):
+            if name in stored:
+                config.save_secret(name, "")
+    return made
+
+
 def run() -> None:
     from core import config, nd_accounts
 
@@ -63,6 +88,12 @@ def run() -> None:
             logger.info("Navidrome account nd1 created from this install (user: %s)", made["username"] or "unknown")
     except Exception as e:
         logger.error("Could not set up the first Navidrome account: %s", e)
+    try:
+        made = deezer_accounts_from_secrets()
+        if made:
+            logger.info("%s Deezer accounts set up from this install", made)
+    except Exception as e:
+        logger.error("Could not set up the Deezer accounts: %s", e)
     try:
         given = playlist_accounts()
         if given:

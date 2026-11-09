@@ -324,7 +324,7 @@ def _download_request(kind, music_id):
     if not str(music_id).isdigit():
         return jsonify({"error": "invalid id"}), 400
     if not deezer_dl.download_arl():
-        return jsonify({"error": "No Deezer account connected. Add your ARL in Settings."}), 400
+        return jsonify({"error": "No Deezer account for the downloads: add one in Settings → Deezer accounts."}), 400
     playlist_id = str(data.get("playlist_id") or "").strip() or None
     task_id = _start_download(kind, str(music_id), str(data.get("label") or ""), playlist_id)
     return jsonify({"task_id": task_id})
@@ -343,7 +343,7 @@ def repair_downloads_start():
     from core import download_repair
 
     if not deezer_dl.download_arl():
-        return jsonify({"ok": False, "error": "Connect a Deezer account first: the files are downloaded again"}), 400
+        return jsonify({"ok": False, "error": "Add a Deezer account first, in Settings → Deezer accounts: the files are downloaded again"}), 400
     if download_repair.is_running():
         return jsonify({"ok": False, "error": "A repair is already running"}), 409
     task_id = create_task("Repair downloads", kind="download", cancellable=True)

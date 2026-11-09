@@ -1,50 +1,41 @@
+"""Deezer accounts in Settings, and what each profile gets from its Deezer account:
+the release feed of its favorite artists and its mixes (Flow, made for you).
+
+No answer ever carries an ARL: deezer_accounts.public() leaves it out."""
 import threading
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, request, session
 
-from core.config import create_task, load_secret, push_task_event, save_secret, secret_from_env
-from core.deezer import follow_mix, load_playlists, mix_id
-from core.deezer_account import DeezerAccountError, account_status, available_mixes, forget_session
-from core.releases import load_prefs, load_releases, refresh_hours, refresh_lock, refresh_releases, set_muted
+from core import account_context, deezer_accounts
+from core.config import create_task, push_task_event
+from core.deezer import follow_mix, give_to_account, load_playlists, mix_id
+from core.deezer_account import DeezerAccountError, account_status, available_mixes
+from core.releases import is_stale, load_prefs, load_releases, lock_for, refresh_hours, refresh_releases, set_muted
 from core.webhook import notify
 
 account_bp = Blueprint("account", __name__)
 
 
-def _status():
-    if not load_secret("deezer_arl"):
-        return {
-            "connected": False,
-            "name": "",
-            "error": None,
-            "from_env": False,
-            "premium": False,
-            "downloads": _download_status(),
-        }
-    return {**account_status(), "from_env": secret_from_env("deezer_arl"), "downloads": _download_status()}
+def _profile():
+    return account_context.resolve(request, session)
+
+
+def _deezer_account():
+    """The Deezer account of this browser's profile, else the default one."""
+    return account_context.deezer_account(request, session)
 
 
 def _download_status():
-    """What the account used for the downloads can do.
-
-    The downloads use their own ARL when there is one: a free account only
-    gets MP3_128, a premium one gets FLAC."""
+    """What the account used for the downloads can do."""
     from core import deezer_dl
 
-    premium_arl = load_secret("deezer_arl_premium")
-    if premium_arl:
-        info = deezer_dl.account_info()
-        return {
-            "has_premium_arl": True,
-            "premium": bool(info.get("premium")),
-            "format": info.get("format"),
-            "country": info.get("country"),
-            "error": info.get("error"),
-        }
-    # No second account: the downloads use the main one.
+    account_id = deezer_accounts.download_id()
+    account = deezer_accounts.get(account_id) if account_id else None
     info = deezer_dl.account_info()
     return {
-        "has_premium_arl": False,
+        "account": account_id,
+        "label": account["label"] if account else "",
+        "connected": bool(info.get("connected")),
         "premium": bool(info.get("premium")),
         "format": info.get("format"),
         "country": info.get("country"),
@@ -52,84 +43,124 @@ def _download_status():
     }
 
 
+def _accounts_state():
+    return {
+        "ok": True,
+        "accounts": [deezer_accounts.public(a) for a in deezer_accounts.list_accounts()],
+        "default": deezer_accounts.default_id(),
+        "download": deezer_accounts.download_id(),
+        "profile_account": _deezer_account(),
+    }
+
+
+def _error(e, status=400):
+    return jsonify({"ok": False, "error": str(e)}), status
+
+
+def _fields():
+    body = request.get_json(silent=True)
+    return {k: body[k] for k in ("label", "arl") if k in body} if isinstance(body, dict) else None
+
+
+@account_bp.get("/api/deezer/accounts")
+def accounts_route():
+    # Accounts never checked (moved from an older install): signed in once, so
+    # the list shows who they are and what they can download.
+    for account in deezer_accounts.list_accounts():
+        if not account.get("checked_at") and deezer_accounts.arl(account["id"]):
+            try:
+                deezer_accounts.check(account["id"])
+            except deezer_accounts.DeezerAccountsError:
+                pass
+    state = _accounts_state()
+    state["downloads"] = _download_status()
+    return jsonify(state)
+
+
+@account_bp.post("/api/deezer/accounts")
+def add_account_route():
+    fields = _fields()
+    if fields is None:
+        return _error("Expected an account")
+    try:
+        account = deezer_accounts.create(fields)
+    except deezer_accounts.DeezerAccountsError as e:
+        return _error(e)
+    return jsonify({**_accounts_state(), "created": account["id"]})
+
+
+@account_bp.patch("/api/deezer/accounts/<account_id>")
+def edit_account_route(account_id):
+    fields = _fields()
+    if fields is None:
+        return _error("Expected an account")
+    try:
+        deezer_accounts.update(account_id, fields)
+    except deezer_accounts.DeezerAccountsError as e:
+        return _error(e, 404 if deezer_accounts.get(account_id) is None else 400)
+    return jsonify(_accounts_state())
+
+
+@account_bp.delete("/api/deezer/accounts/<account_id>")
+def remove_account_route(account_id):
+    try:
+        deezer_accounts.delete(account_id)
+    except deezer_accounts.DeezerAccountsError as e:
+        return _error(e, 404 if deezer_accounts.get(account_id) is None else 409)
+    return jsonify(_accounts_state())
+
+
+@account_bp.post("/api/deezer/accounts/<account_id>/default")
+def default_account_route(account_id):
+    try:
+        deezer_accounts.set_default(account_id)
+    except deezer_accounts.DeezerAccountsError as e:
+        return _error(e, 404)
+    return jsonify(_accounts_state())
+
+
+@account_bp.post("/api/deezer/accounts/<account_id>/download")
+def download_account_route(account_id):
+    try:
+        deezer_accounts.set_download(account_id)
+    except deezer_accounts.DeezerAccountsError as e:
+        return _error(e, 404)
+    state = _accounts_state()
+    state["downloads"] = _download_status()
+    return jsonify(state)
+
+
+@account_bp.post("/api/deezer/accounts/<account_id>/check")
+def check_account_route(account_id):
+    try:
+        deezer_accounts.check(account_id)
+    except deezer_accounts.DeezerAccountsError as e:
+        return _error(e, 404)
+    return jsonify(_accounts_state())
+
+
 @account_bp.get("/api/deezer/account")
 def account_route():
-    return jsonify({"ok": True, **_status()})
-
-
-@account_bp.post("/api/deezer/account")
-def connect_account_route():
-    arl = str((request.get_json(silent=True) or {}).get("arl") or "").strip()
-    if not arl:
-        return jsonify({"ok": False, "error": "Paste the ARL value first"}), 400
-    status = account_status(arl)
-    if not status["connected"]:
-        forget_session()
-        return jsonify({"ok": False, "error": status["error"]}), 400
-    save_secret("deezer_arl", arl)
-    return jsonify({"ok": True, **_status()})
-
-
-@account_bp.delete("/api/deezer/account")
-def disconnect_account_route():
-    save_secret("deezer_arl", None)
-    forget_session()
-    return jsonify({"ok": True, **_status()})
-
-
-@account_bp.post("/api/deezer/premium-account")
-def connect_premium_route():
-    """Connects the second account, used for the downloads when the first one
-    is free. It must be a premium account: a free one only gets MP3_128."""
-    arl = str((request.get_json(silent=True) or {}).get("arl") or "").strip()
-    if not arl:
-        return jsonify({"ok": False, "error": "Paste the ARL value first"}), 400
-
-    from core.deezer_account import DeezerAccountError, DeezerSession
-
-    try:
-        session = DeezerSession(arl)
-    except DeezerAccountError as e:
-        return jsonify({"ok": False, "error": str(e)}), 400
-    except Exception as e:
-        return jsonify({"ok": False, "error": f"Could not reach Deezer: {e}"}), 502
-
-    if not session.is_premium():
-        return jsonify({
-            "ok": False,
-            "error": "This account is free. It would only download MP3_128; the downloads need a premium account.",
-        }), 400
-
-    save_secret("deezer_arl_premium", arl)
-    from core import deezer_dl
-
-    deezer_dl.forget_sessions()
-    return jsonify({"ok": True, **_status()})
-
-
-@account_bp.delete("/api/deezer/premium-account")
-def disconnect_premium_route():
-    save_secret("deezer_arl_premium", None)
-    from core import deezer_dl
-
-    deezer_dl.forget_sessions()
-    return jsonify({"ok": True, **_status()})
+    """The Deezer account of this browser's profile: whether it is connected."""
+    account_id = _deezer_account()
+    if not account_id:
+        return jsonify({"ok": True, "connected": False, "name": "", "error": None, "premium": False,
+                        "downloads": _download_status()})
+    status = account_status(account_id)
+    return jsonify({"ok": True, **status, "account": account_id, "downloads": _download_status()})
 
 
 @account_bp.get("/api/deezer/mixes")
 def mixes_route():
+    deezer_account = _deezer_account()
     try:
-        found = available_mixes()
+        found = available_mixes(deezer_account)
     except DeezerAccountError as e:
         return jsonify({"ok": False, "error": str(e)}), 400
-    from flask import session
-
-    from core import account_context
-
-    account = account_context.resolve(request, session)
-    followed = {p["id"] for p in load_playlists() if not account or not p.get("accounts") or account in p["accounts"]}
+    profile = _profile()
+    followed = {p["id"] for p in load_playlists() if not profile or not p.get("accounts") or profile in p["accounts"]}
     for mix in found["mixes"]:
-        mix["id"] = mix_id(mix["kind"], mix["source_id"])
+        mix["id"] = mix_id(mix["kind"], mix["source_id"], deezer_account)
         mix["followed"] = mix["id"] in followed
     for playlist in found["playlists"]:
         playlist["followed"] = playlist["id"] in followed
@@ -142,29 +173,30 @@ def follow_mix_route():
     kind, source_id = data.get("kind"), str(data.get("source_id") or "")
     if kind not in ("stl", "flow") or not source_id:
         return jsonify({"ok": False, "error": "Unknown mix"}), 400
-    from flask import session
-
-    from core import account_context
-    from core.deezer import give_to_account
-
-    account = account_context.resolve(request, session)
+    profile = _profile()
     try:
-        pid, added = follow_mix(kind, source_id, str(data.get("title") or "Mix"), accounts=[account] if account else None)
+        pid, added = follow_mix(kind, source_id, str(data.get("title") or "Mix"),
+                                accounts=[profile] if profile else None, deezer_account=_deezer_account())
     except DeezerAccountError as e:
         return jsonify({"ok": False, "error": str(e)}), 400
-    if not added and account:
-        added = give_to_account(pid, account)
+    if not added and profile:
+        added = give_to_account(pid, profile)
     return jsonify({"ok": True, "id": pid, "added": added})
 
 
 @account_bp.get("/api/releases")
 def releases_route():
+    """The feed of the Deezer account of this browser's profile. An app with the
+    API token has no profile: it gets the default one's."""
+    account_id = _deezer_account()
+    account = deezer_accounts.get(account_id) if account_id else None
     return jsonify({
         "ok": True,
-        "connected": bool(load_secret("deezer_arl")),
+        "connected": bool(account_id and deezer_accounts.arl(account_id)),
+        "deezer_account": {"id": account_id, "label": account["label"], "name": account.get("name") or ""} if account else None,
         "refresh_hours": refresh_hours(),
-        "muted": load_prefs()["muted"],
-        **load_releases(),
+        "muted": load_prefs(account_id)["muted"],
+        **load_releases(account_id),
     })
 
 
@@ -174,14 +206,17 @@ def mute_artist_route():
     artist_id = str(data.get("artist_id") or "")
     if not artist_id.isdigit():
         return jsonify({"ok": False, "error": "Unknown artist"}), 400
-    prefs = set_muted(artist_id, str(data.get("name") or ""), bool(data.get("muted")))
+    prefs = set_muted(artist_id, str(data.get("name") or ""), bool(data.get("muted")), account=_deezer_account())
     notify("releases.updated", reason="muted")
     return jsonify({"ok": True, "muted": prefs["muted"]})
 
 
-def start_release_refresh(title="Release feed refresh"):
-    """Runs the refresh in the background unless one is already running; returns the task ID or None."""
-    if not refresh_lock.acquire(blocking=False):
+def start_release_refresh(title="Release feed refresh", account=None):
+    """Runs the refresh of one account's feed in the background unless one is
+    already running for it; returns the task ID or None."""
+    account = account or deezer_accounts.default_id()
+    lock = lock_for(account)
+    if not lock.acquire(blocking=False):
         return None
     task_id = create_task(title, kind="releases", cancellable=True)
 
@@ -190,7 +225,8 @@ def start_release_refresh(title="Release feed refresh"):
             feed = refresh_releases(
                 progress_cb=lambda message=None, progress=None, stage=None: push_task_event(
                     task_id, message=message, progress=progress, stage=stage
-                )
+                ),
+                account=account,
             )
             push_task_event(
                 task_id,
@@ -203,17 +239,29 @@ def start_release_refresh(title="Release feed refresh"):
         except Exception as e:
             push_task_event(task_id, f"Release feed failed: {e}", stage="error", done=True, error=True)
         finally:
-            refresh_lock.release()
+            lock.release()
 
     threading.Thread(target=runner, daemon=True).start()
     return task_id
 
 
+def accounts_with_stale_feeds() -> list:
+    """The Deezer accounts some profile reads its releases from, whose feed is
+    old. For the scheduler."""
+    from core import nd_accounts
+
+    used = {account_context.deezer_account_of(a["id"]) for a in nd_accounts.list_accounts()}
+    used.add(deezer_accounts.default_id())
+    return [a for a in used if a and deezer_accounts.arl(a) and is_stale(a)]
+
+
 @account_bp.post("/api/releases/refresh")
 def refresh_releases_route():
-    if not load_secret("deezer_arl"):
-        return jsonify({"ok": False, "error": "Connect your Deezer account in Settings first"}), 400
-    task_id = start_release_refresh()
+    account_id = _deezer_account()
+    if not account_id or not deezer_accounts.arl(account_id):
+        return jsonify({"ok": False, "error": "Connect a Deezer account in Settings first"}), 400
+    label = deezer_accounts.get(account_id)["label"]
+    task_id = start_release_refresh(f"Release feed refresh: {label}", account=account_id)
     if task_id is None:
-        return jsonify({"ok": False, "error": "The release feed is already refreshing"}), 409
+        return jsonify({"ok": False, "error": "This release feed is already refreshing"}), 409
     return jsonify({"ok": True, "task_id": task_id})

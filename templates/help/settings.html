@@ -47,12 +47,12 @@
   <div class="doc-block">
     <h4>Navidrome accounts</h4>
     <p>The Navidrome users this app works for: the address of your Navidrome, a user name and its password. Navidrome does not accept API keys yet. <b>Test</b> signs in and says whether the user is an admin and which libraries it sees. With Navidrome's database mounted at <code>/import/navidrome</code>, it also finds the user there, so its plays and stars can be told apart.</p>
-    <p>Your install is the first account and keeps working as before, with its <code>.m3u8</code> files. <b>Publish as this user…</b> moves its playlists to Navidrome's API, as that user: it first shows what will change, and if Navidrome refuses a playlist, nothing changes. With two accounts or more, a picker at the top of the page chooses the account of this browser; each browser keeps its own. Passwords are encrypted, with <code>D2N_ENCRYPTION_KEY</code> when it is set, and never shown again. See <a href="#" data-doc-go="playlists">Playlists</a>.</p>
+    <p>Your install is the first account and keeps working as before, with its <code>.m3u8</code> files. <b>Publish as this user…</b> moves its playlists to Navidrome's API, as that user: it first shows what will change, and if Navidrome refuses a playlist, nothing changes. <b>Profile</b>, at the top of the page, chooses the account of this browser; each browser keeps its own. Each account chooses its Deezer account, the default one otherwise. Passwords are encrypted, with <code>D2N_ENCRYPTION_KEY</code> when it is set, and never shown again. See <a href="#" data-doc-go="playlists">Playlists</a>.</p>
   </div>
 
   <div class="doc-block">
-    <h4>Deezer account</h4>
-    <p>The <code>arl</code> cookie of your account, its plan and country. A free account can add a premium one for the downloads only. See <a href="#" data-doc-go="downloads">Downloads</a>.</p>
+    <h4>Deezer accounts</h4>
+    <p>The Deezer accounts the app reads, each with its plan and country. <b>Add an account</b> takes the <code>arl</code> cookie, checked by signing in, then kept encrypted and never shown again. Each Navidrome profile follows the releases and Deezer mixes of the account chosen in its form, else of the default one (<b>Make default</b>). The account marked <b>Use for download</b> fetches the files for every profile. See <a href="#" data-doc-go="downloads">Downloads</a>.</p>
   </div>
 
   <div class="doc-block">

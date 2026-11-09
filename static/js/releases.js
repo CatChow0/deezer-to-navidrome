@@ -176,7 +176,7 @@ function renderMeta(data) {
   if (refresh) refresh.disabled = !data.connected;
 
   if (!data.connected) {
-    meta.innerHTML = 'Connect your Deezer account to follow the releases of your favorite artists. <a href="/config" data-view-link="settings">Open Settings</a>';
+    meta.innerHTML = 'Add a Deezer account to follow the releases of your favorite artists. <a href="/config" data-view-link="settings">Open Settings</a>';
   } else if (!data.updated_at) {
     meta.textContent = 'The feed has not been built yet. It starts on its own within a minute, or refresh it now.';
   } else {
@@ -188,7 +188,8 @@ function renderMeta(data) {
       : hours % 24 === 0
         ? `refreshed every ${hours === 24 ? 'day' : hours === 168 ? 'week' : `${hours / 24} days`}`
         : `refreshed every ${hours} hours`;
-    meta.textContent = `${data.artists} favorite artists, releases from the last ${data.window_days} days. Updated ${when}; ${schedule}.`;
+    const whose = data.deezer_account ? ` of ${data.deezer_account.label}` : '';
+    meta.textContent = `${data.artists} favorite artists${whose}, releases from the last ${data.window_days} days. Updated ${when}; ${schedule}.`;
   }
 }
 

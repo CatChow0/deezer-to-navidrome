@@ -50,7 +50,7 @@ services:
       HOST_TO_NAVIDROME_ROOT: "/music/deezer-dl:/deezer-dl,/music/library:/music"
       LIBRARY_WORKERS_PER_DIR: "2"   # 2=HDD  4=RAID  8=SSD
       MATCH_WORKERS: "4"             # set to your Docker CPU count
-      # DEEZER_ARL: ""               # or paste it in Settings
+      # DEEZER_ARL: ""               # or add it in Settings
     volumes:
       - ./data:/data
       - /path/on/host/deezer-dl:/music/deezer-dl   # downloads land here (writable)
@@ -67,16 +67,13 @@ docker compose up -d
 
 ## Downloads
 
-Downloads use the `arl` cookie of a Deezer account (**Settings → Deezer account**, or `DEEZER_ARL`).
+Downloads use the `arl` cookie of a Deezer account (**Settings → Deezer accounts**, or `DEEZER_ARL`). Several accounts can be added: the one marked **Use for download** fetches the files for everyone, and each Navidrome profile follows the releases and mixes of its own Deezer account, the default one otherwise.
 
-| Account | Badge | Format |
+| Account used for downloads | Badge | Format |
 |---|---|---|
 | Premium (HiFi) | `Premium` | FLAC |
 | Premium, high quality only | `Premium` | MP3 320 kbps |
 | Free | `Free` | MP3 128 kbps |
-| Free + premium ARL for downloads | `Free · downloads in Premium` | FLAC |
-
-With a free account, Settings offers a second field for a **premium** ARL used only for downloads; your mixes and release feed keep the first account.
 
 Files go to the downloads folder: the music folder named `deezer-dl` by default, or `DEEZER_DL_DIR`. Albums go in `albums/Artist - Album/`, single tracks in `songs/`. **Settings → Downloads** shows the folder actually used and warns if it is missing or read-only.
 
@@ -125,8 +122,8 @@ The **Stats** tab keeps its own play history in `stats.db`. No Maloja, lb-enrich
 | `MATCH_WORKERS` | `4` | Matching threads. Set to your CPU count |
 | `METADATA_WORKERS` | `4` | Files Fix missing metadata handles at once. Up to your CPU count, 2 on a spinning disk |
 | `DOWNLOAD_WORKERS` | `4` | Downloads at the same time |
-| `DEEZER_ARL` | — | Deezer account cookie (downloads, mixes, release feed) |
-| `DEEZER_ARL_PREMIUM` | — | Premium account cookie, used only for downloads |
+| `DEEZER_ARL` | — | Cookie of a Deezer account, the default one (downloads, mixes, release feed) |
+| `DEEZER_ARL_PREMIUM` | — | Cookie of a Deezer account marked for the downloads |
 | `SECRET_KEY` | random, kept in `secrets.json` | Session key |
 | `D2N_ENCRYPTION_KEY` | random, kept in `encryption.key` | Key the saved credentials are encrypted with |
 | `APP_USERNAME` / `APP_PASSWORD` | — | The sign-in account; else the first visit asks you to create it |
@@ -164,7 +161,7 @@ M3U8 contains:  /deezer-dl/songs/Artist - Song.mp3   ← what Navidrome sees
 
 ## Typical Workflow
 
-1. **Settings** → check music folders, Navidrome paths and the downloads folder; connect your Deezer account
+1. **Settings** → check music folders, Navidrome paths and the downloads folder; add your Deezer account
 2. **Rebuild from scratch** → build the library index
 3. **Add a playlist** (URL or ID) or **Choose mixes**
 4. **Full scan** → match tracks; writes `.m3u8` + `report.json` + `missing.txt`

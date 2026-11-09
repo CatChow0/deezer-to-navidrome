@@ -187,13 +187,18 @@ class NavidromeUsers(Base):
 
 class Migrations(Base):
     def test_start_up_encrypts_old_secrets_and_makes_nd1(self):
-        from core import migrations
+        from core import deezer_accounts, migrations
 
-        config.SECRETS_FILE.write_text(json.dumps({"deezer_arl": "PLAIN-ARL-SENTINEL"}), encoding="utf-8")
+        config.SECRETS_FILE.write_text(json.dumps({"deezer_arl": "PLAIN-ARL-SENTINEL", "api_token": "TOKEN-1234"}),
+                                       encoding="utf-8")
         migrations.run()
         migrations.run()
         self.assertNotIn("PLAIN-ARL-SENTINEL", config.SECRETS_FILE.read_text())
-        self.assertEqual(config.load_secret("deezer_arl"), "PLAIN-ARL-SENTINEL")
+        self.assertEqual(config.load_secret("api_token"), "TOKEN-1234")
+        # The Deezer ARL moved to the first Deezer account, encrypted there too.
+        self.assertEqual(config.load_secret("deezer_arl"), "")
+        self.assertEqual(deezer_accounts.arl("dz1"), "PLAIN-ARL-SENTINEL")
+        self.assertNotIn("PLAIN-ARL-SENTINEL", (self.data / "deezer_accounts.json").read_text())
         self.assertEqual([a["id"] for a in nd_accounts.list_accounts()], ["nd1"])
 
 

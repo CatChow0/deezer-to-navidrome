@@ -59,7 +59,17 @@ function syncLine(account) {
   return `<p class="muted">${parts.join(' · ')}</p>${warning}`;
 }
 
+function deezerLabel(state, id) {
+  const deezer = state.deezer?.accounts || [];
+  if (!id) {
+    const fallback = deezer.find(d => d.is_default);
+    return fallback ? `${fallback.label} (default)` : '';
+  }
+  return deezer.find(d => d.id === id)?.label || '';
+}
+
 function accountRow(account, state) {
+  const deezer = deezerLabel(state, account.deezer_account);
   const where = [account.username, account.url].filter(Boolean).map(escapeHtml).join(' · ') || 'No address or user yet';
   const mode = account.publish_mode === 'm3u8'
     ? '<span class="chip chip--info" title="Navidrome imports the .m3u8 files: they belong to its first admin">Playlists as .m3u8 files</span>'
@@ -78,6 +88,7 @@ function accountRow(account, state) {
           ${account.id === state.active ? '<span class="chip">This browser</span>' : ''}
           ${statusChip(account)}
           ${mode}
+          ${deezer ? `<span class="chip" title="Its releases and Deezer mixes">Deezer: ${escapeHtml(deezer)}</span>` : ''}
         </div>
         ${legacy}
         ${syncLine(account)}
@@ -94,7 +105,22 @@ function accountRow(account, state) {
     </div>`;
 }
 
-function formHtml(account) {
+function deezerSelect(state, account) {
+  const deezer = state.deezer?.accounts || [];
+  if (!deezer.length) return '';
+  const chosen = account?.deezer_account || '';
+  const fallback = deezer.find(d => d.is_default);
+  const options = [`<option value="" ${chosen ? '' : 'selected'}>Default${fallback ? ` (${escapeHtml(fallback.label)})` : ''}</option>`,
+    ...deezer.map(d => `<option value="${escapeHtml(d.id)}" ${d.id === chosen ? 'selected' : ''}>${escapeHtml(d.label)}</option>`)];
+  return `
+        <label class="form-field">
+          <span>Deezer account</span>
+          <select name="deezer_account">${options.join('')}</select>
+          <small>Its releases and Deezer mixes. The downloads always use the account marked for them.</small>
+        </label>`;
+}
+
+function formHtml(account, state) {
   const editing = Boolean(account);
   const value = name => escapeHtml(account?.[name] || '');
   const apikey = account?.auth_type === 'apikey';
@@ -108,12 +134,12 @@ function formHtml(account) {
         </label>
         <label class="form-field">
           <span>Navidrome address</span>
-          <input type="url" name="url" class="mono" value="${value('url')}" placeholder="http://navidrome:4533" autocomplete="off" spellcheck="false" required>
+          <input type="url" name="url" class="mono" value="${value('url')}" placeholder="http://navidrome:4533" autocomplete="off" spellcheck="false" ${editing ? '' : 'required'}>
           <small>The address this server reaches Navidrome at, like ND_LISTENBRAINZ_BASEURL the other way round.</small>
         </label>
         <label class="form-field">
           <span>Navidrome user name</span>
-          <input type="text" name="username" value="${value('username')}" autocomplete="off" spellcheck="false" required>
+          <input type="text" name="username" value="${value('username')}" autocomplete="off" spellcheck="false" ${editing ? '' : 'required'}>
         </label>
         <label class="form-field">
           <span>Sign in with</span>
@@ -128,6 +154,7 @@ function formHtml(account) {
                  placeholder="${editing && account.has_secret ? 'Leave empty to keep the saved one' : ''}">
           <small>Kept encrypted on this server. Never shown again, and never written in a log.</small>
         </label>
+        ${deezerSelect(state, account)}
       </div>
       <div class="nd-form-test" data-nd-form-test></div>
       <div class="button-row">
@@ -202,7 +229,7 @@ export function initNavidromeAccounts() {
   let editing = null; // null: no form, '': new account, 'nd2': that account
 
   function render() {
-    const form = editing === null ? '' : formHtml(editing ? state.accounts.find(a => a.id === editing) : null);
+    const form = editing === null ? '' : formHtml(editing ? state.accounts.find(a => a.id === editing) : null, state);
     root.innerHTML = `
       <div class="nd-accounts">${state.accounts.map(a => accountRow(a, state)).join('')}</div>
       ${form}
@@ -211,18 +238,26 @@ export function initNavidromeAccounts() {
   }
 
   async function load() {
-    const { ok, data } = await fetchJSON('/api/navidrome/accounts');
+    const [{ ok, data }, deezer] = await Promise.all([fetchJSON('/api/navidrome/accounts'), fetchJSON('/api/deezer/accounts')]);
     if (!ok) {
       root.innerHTML = `<p class="nd-warn">${escapeHtml(data?.error || 'Could not load the accounts.')}</p>`;
       return;
     }
-    state = data;
+    state = { ...data, deezer: deezer.ok ? deezer.data : null };
     render();
   }
 
+  // Editing, a field left empty that was empty already is not sent: the account
+  // made from the install can choose its Deezer account before its address.
   function formValues(form) {
     const values = Object.fromEntries(new FormData(form));
     if (!values.secret) delete values.secret;
+    const saved = state.accounts.find(a => a.id === form.dataset.ndFormId);
+    if (saved) {
+      for (const key of ['url', 'username']) {
+        if (!values[key] && !saved[key]) delete values[key];
+      }
+    }
     return values;
   }
 
@@ -232,7 +267,7 @@ export function initNavidromeAccounts() {
       toast(data?.error || 'That did not work', { tone: 'error' });
       return null;
     }
-    if (data.accounts) state = data;
+    if (data.accounts) state = { ...data, deezer: state?.deezer || null };
     if (done) done(data);
     return data;
   }
@@ -290,7 +325,7 @@ export function initNavidromeAccounts() {
       out.innerHTML = `<p class="nd-warn">${escapeHtml(data?.error || 'The test failed.')}</p>`;
       return;
     }
-    state = data;
+    state = { ...data, deezer: state?.deezer || null };
     const id = row.dataset.ndId;
     render();
     root.querySelector(`[data-nd-id="${id}"] [data-nd-test-result]`).innerHTML = testSummary(data.test);

@@ -21,7 +21,6 @@ from mutagen.flac import FLAC, Picture
 from mutagen.id3 import APIC, TALB, TCON, TDRC, TIT2, TPE1, TPE2, TPOS, TRCK, TXXX, PictureType
 from mutagen.mp3 import MP3
 
-from core.config import load_secret
 from core.deezer_account import API_URL, USER_AGENT, DeezerAccountError, DeezerSession
 
 MEDIA_URL = "https://media.deezer.com/v1/get_url"
@@ -54,17 +53,18 @@ def _log(message):
 # ── Session ───────────────────────────────────────────────────────────────────
 
 def download_arl():
-    """The ARL used for downloads: the premium one when there is one."""
-    return load_secret("deezer_arl_premium") or load_secret("deezer_arl")
+    """The ARL of the account marked "Use for download", else of the default one."""
+    from core import deezer_accounts
+
+    account_id = deezer_accounts.download_id()
+    return deezer_accounts.arl(account_id) if account_id else ""
 
 
 def session():
     """A logged-in session for the download account."""
     arl = download_arl()
     if not arl:
-        raise DeezerDownloadError(
-            "No Deezer account connected. Add your ARL in Settings, or a premium one for the downloads."
-        )
+        raise DeezerDownloadError("No Deezer account for the downloads: add one in Settings → Deezer accounts.")
     with _session_lock:
         if _session.arl != arl or _session.http is None:
             _session.login(arl)

@@ -1,4 +1,4 @@
-<p>The app now works for several Navidrome users: each playlist goes to the users you choose, as their own playlist. History and mixes per user come next.</p>
+<p>The app now works for several Navidrome users and several Deezer accounts: each playlist goes to the users you choose, as their own playlist, and each user follows the releases and mixes of their own Deezer account. History and Made for you per user come next.</p>
 
 <ul class="help-list">
   <li><strong>Navidrome accounts.</strong> <b>Settings → Navidrome accounts</b> lists the Navidrome users this app works for. Add one with the address of your Navidrome, a user name and its password, test the connection, edit it, make it the default, or remove it.</li>
@@ -10,6 +10,9 @@
   <li><strong>Your playlists stay as they are until you choose.</strong> Your install's account keeps writing .m3u8 files, which Navidrome gives to its first admin. <b>Publish as this user…</b> in <b>Settings → Navidrome accounts</b> moves them to the API: the app publishes them, then removes its .m3u8 files and the copies Navidrome had imported from them. If Navidrome refuses one, nothing changes.</li>
   <li><strong>Per account in the dashboard.</strong> Playlists added go to the account of this browser, and the dashboard shows that account's playlists. Adding a playlist another account already has shares it. <b>Delete</b> takes a shared playlist away from this account only.</li>
   <li><strong>Deleting removes it from Navidrome.</strong> A deleted playlist now also leaves Navidrome: the playlist this app made there, or its .m3u8 file. Navidrome keeps a playlist it imported even once the file is gone, so that copy is removed too when the account has its password; otherwise the app says to delete it in Navidrome.</li>
+  <li><strong>Several Deezer accounts.</strong> <b>Settings → Deezer accounts</b> replaces the single account. Add one with its ARL, checked by signing in to Deezer, then edit it, check it again, make it the default, or remove it.</li>
+  <li><strong>One account for the downloads.</strong> The account marked <b>Use for download</b> fetches the files for everyone, the default one when none is marked. The line under the list says which one, and in which format.</li>
+  <li><strong>Releases and mixes per profile.</strong> Each Navidrome account chooses its Deezer account in its form, the default one otherwise. The Releases tab, its muted artists and <b>Choose mixes</b> follow it, and a mix of another account is read with that account. CatBoard keeps reading the default profile's feed.</li>
   <li><strong>Encrypted credentials.</strong> Passwords are kept encrypted, and so are the secrets already saved in <code>secrets.json</code> (Deezer ARLs, tokens). None of them is ever shown again or written in a log.</li>
 </ul>
 
@@ -21,5 +24,6 @@
   <li>Publishing through the API finds each track by its file path in Navidrome's database, which must be mounted at <code>/import/navidrome</code>, as for the history import. Without it, tracks are searched by their tags, which misses some.</li>
   <li>The app replaces the tracks of its playlists in Navidrome at each update: tracks changed there are lost at the next one. A new name or a deletion made there is kept.</li>
   <li>If every playlist of the app vanishes at once from a Navidrome user, the app takes it as a reset of Navidrome and publishes them again rather than removing them.</li>
-  <li>Your saved playlists are first copied to <code>/data/backups/pre-1.16.0/</code>.</li>
+  <li>Your Deezer account becomes the first Deezer account, the default one. The premium account you had for downloads becomes a second account, marked for the downloads. <code>DEEZER_ARL</code> and <code>DEEZER_ARL_PREMIUM</code> keep working: their ARL is changed there, not in Settings.</li>
+  <li>Your saved playlists and <code>secrets.json</code> are first copied to <code>/data/backups/pre-1.16.0/</code>.</li>
 </ul>

@@ -116,6 +116,7 @@ def public(account) -> dict:
         "has_secret": bool(account.get("secret")),
         "navidrome_user_id": account.get("navidrome_user_id") or "",
         "publish_mode": account["publish_mode"],
+        "deezer_account": account.get("deezer_account") or "",
         "is_default": account["id"] == default_id(),
         "complete": bool(account["url"] and account["username"] and account.get("secret")),
         "legacy": bool(account.get("legacy")),
@@ -142,6 +143,16 @@ def _check_unique(data, username, url, ignore=None):
         if account["id"] != ignore and username and account["username"].lower() == username.lower() \
                 and account["url"].lower() == url.lower():
             raise AccountError(f"The Navidrome user {username} already has an account here ({account['label']}).")
+
+
+def _deezer_account(value) -> str:
+    """"" (the default Deezer account) or a Deezer account that exists."""
+    from core import deezer_accounts
+
+    value = str(value or "").strip()
+    if value and deezer_accounts.get(value) is None:
+        raise AccountError("Unknown Deezer account.")
+    return value
 
 
 def create(fields: dict, now=None) -> dict:
@@ -173,6 +184,7 @@ def create(fields: dict, now=None) -> dict:
             # New accounts can only publish through the API: a .m3u8 file always
             # belongs to Navidrome's first admin.
             "publish_mode": "api",
+            "deezer_account": _deezer_account(fields.get("deezer_account")),
             "legacy": False,
             "created_at": now,
             "updated_at": now,
@@ -218,6 +230,8 @@ def update(account_id, fields: dict, now=None) -> dict:
         if fields.get("secret"):
             account["secret"] = crypto.encrypt(str(fields["secret"]))
             changed_identity = True
+        if "deezer_account" in fields:
+            account["deezer_account"] = _deezer_account(fields["deezer_account"])
         _check_unique(data, account["username"], account["url"], ignore=account_id)
         if changed_identity:
             # Another user or server: what was learnt about the old one no longer holds.
@@ -239,6 +253,20 @@ def delete(account_id) -> None:
         if data.get("default") == account_id:
             data["default"] = data["accounts"][0]["id"]
         _write(data)
+
+
+def forget_deezer_account(deezer_id) -> None:
+    """The profiles that chose a Deezer account now removed go back to the
+    default one."""
+    with _lock:
+        data = _read()
+        changed = False
+        for account in data["accounts"]:
+            if account.get("deezer_account") == deezer_id:
+                account["deezer_account"] = ""
+                changed = True
+        if changed:
+            _write(data)
 
 
 def owner_fallback():

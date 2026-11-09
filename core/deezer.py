@@ -23,18 +23,28 @@ from core.matching import build_title_index, find_best_match
 from core.utils import sanitize_filename
 
 
-# Mixes from the Deezer account are followed like playlists, under IDs such
-# as "mix-stl-inspired-by-1" (smart tracklist) or "mix-flow-chill" (Flow mood).
-MIX_ID = re.compile(r"^mix-(stl|flow)-([a-z0-9_-]+)$")
+# Mixes from a Deezer account are followed like playlists, under IDs such as
+# "mix-stl-inspired-by-1" (smart tracklist) or "mix-flow-chill" (Flow mood).
+# Those of another account than dz1 carry it ("mix-dz2-flow-chill"): two
+# accounts each have their own Flow.
+MIX_ID = re.compile(r"^mix-(?:(dz[1-9][0-9]*)-)?(stl|flow)-([a-z0-9_-]+)$")
+FIRST_DEEZER_ACCOUNT = "dz1"
 
 
-def mix_id(kind: str, source_id: str) -> str:
-    return f"mix-{kind}-{re.sub(r'[^a-z0-9_-]+', '-', str(source_id).lower())}"
+def mix_id(kind: str, source_id: str, deezer_account=None) -> str:
+    prefix = f"{deezer_account}-" if deezer_account and deezer_account != FIRST_DEEZER_ACCOUNT else ""
+    return f"mix-{prefix}{kind}-{re.sub(r'[^a-z0-9_-]+', '-', str(source_id).lower())}"
 
 
 def parse_mix_id(playlist_id: str):
     m = MIX_ID.match(str(playlist_id))
-    return (m.group(1), m.group(2)) if m else None
+    return (m.group(2), m.group(3)) if m else None
+
+
+def mix_deezer_account(playlist_id: str):
+    """The Deezer account whose mix it is."""
+    m = MIX_ID.match(str(playlist_id))
+    return (m.group(1) or FIRST_DEEZER_ACCOUNT) if m else None
 
 
 def parse_xp_id(playlist_id: str):
@@ -301,7 +311,7 @@ def fetch_deezer_playlist_tracks(playlist_id: str, refresh=False, full=False, pr
     if mix:
         from core.deezer_account import mix_tracks
 
-        return playlist_title(playlist_id), mix_tracks(*mix)
+        return playlist_title(playlist_id), mix_tracks(*mix, account=mix_deezer_account(playlist_id))
 
     info = fetch_deezer_playlist_info(playlist_id)
     url = f"https://api.deezer.com/playlist/{playlist_id}"
@@ -335,15 +345,16 @@ def fetch_deezer_playlist_tracks(playlist_id: str, refresh=False, full=False, pr
     return info["title"], parsed
 
 
-def follow_mix(kind: str, source_id: str, title: str, accounts=None):
-    """Adds a Deezer mix to the followed playlists; its cover is the album art of its first track."""
+def follow_mix(kind: str, source_id: str, title: str, accounts=None, deezer_account=None):
+    """Adds a mix of a Deezer account to the followed playlists; its cover is the
+    album art of its first track."""
     from core.deezer_account import mix_tracks
 
-    pid = mix_id(kind, source_id)
+    pid = mix_id(kind, source_id, deezer_account)
     playlists = load_playlists()
     if any(p["id"] == pid for p in playlists):
         return pid, False
-    tracks = mix_tracks(kind, source_id)
+    tracks = mix_tracks(kind, source_id, account=deezer_account)
     entry = {"id": pid, "title": title, "picture": next((t["picture"] for t in tracks if t.get("picture")), "")}
     if accounts:
         entry["accounts"] = list(accounts)

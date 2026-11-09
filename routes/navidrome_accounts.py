@@ -35,7 +35,7 @@ def _fields():
     body = request.get_json(silent=True)
     if not isinstance(body, dict):
         return None
-    allowed = ("label", "url", "username", "auth_type", "secret")
+    allowed = ("label", "url", "username", "auth_type", "secret", "deezer_account")
     return {key: body[key] for key in allowed if key in body}
 
 

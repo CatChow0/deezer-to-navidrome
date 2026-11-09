@@ -358,6 +358,7 @@ def build_discover(run) -> list:
     since = (today - timedelta(days=mix_candidates.RELEASES_WINDOW_DAYS)).isoformat()
     rules = run.exclusions(played=run.taste.track_plays, never_played_only=True)
     new_share = round(size * mix_candidates.DISCOVER_RELEASE_SHARE)
+    # The default Deezer account's feed, until mixes are per profile.
     newest = mix_candidates.select(mix_candidates.release_pool(load_releases().get("releases", []), since),
                                    rules, new_share, mix_taste.PER_ARTIST, run.rng)
     around = mix_candidates.select(mix_candidates.habit_pool(run.conn, run.taste, run.ids, run.now),

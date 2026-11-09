@@ -18,6 +18,21 @@ def resolve(request, session):
     return nd_accounts.default_id()
 
 
+def deezer_account_of(profile_id):
+    """The Deezer account a Navidrome profile reads its releases and mixes with:
+    the one it chose, else the default one."""
+    from core import deezer_accounts
+
+    chosen = (nd_accounts.get(profile_id) or {}).get("deezer_account") if profile_id else ""
+    if chosen and deezer_accounts.get(chosen):
+        return chosen
+    return deezer_accounts.default_id()
+
+
+def deezer_account(request, session):
+    return deezer_account_of(resolve(request, session))
+
+
 def select(session, account_id) -> None:
     if nd_accounts.get(account_id) is None:
         raise nd_accounts.AccountError("Unknown Navidrome account.")
