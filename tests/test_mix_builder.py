@@ -192,7 +192,7 @@ class Unpublishing(Base):
         mb.set_mix_mode(self.conn, "nd1", "off")
         self.assertFalse([p for p in load_playlists() if p["id"].startswith("auto-daily")])
         self.assertTrue(path.exists())
-        self.assertEqual(trial.get(self.conn, "1")["state"], "on_trial")
+        self.assertEqual(trial.get(self.conn, "1", "nd1")["state"], "on_trial")
 
 
 class MixLength(Base):
@@ -234,7 +234,7 @@ class Downloading(Base):
         saved = mb.download_to_trial(self.conn, "nd1", [cand(1), cand(2)], 2, "auto-discover", NOW, enqueue=queue)
         self.assertEqual(len(saved), 2)
         self.assertEqual({c[1] for c in queue.calls}, {str(trial.trial_dir())})
-        self.assertEqual(trial.get(self.conn, "1")["state"], "on_trial")
+        self.assertEqual(trial.get(self.conn, "1", "nd1")["state"], "on_trial")
 
     def test_a_failure_moves_on_to_the_spares(self):
         saved = mb.download_to_trial(self.conn, "nd1", [cand(1), cand(2), cand(3)], 2, "m", NOW, enqueue=FakeQueue(failing=[1]))
@@ -353,7 +353,7 @@ class WithDownloads(Base):
         self.set(discover_size=2)
         mb.generate("nd1", ["discover"], now=NOW)
         for row in trial.active(self.conn, "nd1"):
-            trial.remove(self.conn, row["deezer_id"], NOW)
+            trial.remove(self.conn, row["deezer_id"], "nd1", NOW)
         mb.publish_trial_playlist(self.conn, "nd1")
         self.assertNotIn("auto-trial", [p["id"] for p in load_playlists()])
 
@@ -381,7 +381,7 @@ class WithDownloads(Base):
         self.set(discover_size=1)
         mb.generate("nd1", ["discover"], now=NOW)
         refused = trial.active(self.conn, "nd1")[0]["deezer_id"]
-        trial.remove(self.conn, refused, NOW)
+        trial.remove(self.conn, refused, "nd1", NOW)
         self.new_id = int(refused) - 1
         mb.generate("nd1", ["discover"], now=NOW + 7 * DAY)
         self.assertEqual([c[0] for c in self.queue.calls].count(refused), 1)
@@ -411,7 +411,7 @@ class WithDownloads(Base):
         row = trial.active(self.conn, "nd1")[0]
         self.assertEqual(row["state"], "on_trial")
         mb.generate("nd1", [], now=NOW + 31 * DAY)
-        self.assertEqual(trial.get(self.conn, row["deezer_id"])["state"], "trash")
+        self.assertEqual(trial.get(self.conn, row["deezer_id"], "nd1")["state"], "trash")
 
 
 class Timing(Base):
@@ -583,22 +583,22 @@ class QuarantineReview(Base):
     def test_runs_with_every_mix_off(self):
         path = self.add_trial()
         mb.review_quarantine(NOW)
-        self.assertEqual(trial.get(self.conn, "1")["state"], "trash")
+        self.assertEqual(trial.get(self.conn, "1", "nd1")["state"], "trash")
         self.assertFalse(path.exists())
 
     def test_the_tick_runs_it_even_with_mixes_off(self):
         self.add_trial()
         mb.tick(NOW)
-        self.assertEqual(trial.get(self.conn, "1")["state"], "trash")
+        self.assertEqual(trial.get(self.conn, "1", "nd1")["state"], "trash")
 
     def test_follows_the_saved_rules(self):
         self.add_trial()
         mb.save_settings(self.conn, "nd1", {"trial_auto": False})
         mb.review_quarantine(NOW)
-        self.assertEqual(trial.get(self.conn, "1")["state"], "on_trial")
+        self.assertEqual(trial.get(self.conn, "1", "nd1")["state"], "on_trial")
         mb.save_settings(self.conn, "nd1", {"trial_auto": True, "trial_delete": True})
         mb.review_quarantine(NOW)
-        self.assertEqual(trial.get(self.conn, "1")["state"], "deleted")
+        self.assertEqual(trial.get(self.conn, "1", "nd1")["state"], "deleted")
 
     def test_old_waiting_tracks_are_sorted_once(self):
         self.add_trial("1", "A", when=NOW)
@@ -606,22 +606,22 @@ class QuarantineReview(Base):
         self.conn.commit()
         mb.save_settings(self.conn, "nd1", {"trial_auto": False})
         mb.review_quarantine(NOW)
-        self.assertEqual(trial.get(self.conn, "1")["state"], "pending")
+        self.assertEqual(trial.get(self.conn, "1", "nd1")["state"], "pending")
         mb.save_settings(self.conn, "nd1", {"trial_auto": True})
         mb.review_quarantine(NOW)
-        self.assertEqual(trial.get(self.conn, "1")["state"], "trash")
+        self.assertEqual(trial.get(self.conn, "1", "nd1")["state"], "trash")
         self.add_trial("2", "B", when=NOW)
         self.conn.execute("UPDATE trial_tracks SET state='pending', reason='Played 2 times' WHERE deezer_id='2'")
         self.conn.commit()
         mb.review_quarantine(NOW)
-        self.assertEqual(trial.get(self.conn, "2")["state"], "pending")
+        self.assertEqual(trial.get(self.conn, "2", "nd1")["state"], "pending")
 
     def test_the_trash_length_is_used(self):
         self.add_trial()
-        trial.remove(self.conn, "1", NOW - 8 * DAY)
+        trial.remove(self.conn, "1", "nd1", NOW - 8 * DAY)
         mb.save_settings(self.conn, "nd1", {"trash_days": 7})
         mb.review_quarantine(NOW)
-        self.assertEqual(trial.get(self.conn, "1")["state"], "deleted")
+        self.assertEqual(trial.get(self.conn, "1", "nd1")["state"], "deleted")
 
     def test_new_plays_count_without_a_generation(self):
         self.add_trial("1", "Song", when=NOW - DAY)
@@ -630,7 +630,7 @@ class QuarantineReview(Base):
             stats_db.add_play(self.stats, track, None, 200, NOW - 60 * (i + 1), "navidrome")
         self.stats.commit()
         mb.review_quarantine(NOW)
-        self.assertEqual(trial.get(self.conn, "1")["state"], "pending")
+        self.assertEqual(trial.get(self.conn, "1", "nd1")["state"], "pending")
 
     def test_nothing_in_quarantine_costs_nothing(self):
         with mock.patch("core.mix_builder.review_trial") as review:
@@ -646,7 +646,7 @@ class SurvivesStartClean(Base):
         trial.add_download(self.conn, "nd1", "1", "A", "S", "", path, "m", NOW)
         self.stats.execute("DELETE FROM plays")
         self.stats.commit()
-        self.assertEqual(trial.get(self.conn, "1")["state"], "on_trial")
+        self.assertEqual(trial.get(self.conn, "1", "nd1")["state"], "on_trial")
         self.assertNotIn("trial_tracks", [r[0] for r in self.stats.execute("SELECT name FROM sqlite_master")])
 
 

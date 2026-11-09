@@ -132,6 +132,11 @@ def library_entries() -> list:
     return load_library_cache(config.get_paths_from_config()[2])
 
 
+def library_copies() -> dict:
+    """track key -> its file in the library, outside the quarantine."""
+    return {t.key: t.path for t in mix_taste.owned_tracks(library_entries(), exclude_under=[str(trial.trial_dir())])}
+
+
 def downloads_possible() -> str:
     """Why this install cannot download, or an empty string when it can."""
     if not deezer_dl.download_arl():
@@ -225,8 +230,9 @@ def _as_track(owned) -> dict:
 
 def download_to_trial(conn, account, candidates, want, mix_id, now, enqueue=None) -> list:
     """Downloads until `want` tracks are saved, moving to the spares when one fails,
-    into this account's quarantine. Waits for each batch: a playlist must not
-    point at a file not there yet."""
+    into this account's quarantine. A track another profile already has on trial
+    (or in its trash) is shared, not downloaded again. Waits for each batch: a
+    playlist must not point at a file not there yet."""
     if enqueue is None:
         from core.download_queue import enqueue_download as enqueue
 
@@ -234,7 +240,17 @@ def download_to_trial(conn, account, candidates, want, mix_id, now, enqueue=None
     target = trial.trial_dir()
     target.mkdir(parents=True, exist_ok=True)
     while queue and len(saved) < want:
-        batch, queue = queue[:want - len(saved)], queue[want - len(saved):]
+        batch = []
+        while queue and len(saved) + len(batch) < want:
+            candidate = queue.pop(0)
+            if trial.share(conn, account, candidate.deezer_id, mix_id, now):
+                row = trial.get(conn, candidate.deezer_id, account)
+                saved.append({"deezer_id": candidate.deezer_id, "artist": row["artist"], "title": row["title"],
+                              "album": row["album"], "path": row["path"]})
+            else:
+                batch.append(candidate)
+        if not batch:
+            continue
         done, results = threading.Event(), {}
         left = [len(batch)]
         lock = threading.Lock()
@@ -257,7 +273,7 @@ def download_to_trial(conn, account, candidates, want, mix_id, now, enqueue=None
                 continue
             trial.add_download(conn, account, candidate.deezer_id, candidate.artist, candidate.title, candidate.album,
                                result["path"], mix_id, now)
-            row = trial.get(conn, candidate.deezer_id)
+            row = trial.get(conn, candidate.deezer_id, account)
             # A track already decided on (it was on disk) does not join the mix.
             if row["state"] == trial.ON_TRIAL:
                 saved.append({"deezer_id": candidate.deezer_id, "artist": candidate.artist, "title": candidate.title,
@@ -292,9 +308,11 @@ class _Run:
         self.ids = mix_candidates.artist_ids(stats_conn)
 
     def exclusions(self, **kw):
-        # A track that went through anyone's quarantine is not fetched again; the
-        # versions of a song this account turned down are its own business.
-        known = {r["deezer_id"] for r in self.conn.execute("SELECT deezer_id FROM trial_tracks")}
+        # Not proposed again: what this profile already had in its quarantine, and
+        # what anyone kept, now in the library. A track on trial for another
+        # profile may be proposed: its file is shared, not downloaded again.
+        known = {r["deezer_id"] for r in self.conn.execute(
+            "SELECT deezer_id FROM trial_tracks WHERE account_id=? OR state=?", (self.account, trial.KEPT))}
         return mix_candidates.Exclusions(self.owned, known_ids=known,
                                          rejected_keys=trial.rejected(self.conn, self.account)["keys"], **kw)
 
@@ -449,10 +467,9 @@ def review_trial(conn, stats_conn, account, now) -> dict:
     too, and stars from its Navidrome user only."""
     rules = trial.rules_from(load_settings(conn, account))
     marks = trial.navidrome_marks(conn, account, now) if rules.auto and rules.marks_count else None
-    owned = set()
+    owned = {}
     if rules.auto:
-        outside = mix_taste.owned_tracks(library_entries(), exclude_under=[str(trial.trial_dir())])
-        owned = {t.key for t in outside}
+        owned = library_copies()
     # Until 1.15, To review held the tracks whose trial had failed: sorted once.
     migrate = rules.auto and not mixes_db.get_meta(conn, key(account, "trial_rules_v2"))
     report = trial.evaluate(conn, account, trial.plays_since_download(conn, stats_conn, account), marks or {},
@@ -478,7 +495,8 @@ def review_quarantine(now=None, accounts=None):
     try:
         conn = mixes_db.connect()
         try:
-            waiting = [a for a in trial.owners(conn) if accounts is None or a in accounts]
+            owners_before = trial.owners(conn)
+            waiting = [a for a in owners_before if accounts is None or a in accounts]
             if not waiting:
                 return None
             total = {name: 0 for name in _COUNTS}
@@ -494,10 +512,9 @@ def review_quarantine(now=None, accounts=None):
                 total["navidrome_marks"] = total["navidrome_marks"] or report["navidrome_marks"]
                 if any(report[k] for k in _COUNTS):
                     logger.info("Quarantine of %s: %s", account, report)
-                    try:
-                        publish_trial_playlist(conn, account)
-                    except (OSError, ValueError) as e:
-                        logger.warning("Could not update the On trial playlist of %s: %s", account, e)
+            if any(total[k] for k in _COUNTS):
+                # A verdict on a shared track changes the other profiles' lists too.
+                refresh_trial_playlists(conn, sorted(set(owners_before) | set(trial.owners(conn))))
             return total
         finally:
             conn.close()
@@ -547,7 +564,7 @@ def generate(account, versions=None, progress=None, now=None) -> dict:
         if run.downloaded:
             emit("Refreshing the library")
             _refresh_library(emit)
-        publish_trial_playlist(conn, account)
+        refresh_trial_playlists(conn, sorted({account, *trial.owners(conn)}))
         result = {"built": built, "notes": run.notes, "trial": report, "downloaded": run.downloaded}
         mixes_db.set_meta(conn, key(account, "last_run"), {"at": now, "notes": run.notes})
         return result
@@ -620,18 +637,37 @@ def due_versions(conn, account, now) -> list:
 
 def forget_account(account_id, heir) -> None:
     """A Navidrome account being removed: its tracks in quarantine go to `heir`,
-    so that no file is left without anyone to decide on it, and its own state
-    goes. Its playlists are core/publish.py's business."""
+    so that no file is left without anyone to decide on it (where `heir` has the
+    track already, its own verdict stays), and its own state goes. Its
+    playlists are core/publish.py's business."""
     from core.deezer import auto_id
 
     conn = mixes_db.connect()
     try:
-        conn.execute("UPDATE trial_tracks SET account_id=? WHERE account_id=?", (heir, account_id))
+        tracks = [r["deezer_id"] for r in conn.execute("SELECT deezer_id FROM trial_tracks WHERE account_id=?", (account_id,))]
+        conn.execute("UPDATE OR IGNORE trial_tracks SET account_id=? WHERE account_id=?", (heir, account_id))
+        conn.execute("DELETE FROM trial_tracks WHERE account_id=?", (account_id,))
         conn.executemany("DELETE FROM meta WHERE key=?", [(key(account_id, name),) for name in PER_PROFILE_KEYS])
         conn.executemany("DELETE FROM mix_history WHERE mix_id=?", [(auto_id(account_id, n),) for n in ("daily", "blend")])
         conn.commit()
+        for deezer_id in tracks:
+            try:
+                trial._settle(conn, deezer_id, int(time.time()))
+            except (trial.TrialError, OSError) as e:
+                logger.warning("Could not settle %s: %s", deezer_id, e)
+        refresh_trial_playlists(conn, [heir])
     finally:
         conn.close()
+
+
+def refresh_trial_playlists(conn, profiles=None) -> None:
+    """The On trial playlist of these profiles (every one by default): a verdict
+    on a shared track changes the others' too."""
+    for account in profiles if profiles is not None else accounts():
+        try:
+            publish_trial_playlist(conn, account)
+        except (OSError, ValueError) as e:
+            logger.warning("Could not update the On trial playlist of %s: %s", account, e)
 
 
 def tick(now=None) -> None:

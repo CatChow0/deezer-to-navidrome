@@ -321,9 +321,10 @@ The route checks the tokens itself, even with `DISABLE_AUTH`: the token says who
 ### Made for you per profile
 
 - **Each profile its own mixes.** Daily Mix, Daily Mix+ and Discover are built from the profile's listening history, Discover from the releases of its Deezer account, and published for that Navidrome user only. The install's playlists keep their IDs (`auto-daily-1`); the other profiles' carry theirs (`auto-nd2-daily-1`).
-- **Its own settings and quarantine.** **Manage** shows those of the profile chosen at the top of the page: its versions, refresh rate, length and trial rules, and the tracks it downloaded. A track is decided with its owner's plays and its owner's stars in Navidrome only; another profile cannot keep or remove it.
+- **Its own settings and verdicts.** **Manage** shows those of the profile chosen at the top of the page: its versions, refresh rate, length and trial rules, and its tracks on trial. Each profile decides with its own plays and its own stars in Navidrome only.
 - **Shared disk limits.** The unheard tracks and the quarantine size count every profile together, since they share the disk.
-- **Shared library.** A track on trial for one profile is never fetched for another and never shows in another's mixes. A file used by anyone's own playlist is never deleted.
+- **A shared quarantine.** A track has one file and a verdict from each profile that got it. A mix can take a track another profile has on trial without downloading it again; the list then says "Also on trial for…". **Keep** puts it in the library for everyone. A refusal only counts for the profile that made it: the file goes to the trash once no other profile has it on trial, and a profile that later wants it gets it back from there. A file another profile's own playlist uses never goes to the trash: it goes to the library instead.
+- **No duplicates.** A track someone kept is never downloaded again, and a track's file is never in two quarantines. A track on trial that is also downloaded by hand ends its trial kept: the library's copy replaces the trial copy in every playlist, and the trial copy goes.
 - **One profile at a time.** Mixes are built for one profile after the other, as they share the Deezer quota.
 - **A removed profile** takes its playlists out of Navidrome and of the app (a playlist shared with other profiles stays for them), and its tracks in quarantine go to the install's account.
 

@@ -2,9 +2,10 @@
 and the tracks on trial. Kept apart from stats.db, since Start clean empties the
 listening history and a trial must outlive that.
 
-Each Navidrome account has its own settings, mixes and quarantine: the tracks
-on trial say whose they are, and meta keys carry the account (core/mix_builder
-.py), except the install's, which keeps the names it always had. What concerns
+Each Navidrome account has its own settings, mixes and quarantine: a track on
+trial has a row for each profile that got it (core/trial.py), and meta keys
+carry the account (core/mix_builder.py), except the install's, which keeps the
+names it always had. What concerns
 the library itself is shared: tempo and genres, the related artists, the
 publications in Navidrome."""
 import json
@@ -13,9 +14,10 @@ from pathlib import Path
 
 from core import config
 
-_SCHEMA = """
+# One row per track and profile: the profiles share the file, each has its verdict.
+_TRIAL_TABLE = """
 CREATE TABLE IF NOT EXISTS trial_tracks (
-    deezer_id TEXT PRIMARY KEY,
+    deezer_id TEXT NOT NULL,
     track_key TEXT NOT NULL,
     artist TEXT NOT NULL,
     title TEXT NOT NULL,
@@ -27,8 +29,14 @@ CREATE TABLE IF NOT EXISTS trial_tracks (
     trial_ends_at INTEGER NOT NULL,
     state TEXT NOT NULL,
     state_at INTEGER NOT NULL,
-    reason TEXT NOT NULL DEFAULT ''
-);
+    reason TEXT NOT NULL DEFAULT '',
+    account_id TEXT NOT NULL DEFAULT 'nd1',
+    PRIMARY KEY (deezer_id, account_id)
+)"""
+_TRIAL_COLUMNS = ("deezer_id, track_key, artist, title, album, path, size, mix_id, downloaded_at, trial_ends_at,"
+                  " state, state_at, reason, account_id")
+
+_SCHEMA = _TRIAL_TABLE + """;
 CREATE INDEX IF NOT EXISTS trial_state ON trial_tracks(state);
 CREATE INDEX IF NOT EXISTS trial_key ON trial_tracks(track_key);
 CREATE TABLE IF NOT EXISTS mix_history (
@@ -128,7 +136,45 @@ def connect() -> sqlite3.Connection:
         for name, kind in columns.items():
             if name not in present:
                 conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {kind}")
+    _shared_trial(conn)
+    conn.execute("CREATE INDEX IF NOT EXISTS trial_account ON trial_tracks(account_id)")
     return conn
+
+
+def _keyed_by_account(conn) -> bool:
+    return bool({row[1]: row[5] for row in conn.execute("PRAGMA table_info(trial_tracks)")}.get("account_id"))
+
+
+def _shared_trial(conn) -> None:
+    """Until the quarantine was shared, a track's Deezer ID was the key: one
+    quarantine for each track. The table is rebuilt with the profile in its key,
+    once, in one transaction, after a copy of the database."""
+    if _keyed_by_account(conn):
+        return
+    conn.commit()
+    backup = Path(config.DATA_DIR) / "backups" / "pre-1.16.0" / "mixes.db"
+    if not backup.exists():
+        backup.parent.mkdir(parents=True, exist_ok=True)
+        copy = sqlite3.connect(backup)
+        try:
+            conn.backup(copy)
+        finally:
+            copy.close()
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        if not _keyed_by_account(conn):
+            conn.execute("ALTER TABLE trial_tracks RENAME TO trial_tracks_single")
+            conn.execute("DROP INDEX IF EXISTS trial_state")
+            conn.execute("DROP INDEX IF EXISTS trial_key")
+            conn.execute(_TRIAL_TABLE)
+            conn.execute(f"INSERT INTO trial_tracks({_TRIAL_COLUMNS}) SELECT {_TRIAL_COLUMNS} FROM trial_tracks_single")
+            conn.execute("DROP TABLE trial_tracks_single")
+            conn.execute("CREATE INDEX IF NOT EXISTS trial_state ON trial_tracks(state)")
+            conn.execute("CREATE INDEX IF NOT EXISTS trial_key ON trial_tracks(track_key)")
+        conn.commit()
+    except BaseException:
+        conn.rollback()
+        raise
 
 
 def get_meta(conn, key, default=None):

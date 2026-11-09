@@ -295,7 +295,7 @@ function trackRow(track, detail, actions) {
       <div class="mfy-track-name">
         <strong>${escapeHtml(track.title)}</strong>
         <span>${escapeHtml(track.artist)}${track.album ? ` · ${escapeHtml(track.album)}` : ''}</span>
-        <span class="muted">${escapeHtml(detail)} · <span class="mfy-source">${escapeHtml(track.source)}</span></span>
+        <span class="muted">${escapeHtml(detail)} · <span class="mfy-source">${escapeHtml(track.source)}</span>${track.shared_with?.length ? ` · <span class="mfy-shared" title="One file for both: each profile decides for itself">Also on trial for ${track.shared_with.map(escapeHtml).join(', ')}</span>` : ''}</span>
       </div>
       <div class="mfy-track-actions">${actions}</div>
     </div>`;

@@ -34,9 +34,10 @@ class Profiles(Base):
         nd_accounts.update("nd1", {"label": "Alice", "url": "http://navidrome:4533", "username": "alice", "secret": "a"})
         self.bob = nd_accounts.create({"label": "Bob", "url": "http://navidrome:4533", "username": "bob", "secret": "b"})["id"]
         self.jobs = []
-        patcher = mock.patch("core.publish._enqueue", side_effect=lambda pid, job: self.jobs.append((pid, job["accounts"])))
-        patcher.start()
-        self.addCleanup(patcher.stop)
+        for patcher in (mock.patch("core.publish._enqueue", side_effect=lambda pid, job: self.jobs.append((pid, job["accounts"]))),
+                        mock.patch("core.trial.trash_dir", return_value=self.root / "trash")):
+            patcher.start()
+            self.addCleanup(patcher.stop)
         self.bob_stats = stats_db.connect("nd2")
         self.addCleanup(self.bob_stats.close)
 
@@ -135,14 +136,19 @@ class Quarantine(Profiles):
         self.assertEqual([r["deezer_id"] for r in trial.active(self.conn, "nd1")], ["1"])
         self.assertEqual(sorted(r["deezer_id"] for r in trial.active(self.conn, None)), ["1", "2"])
         self.assertEqual(trial.owners(self.conn), ["nd1", "nd2"])
-        trial.remove(self.conn, "2", NOW)
+        trial.remove(self.conn, "2", "nd2", NOW)
         self.assertEqual(len(trial.rejected(self.conn, "nd2")["keys"]), 1)
         self.assertEqual(trial.rejected(self.conn, "nd1")["keys"], set())
 
-    def test_a_track_in_anyones_quarantine_is_never_fetched_for_another(self):
+    def test_what_the_profile_had_or_anyone_kept_is_not_proposed_again(self):
         self.on_trial("nd2", "2")
-        run = mb._Run(self.conn, self.stats, "nd1", NOW, "x")
-        self.assertIn("2", run.exclusions().ids)
+        self.on_trial("nd2", "3")
+        self.on_trial("nd1", "4")
+        trial.keep(self.conn, "3", "nd2", NOW)
+        ids = mb._Run(self.conn, self.stats, "nd1", NOW, "x").exclusions().ids
+        self.assertNotIn("2", ids)
+        self.assertIn("3", ids)
+        self.assertIn("4", ids)
 
     def test_nobody_gets_anothers_tracks_on_trial_in_a_mix(self):
         self.two_tastes()
@@ -165,10 +171,10 @@ class Quarantine(Profiles):
         self.bob_stats.commit()
         report = mb.review_quarantine(NOW + 30)
         self.assertEqual(report["kept"], 1)
-        self.assertEqual(trial.get(self.conn, "2")["state"], trial.KEPT)
+        self.assertEqual(trial.get(self.conn, "2", "nd2")["state"], trial.KEPT)
         self.assertFalse(path.exists())
         # Bob's play of the same song does not count for Alice's track.
-        self.assertEqual(trial.get(self.conn, "1")["state"], trial.ON_TRIAL)
+        self.assertEqual(trial.get(self.conn, "1", "nd1")["state"], trial.ON_TRIAL)
 
     def test_only_the_owners_stars_count(self):
         db = self.root / "navidrome.db"
@@ -212,7 +218,8 @@ class Removal(Profiles):
         self.assertIn("auto-daily-1", ids)
         self.assertEqual(accounts_for("111"), ["nd1"])
         self.assertNotIn("222", ids)
-        self.assertEqual(trial.get(self.conn, "2")["account_id"], "nd1")
+        self.assertIsNotNone(trial.get(self.conn, "2", "nd1"))
+        self.assertIsNone(trial.get(self.conn, "2", "nd2"))
         self.assertIsNone(mixes_db.get_meta(self.conn, "nd2:settings"))
         self.assertTrue((self.playlists_dir / "Daily Mix 1" / "Daily Mix 1.m3u8").exists())
 
@@ -249,7 +256,7 @@ class Routes(Profiles):
     def test_a_profile_cannot_decide_on_anothers_track(self):
         self.on_trial("nd1", "1")
         self.assertEqual(self.client.post("/api/mixes/trial/1/keep", headers=self.as_bob).status_code, 404)
-        self.assertEqual(trial.get(self.conn, "1")["state"], trial.ON_TRIAL)
+        self.assertEqual(trial.get(self.conn, "1", "nd1")["state"], trial.ON_TRIAL)
         self.assertEqual(self.client.post("/api/mixes/trial/1/remove").status_code, 200)
 
     def test_regenerate_builds_the_profiles_mixes(self):
@@ -263,3 +270,166 @@ class Routes(Profiles):
         response = self.client.post("/playlist/auto-nd2-daily-1/accounts", json={"accounts": ["nd1", "nd2"]})
         self.assertEqual(response.status_code, 409)
         self.assertEqual(accounts_for("auto-nd2-daily-1"), ["nd2"])
+
+
+class Candidate:
+    def __init__(self, deezer_id, artist="T", title=None):
+        self.deezer_id, self.artist, self.title, self.album = str(deezer_id), artist, title or f"Song {deezer_id}", "Album"
+
+
+def no_download(*args, **kwargs):
+    raise AssertionError("a shared track must not be downloaded again")
+
+
+class SharedQuarantine(Profiles):
+    """One file per track, a verdict from each profile that got it."""
+
+    def share_with_bob(self, deezer_id="1"):
+        path = self.on_trial("nd1", deezer_id)
+        saved = mb.download_to_trial(self.conn, "nd2", [Candidate(deezer_id)], 1, auto_id("nd2", "discover"), NOW,
+                                     enqueue=no_download)
+        self.assertEqual([t["path"] for t in saved], [str(path)])
+        return path
+
+    def files(self, folder):
+        return sorted(p.name for p in folder.glob("*")) if folder.exists() else []
+
+    def test_a_track_on_trial_for_one_is_given_to_the_other_without_a_download(self):
+        path = self.share_with_bob()
+        self.assertEqual((trial.get(self.conn, "1", "nd1")["path"], trial.get(self.conn, "1", "nd2")["path"]),
+                         (str(path), str(path)))
+        self.assertEqual(self.files(trial.trial_dir()), [path.name])
+        self.assertEqual(trial.shared_with(self.conn, "nd2"), {"1": ["nd1"]})
+        self.assertEqual(trial.usage(self.conn, {}), {"unheard": 1, "bytes": 5})
+
+    def test_each_decides_and_the_file_waits_for_the_other(self):
+        path = self.share_with_bob()
+        config.update_preview_state("auto-daily-1", {"rows": [{"local_path": str(path)}]})
+        config.update_preview_state("auto-nd2-daily-1", {"rows": [{"local_path": str(path)}]})
+        self.addCleanup(lambda: [config.delete_playlist_cache(p) for p in ("auto-daily-1", "auto-nd2-daily-1")])
+        trial.remove(self.conn, "1", "nd1", NOW)
+        self.assertTrue(path.exists())
+        self.assertEqual((trial.get(self.conn, "1", "nd1")["state"], trial.get(self.conn, "1", "nd2")["state"]),
+                         (trial.TRASH, trial.ON_TRIAL))
+        # It leaves Alice's mixes only.
+        self.assertEqual(config.get_preview_state("auto-daily-1")["rows"], [])
+        self.assertEqual(len(config.get_preview_state("auto-nd2-daily-1")["rows"]), 1)
+        trial.remove(self.conn, "1", "nd2", NOW + 10)
+        self.assertFalse(path.exists())
+        self.assertEqual(self.files(trial.trash_dir()), [path.name])
+        self.assertEqual({trial.get(self.conn, "1", a)["path"] for a in ("nd1", "nd2")}, {str(trial.trash_dir() / path.name)})
+
+    def test_kept_by_one_is_kept_for_all(self):
+        path = self.share_with_bob()
+        trial.keep(self.conn, "1", "nd1", NOW)
+        kept = self.downloads / "songs" / path.name
+        self.assertTrue(kept.exists())
+        bob = trial.get(self.conn, "1", "nd2")
+        self.assertEqual((bob["state"], bob["reason"], bob["path"]), (trial.KEPT, "Kept by Alice", str(kept)))
+        self.assertEqual(trial.listing(self.conn, trial.ON_TRIAL, "nd2"), [])
+
+    def test_a_refusal_is_the_profiles_own(self):
+        path = self.on_trial("nd1", "1")
+        trial.remove(self.conn, "1", "nd1", NOW)
+        self.assertEqual(self.files(trial.trash_dir()), [path.name])
+        self.assertNotIn("1", mb._Run(self.conn, self.bob_stats, "nd2", NOW, "x").exclusions().ids)
+        # Bob's mix wants it: out of Alice's trash, back on trial, for him.
+        saved = mb.download_to_trial(self.conn, "nd2", [Candidate("1")], 1, auto_id("nd2", "discover"), NOW,
+                                     enqueue=no_download)
+        self.assertEqual([t["path"] for t in saved], [str(trial.trial_dir() / path.name)])
+        self.assertEqual(trial.get(self.conn, "1", "nd1")["state"], trial.TRASH)
+        self.assertEqual(trial.rejected(self.conn, "nd2")["ids"], set())
+        trial.keep(self.conn, "1", "nd2", NOW)
+        self.assertEqual(trial.get(self.conn, "1", "nd1")["state"], trial.DELETED)
+        self.assertIn("1", trial.rejected(self.conn, "nd1")["ids"])
+        self.assertEqual(trial.listing(self.conn, trial.TRASH, "nd1"), [])
+
+    def test_another_profiles_playlist_keeps_the_file_out_of_the_trash(self):
+        path = self.on_trial("nd1", "1")
+        save_playlists([{"id": "555", "title": "Bob's", "picture": "", "accounts": ["nd2"]}])
+        config.update_preview_state("555", {"playlist_title": "Bob's", "rows": [{"local_path": str(path), "matched": True}]})
+        self.addCleanup(config.delete_playlist_cache, "555")
+        row = trial.get(self.conn, "1", "nd1")
+        reason = trial._earned(row, {}, {}, trial.paths_in_regular_playlists(), set(), trial.Rules())
+        self.assertEqual(reason, "In a playlist of Bob")
+        with mock.patch("core.trial._rewrite_playlist"):
+            trial.remove(self.conn, "1", "nd1", NOW)
+        moved = self.downloads / "songs" / path.name
+        self.assertTrue(moved.exists())
+        self.assertEqual(self.files(trial.trash_dir()), [])
+        self.assertEqual(trial.get(self.conn, "1", "nd1")["state"], trial.DELETED)
+        self.assertEqual(config.get_preview_state("555")["rows"][0]["local_path"], str(moved))
+
+    def test_the_trash_waits_for_everyone(self):
+        path = self.share_with_bob()
+        trial.remove(self.conn, "1", "nd1", NOW)
+        trial.remove(self.conn, "1", "nd2", NOW)
+        in_trash = trial.trash_dir() / path.name
+        self.assertEqual(trial.empty_trash(self.conn, "nd1", NOW), 1)
+        self.assertTrue(in_trash.exists())
+        self.assertEqual(trial.empty_trash(self.conn, "nd2", NOW), 1)
+        self.assertFalse(in_trash.exists())
+
+    def test_a_track_also_downloaded_by_hand_leaves_no_second_copy(self):
+        path = self.share_with_bob()
+        by_hand = self.downloads / "songs" / "T - Song 1.flac"
+        by_hand.write_bytes(b"audio")
+        config.update_preview_state("auto-nd2-daily-1", {"rows": [{"local_path": str(path)}]})
+        self.addCleanup(config.delete_playlist_cache, "auto-nd2-daily-1")
+        key = trial.get(self.conn, "1", "nd1")["track_key"]
+        with mock.patch("core.mix_builder.library_copies", return_value={key: str(by_hand)}), \
+                mock.patch("core.trial._rewrite_playlist"):
+            mb.review_quarantine(NOW + 10)
+        self.assertFalse(path.exists())
+        for account in ("nd1", "nd2"):
+            row = trial.get(self.conn, "1", account)
+            self.assertEqual((row["state"], row["reason"], row["path"]), (trial.KEPT, "Also in your library", str(by_hand)))
+        self.assertEqual(config.get_preview_state("auto-nd2-daily-1")["rows"][0]["local_path"], str(by_hand))
+        self.assertEqual(sorted(p.name for p in (self.downloads / "songs").glob("*")), ["T - Song 1.flac"])
+
+    def test_a_removed_profile_hands_over_what_only_it_had(self):
+        self.share_with_bob("1")
+        self.on_trial("nd2", "2")
+        nd_accounts.delete("nd2")
+        self.assertIsNone(trial.get(self.conn, "1", "nd2"))
+        self.assertEqual(trial.get(self.conn, "1", "nd1")["state"], trial.ON_TRIAL)
+        self.assertEqual(trial.get(self.conn, "2", "nd1")["state"], trial.ON_TRIAL)
+
+
+class SharedRoutes(Routes):
+    def test_a_shared_track_says_with_whom(self):
+        path = self.on_trial("nd1", "1")
+        trial.share(self.conn, "nd2", "1", auto_id("nd2", "discover"), NOW)
+        bob = self.client.get("/api/mixes", headers=self.as_bob).get_json()
+        self.assertEqual(bob["on_trial"][0]["shared_with"], ["Alice"])
+        self.assertEqual(self.client.post("/api/mixes/trial/1/remove", headers=self.as_bob).status_code, 200)
+        self.assertTrue(path.exists())
+        self.assertEqual(self.client.get("/api/mixes").get_json()["on_trial"][0]["shared_with"], [])
+
+
+class OldQuarantine(Base):
+    def test_the_quarantine_of_before_profiles_becomes_the_installs(self):
+        self.conn.close()
+        db = mixes_db.db_path()
+        for suffix in ("", "-wal", "-shm"):
+            Path(f"{db}{suffix}").unlink(missing_ok=True)
+        backup = Path(config.DATA_DIR) / "backups" / "pre-1.16.0" / "mixes.db"
+        backup.unlink(missing_ok=True)
+        old = sqlite3.connect(db)
+        old.executescript("""
+            CREATE TABLE trial_tracks (deezer_id TEXT PRIMARY KEY, track_key TEXT NOT NULL, artist TEXT NOT NULL,
+                title TEXT NOT NULL, album TEXT NOT NULL DEFAULT '', path TEXT, size INTEGER NOT NULL DEFAULT 0,
+                mix_id TEXT NOT NULL DEFAULT '', downloaded_at INTEGER NOT NULL, trial_ends_at INTEGER NOT NULL,
+                state TEXT NOT NULL, state_at INTEGER NOT NULL, reason TEXT NOT NULL DEFAULT '');
+            INSERT INTO trial_tracks VALUES ('7', 'a|b', 'A', 'B', '', '/x.flac', 1, 'auto-blend-1', 1, 2, 'on_trial', 1, '');
+            INSERT INTO trial_tracks VALUES ('8', 'a|c', 'A', 'C', '', '/y.flac', 1, 'auto-discover', 1, 2, 'trash', 1, 'Never played');
+        """)
+        old.close()
+        self.conn = mixes_db.connect()
+        self.addCleanup(self.conn.close)
+        keyed = {row[1]: row[5] for row in self.conn.execute("PRAGMA table_info(trial_tracks)")}
+        self.assertTrue(keyed["deezer_id"] and keyed["account_id"])
+        self.assertEqual([(r["deezer_id"], r["account_id"], r["state"]) for r in self.conn.execute(
+            "SELECT * FROM trial_tracks ORDER BY deezer_id")], [("7", "nd1", "on_trial"), ("8", "nd1", "trash")])
+        self.assertTrue(backup.exists())
+        mixes_db.connect().close()

@@ -33,33 +33,33 @@ class Base(unittest.TestCase):
         return path
 
     def state(self, deezer_id="1"):
-        return trial.get(self.conn, deezer_id)["state"]
+        return trial.get(self.conn, deezer_id, "nd1")["state"]
 
     def evaluate(self, plays=None, marks=None, used=(), owned=(), now=NOW, migrate=False, **rules):
         return trial.evaluate(self.conn, "nd1", plays or {}, marks or {}, set(used), set(owned), now,
                               trial.Rules(**rules), migrate=migrate)
 
     def in_trash(self, deezer_id="1"):
-        row = trial.get(self.conn, deezer_id)
+        row = trial.get(self.conn, deezer_id, "nd1")
         return row["state"] == "trash" and Path(row["path"]).is_relative_to(trial.trash_dir()) and Path(row["path"]).exists()
 
 
 class Adding(Base):
     def test_new_track_is_on_trial_for_30_days(self):
         self.add()
-        row = trial.get(self.conn, "1")
+        row = trial.get(self.conn, "1", "nd1")
         self.assertEqual(row["state"], "on_trial")
         self.assertEqual(row["trial_ends_at"], NOW + 30 * DAY)
         self.assertEqual(row["size"], 5)
 
     def test_key_comes_from_the_name_the_plays_will_carry(self):
         self.add(artist="Vald", title="Song (feat. X)")
-        self.assertEqual(trial.get(self.conn, "1")["track_key"], stats_db.track_key(["Vald"], "Song"))
+        self.assertEqual(trial.get(self.conn, "1", "nd1")["track_key"], stats_db.track_key(["Vald"], "Song"))
 
     def test_key_follows_the_tags_of_the_file_when_they_differ_from_deezer(self):
         with mock.patch("core.trial.read_tags", return_value={"artist": "Shiny", "title": "Blooming"}):
             self.add(artist="Shiny", title="Blooming Kitty")
-        self.assertEqual(trial.get(self.conn, "1")["track_key"], stats_db.track_key(["Shiny"], "Blooming"))
+        self.assertEqual(trial.get(self.conn, "1", "nd1")["track_key"], stats_db.track_key(["Shiny"], "Blooming"))
 
     def test_downloading_again_does_not_restart_a_decision(self):
         self.add()
@@ -73,7 +73,7 @@ class Verdicts(Base):
         path = self.add()
         report = self.evaluate(plays={"1": 2})
         self.assertEqual(self.state(), "pending")
-        self.assertEqual(trial.get(self.conn, "1")["reason"], "Played 2 times")
+        self.assertEqual(trial.get(self.conn, "1", "nd1")["reason"], "Played 2 times")
         self.assertTrue(path.exists())
         self.assertEqual(report["review"], 1)
 
@@ -108,7 +108,7 @@ class Verdicts(Base):
         self.evaluate(marks={"1": {"starred": True, "rating": 0}, "2": {"starred": False, "rating": 4}})
         self.assertEqual(self.state("1"), "pending")
         self.assertEqual(self.state("2"), "pending")
-        self.assertEqual(trial.get(self.conn, "1")["reason"], "Starred in Navidrome")
+        self.assertEqual(trial.get(self.conn, "1", "nd1")["reason"], "Starred in Navidrome")
 
     def test_stars_and_ratings_can_be_ignored(self):
         self.add("1", title="A")
@@ -122,7 +122,7 @@ class Verdicts(Base):
         self.add()
         self.evaluate(marks={"1": {"starred": False, "rating": 2}})
         self.assertTrue(self.in_trash())
-        self.assertEqual(trial.get(self.conn, "1")["reason"], "Rated 2 in Navidrome")
+        self.assertEqual(trial.get(self.conn, "1", "nd1")["reason"], "Rated 2 in Navidrome")
 
     def test_track_used_by_a_regular_playlist_counts(self):
         path = self.add()
@@ -131,7 +131,7 @@ class Verdicts(Base):
 
     def test_track_you_also_own_elsewhere_counts(self):
         self.add()
-        self.evaluate(owned=[trial.get(self.conn, "1")["track_key"]])
+        self.evaluate(owned=[trial.get(self.conn, "1", "nd1")["track_key"]])
         self.assertEqual(self.state(), "pending")
 
     def test_end_of_trial_goes_to_the_trash(self):
@@ -141,7 +141,7 @@ class Verdicts(Base):
         report = self.evaluate(plays={"1": 1}, now=NOW + 30 * DAY)
         self.assertTrue(self.in_trash())
         self.assertFalse(path.exists())
-        self.assertEqual(trial.get(self.conn, "1")["reason"], "Played once")
+        self.assertEqual(trial.get(self.conn, "1", "nd1")["reason"], "Played once")
         self.assertEqual(report["trashed"], 1)
 
     def test_the_trial_length_is_yours_and_applies_to_tracks_already_there(self):
@@ -150,7 +150,7 @@ class Verdicts(Base):
         self.assertEqual(self.state(), "on_trial")
         self.evaluate(now=NOW + 10 * DAY, trial_days=7)
         self.assertTrue(self.in_trash())
-        self.assertEqual(trial.get(self.conn, "1")["reason"], "Never played")
+        self.assertEqual(trial.get(self.conn, "1", "nd1")["reason"], "Never played")
 
     def test_delete_permanently_skips_the_trash(self):
         path = self.add(artist="Bad", title="Song")
@@ -204,7 +204,7 @@ class Migration(Base):
         self.evaluate(plays={"2": 2}, now=NOW + 31 * DAY, migrate=True)
         self.assertTrue(self.in_trash("1"))
         self.assertEqual(self.state("2"), "pending")
-        self.assertEqual(trial.get(self.conn, "2")["reason"], "Played 2 times")
+        self.assertEqual(trial.get(self.conn, "2", "nd1")["reason"], "Played 2 times")
 
     def test_without_migration_a_waiting_track_stays(self):
         self.old_pending("1", "Never played", "A")
@@ -215,17 +215,17 @@ class Migration(Base):
 class Decisions(Base):
     def test_remove_goes_to_the_trash(self):
         path = self.add()
-        trial.remove(self.conn, "1", NOW)
+        trial.remove(self.conn, "1", "nd1", NOW)
         self.assertEqual(self.state(), "trash")
         self.assertFalse(path.exists())
-        self.assertTrue(Path(trial.get(self.conn, "1")["path"]).exists())
-        self.assertTrue(Path(trial.get(self.conn, "1")["path"]).is_relative_to(trial.trash_dir()))
+        self.assertTrue(Path(trial.get(self.conn, "1", "nd1")["path"]).exists())
+        self.assertTrue(Path(trial.get(self.conn, "1", "nd1")["path"]).is_relative_to(trial.trash_dir()))
 
     def test_restore_brings_it_back_as_kept(self):
         self.add()
-        trial.remove(self.conn, "1", NOW)
-        trial.restore(self.conn, "1", NOW + DAY)
-        row = trial.get(self.conn, "1")
+        trial.remove(self.conn, "1", "nd1", NOW)
+        trial.restore(self.conn, "1", "nd1", NOW + DAY)
+        row = trial.get(self.conn, "1", "nd1")
         self.assertEqual(row["state"], "kept")
         self.assertTrue(Path(row["path"]).is_relative_to(self.downloads / "songs"))
         self.assertEqual(Path(row["path"]).read_bytes(), b"audio")
@@ -234,9 +234,9 @@ class Decisions(Base):
         path = self.add(content=b"new")
         existing = self.downloads / "songs" / path.name
         existing.write_bytes(b"existing")
-        trial.keep(self.conn, "1", NOW)
+        trial.keep(self.conn, "1", "nd1", NOW)
         self.assertEqual(existing.read_bytes(), b"existing")
-        self.assertEqual(Path(trial.get(self.conn, "1")["path"]).read_bytes(), b"new")
+        self.assertEqual(Path(trial.get(self.conn, "1", "nd1")["path"]).read_bytes(), b"new")
 
     def test_keep_all_takes_only_the_given_waiting_tracks(self):
         self.add("1", title="A")
@@ -257,17 +257,17 @@ class Decisions(Base):
 
     def test_kept_track_cannot_be_removed(self):
         self.add()
-        trial.keep(self.conn, "1", NOW)
+        trial.keep(self.conn, "1", "nd1", NOW)
         with self.assertRaises(trial.TrialError):
-            trial.remove(self.conn, "1", NOW)
+            trial.remove(self.conn, "1", "nd1", NOW)
         self.assertEqual(self.state(), "kept")
 
 
 class Purge(Base):
     def test_the_trash_length_is_yours(self):
         self.add()
-        trial.remove(self.conn, "1", NOW)
-        file = Path(trial.get(self.conn, "1")["path"])
+        trial.remove(self.conn, "1", "nd1", NOW)
+        file = Path(trial.get(self.conn, "1", "nd1")["path"])
         trial.purge(self.conn, "nd1", NOW + 6 * DAY, trash_days=7)
         self.assertTrue(file.exists())
         trial.purge(self.conn, "nd1", NOW + 7 * DAY, trash_days=7)
@@ -276,16 +276,16 @@ class Purge(Base):
     def test_empty_trash_now(self):
         self.add("1", title="A")
         self.add("2", title="B")
-        trial.remove(self.conn, "1", NOW)
-        files = [Path(trial.get(self.conn, "1")["path"])]
+        trial.remove(self.conn, "1", "nd1", NOW)
+        files = [Path(trial.get(self.conn, "1", "nd1")["path"])]
         self.assertEqual(trial.empty_trash(self.conn, "nd1", NOW), 1)
         self.assertFalse(files[0].exists())
         self.assertEqual((self.state("1"), self.state("2")), ("deleted", "on_trial"))
 
     def test_trash_is_emptied_after_30_days_only(self):
         self.add()
-        trial.remove(self.conn, "1", NOW)
-        file = Path(trial.get(self.conn, "1")["path"])
+        trial.remove(self.conn, "1", "nd1", NOW)
+        file = Path(trial.get(self.conn, "1", "nd1")["path"])
         trial.purge(self.conn, "nd1", NOW + 29 * DAY)
         self.assertTrue(file.exists())
         trial.purge(self.conn, "nd1", NOW + 31 * DAY)
@@ -294,18 +294,18 @@ class Purge(Base):
 
     def test_nothing_else_is_ever_deleted(self):
         self.add("1", title="Kept")
-        trial.keep(self.conn, "1", NOW)
+        trial.keep(self.conn, "1", "nd1", NOW)
         self.add("2", title="Trial")
         self.add("3", title="Waiting")
         self.conn.execute("UPDATE trial_tracks SET state='pending' WHERE deezer_id='3'")
         self.conn.commit()
         trial.purge(self.conn, "nd1", NOW + 1000 * DAY)
         for deezer_id in ("1", "2", "3"):
-            self.assertTrue(Path(trial.get(self.conn, deezer_id)["path"]).exists())
+            self.assertTrue(Path(trial.get(self.conn, deezer_id, "nd1")["path"]).exists())
 
     def test_removed_track_is_remembered_after_the_file_is_gone(self):
         self.add(artist="Bad", title="Song")
-        trial.remove(self.conn, "1", NOW)
+        trial.remove(self.conn, "1", "nd1", NOW)
         trial.purge(self.conn, "nd1", NOW + 31 * DAY)
         self.assertIn("1", trial.rejected(self.conn, "nd1")["ids"])
         self.assertIn(stats_db.track_key(["Bad"], "Song"), trial.rejected(self.conn, "nd1")["keys"])
@@ -329,14 +329,14 @@ class Safety(Base):
         target = self.outside()
         self.forge(target, "pending")
         with self.assertRaises(trial.TrialError):
-            trial.remove(self.conn, "1", NOW)
+            trial.remove(self.conn, "1", "nd1", NOW)
         self.assertEqual(target.read_bytes(), b"precious")
 
     def test_keep_refuses_a_path_outside(self):
         target = self.outside()
         self.forge(target, "on_trial")
         with self.assertRaises(trial.TrialError):
-            trial.keep(self.conn, "1", NOW)
+            trial.keep(self.conn, "1", "nd1", NOW)
         self.assertEqual(target.read_bytes(), b"precious")
 
     def test_purge_leaves_a_path_outside(self):
@@ -352,7 +352,7 @@ class Safety(Base):
         sneaky = trial.trial_dir() / ".." / ".." / "library" / "My album" / "01.flac"
         self.forge(sneaky, "pending")
         with self.assertRaises(trial.TrialError):
-            trial.remove(self.conn, "1", NOW)
+            trial.remove(self.conn, "1", "nd1", NOW)
         self.assertEqual(target.read_bytes(), b"precious")
 
     def test_folder_with_a_similar_name_is_outside(self):
@@ -361,7 +361,7 @@ class Safety(Base):
         twin.write_bytes(b"precious")
         self.forge(twin, "pending")
         with self.assertRaises(trial.TrialError):
-            trial.remove(self.conn, "1", NOW)
+            trial.remove(self.conn, "1", "nd1", NOW)
         self.assertEqual(twin.read_bytes(), b"precious")
 
     def test_evaluate_survives_a_refused_path(self):
@@ -396,7 +396,7 @@ class Moved(Base):
         conn.execute("UPDATE tracks SET file_path=? WHERE id=?", (str(path), track))
         conn.commit()
         conn.close()
-        trial.keep(self.conn, "1", NOW)
+        trial.keep(self.conn, "1", "nd1", NOW)
         conn = stats_db.connect("nd1")
         self.addCleanup(conn.close)
         moved = conn.execute("SELECT file_path FROM tracks WHERE id=?", (track,)).fetchone()[0]
@@ -407,7 +407,7 @@ class Moved(Base):
         self.conn.execute("INSERT INTO track_features(path, mtime_ns, bpm, genre, analyzed_at) VALUES (?,?,?,?,?)",
                           (str(path), 1, 120, "Rap", NOW))
         self.conn.commit()
-        trial.keep(self.conn, "1", NOW)
+        trial.keep(self.conn, "1", "nd1", NOW)
         rows = self.conn.execute("SELECT path FROM track_features").fetchall()
         self.assertEqual([r[0] for r in rows], [str(self.downloads / "songs" / path.name)])
 
@@ -417,7 +417,7 @@ class Moved(Base):
         config.update_preview_state("777", {"rows": rows})
         self.addCleanup(lambda: config.delete_playlist_cache("777"))
         with mock.patch("core.trial._rewrite_playlist") as rewrite:
-            trial.keep(self.conn, "1", NOW)
+            trial.keep(self.conn, "1", "nd1", NOW)
         self.assertEqual(config.get_preview_state("777")["rows"][0]["local_path"], str(self.downloads / "songs" / path.name))
         rewrite.assert_called_once_with("777")
 
@@ -431,7 +431,7 @@ class Forgotten(Base):
         self.addCleanup(lambda: config.delete_playlist_cache("auto-daily-1"))
         self.addCleanup(lambda: config.delete_playlist_cache("779"))
         with mock.patch("core.trial._rewrite_playlist") as rewrite:
-            trial.remove(self.conn, "1", NOW)
+            trial.remove(self.conn, "1", "nd1", NOW)
         self.assertEqual(config.get_preview_state("auto-daily-1")["rows"], [other])
         self.assertFalse(config.get_preview_state("779")["rows"][0]["matched"])
         self.assertEqual(rewrite.call_count, 2)
@@ -442,10 +442,10 @@ class Paths(Base):
         path = self.add()
         config.update_preview_state("auto-daily-1", {"rows": [{"local_path": str(path)}]})
         self.addCleanup(lambda: config.delete_playlist_cache("auto-daily-1"))
-        self.assertEqual(trial.paths_in_regular_playlists(), set())
+        self.assertEqual(set(trial.paths_in_regular_playlists()), set())
         config.update_preview_state("778", {"rows": [{"local_path": str(path)}]})
         self.addCleanup(lambda: config.delete_playlist_cache("778"))
-        self.assertEqual(trial.paths_in_regular_playlists(), {str(path)})
+        self.assertEqual(set(trial.paths_in_regular_playlists()), {str(path)})
 
 
 class Usage(Base):
