@@ -3,7 +3,9 @@ package io.github.catchow0.d2n.data
 import retrofit2.http.Body
 import retrofit2.http.GET
 import retrofit2.http.POST
+import kotlinx.serialization.json.JsonObject
 import retrofit2.http.DELETE
+import retrofit2.http.PUT
 import okhttp3.MultipartBody
 import retrofit2.http.Multipart
 import retrofit2.http.Part
@@ -78,6 +80,21 @@ interface D2nApi {
 
     @POST("api/v1/playlists/{id}/scan")
     suspend fun playlistScan(@Path("id") id: String, @Body body: Map<String, Any?> = emptyMap()): TaskStartResponse
+
+    @POST("api/v1/playlists/{id}/download-missing")
+    suspend fun playlistDownloadMissing(@Path("id") id: String): TaskStartResponse
+
+    @POST("api/v1/playlists/{id}/match")
+    suspend fun playlistMatch(@Path("id") id: String, @Body body: Map<String, Any?>): JsonObject
+
+    @PUT("api/v1/playlists/{id}/automation")
+    suspend fun playlistAutomation(@Path("id") id: String, @Body body: Map<String, Any?>): JsonObject
+
+    @PUT("api/v1/playlists/{id}/accounts")
+    suspend fun playlistAccounts(@Path("id") id: String, @Body body: Map<String, Any?>): JsonObject
+
+    @POST("api/v1/playlists/{id}/publish")
+    suspend fun playlistPublish(@Path("id") id: String): JsonObject
 
     // Phase 7: Made for you.
     @GET("api/v1/mixes")

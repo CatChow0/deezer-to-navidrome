@@ -29,6 +29,8 @@ fun PlaylistTracksScreen(viewModel: PlaylistTracksViewModel) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(onClick = { viewModel.scan(true) }) { Text("Quick scan") }
             Button(onClick = { viewModel.scan(false) }) { Text("Full scan") }
+            Button(onClick = viewModel::downloadMissing) { Text("Download missing") }
+            Button(onClick = viewModel::publish) { Text("Publish") }
         }
         if (state.loading || state.scanning) {
             androidx.compose.foundation.layout.Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
@@ -40,7 +42,7 @@ fun PlaylistTracksScreen(viewModel: PlaylistTracksViewModel) {
             Text("${p.matchedCount ?: 0} matched / ${p.unmatchedCount ?: 0} unmatched / ${p.uncheckedCount ?: 0} unchecked", style = MaterialTheme.typography.bodySmall)
             LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 items(p.rows, key = { "${it.number}" }) { row ->
-                    PlaylistRowView(row)
+                    PlaylistRowView(row) { mode -> row.trackId?.let { viewModel.mark(it, mode) } }
                 }
             }
         }
@@ -48,7 +50,7 @@ fun PlaylistTracksScreen(viewModel: PlaylistTracksViewModel) {
 }
 
 @Composable
-private fun PlaylistRowView(row: PlaylistRow) {
+private fun PlaylistRowView(row: PlaylistRow, onMark: (String) -> Unit = {}) {
     Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
         Text(row.deezerName.ifBlank { "${row.deezerArtist} - ${row.deezerTitle}" })
         Text(
@@ -57,5 +59,9 @@ private fun PlaylistRowView(row: PlaylistRow) {
             color = if (row.matched == true) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
         )
         if (row.downloaded) Text("Downloaded", style = MaterialTheme.typography.labelSmall)
+        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            if (row.matched != false) Button(onClick = { onMark("missing") }) { Text("Missing") }
+            if (row.matched != null) Button(onClick = { onMark("auto") }) { Text("Auto") }
+        }
     }
 }

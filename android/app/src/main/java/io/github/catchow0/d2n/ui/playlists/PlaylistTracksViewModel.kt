@@ -48,5 +48,42 @@ class PlaylistTracksViewModel(private val api: () -> D2nApi, private val id: Str
         }
     }
 
+    fun downloadMissing() {
+        viewModelScope.launch {
+            _state.value = _state.value.copy(loading = true, error = null)
+            try {
+                val resp: TaskStartResponse = apiCall { api().playlistDownloadMissing(id) }
+                _state.value = _state.value.copy(loading = false, message = "Download started: ${resp.taskId}")
+            } catch (e: Exception) {
+                _state.value = _state.value.copy(loading = false, error = e.message ?: "Download failed")
+            }
+        }
+    }
+
+    fun mark(trackId: String, mode: String) {
+        viewModelScope.launch {
+            _state.value = _state.value.copy(loading = true, error = null)
+            try {
+                apiCall { api().playlistMatch(id, mapOf("track_id" to trackId, "mode" to mode)) }
+                _state.value = _state.value.copy(loading = false, message = "Updated")
+                load()
+            } catch (e: Exception) {
+                _state.value = _state.value.copy(loading = false, error = e.message ?: "Match failed")
+            }
+        }
+    }
+
+    fun publish() {
+        viewModelScope.launch {
+            _state.value = _state.value.copy(loading = true, error = null)
+            try {
+                apiCall { api().playlistPublish(id) }
+                _state.value = _state.value.copy(loading = false, message = "Published")
+            } catch (e: Exception) {
+                _state.value = _state.value.copy(loading = false, error = e.message ?: "Publish failed")
+            }
+        }
+    }
+
     fun clearMessage() { _state.value = _state.value.copy(message = null, error = null) }
 }
