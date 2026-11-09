@@ -96,6 +96,10 @@ interface D2nApi {
     @POST("api/v1/playlists/{id}/publish")
     suspend fun playlistPublish(@Path("id") id: String): JsonObject
 
+    // Phase 7: Navidrome accounts for a playlist.
+    @GET("api/v1/navidrome/accounts")
+    suspend fun navidromeAccounts(): NavidromeAccountsResponse
+
     // Phase 7: Made for you.
     @GET("api/v1/mixes")
     suspend fun mixes(): MixesResponse

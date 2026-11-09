@@ -183,6 +183,24 @@ data class PlaylistTracksResponse(
     val playlist: PlaylistPreview? = null,
 )
 
+// Phase 7: Navidrome accounts, used to choose where a playlist is published.
+@Serializable
+data class NavidromeAccount(
+    val id: String = "",
+    val label: String = "",
+    val url: String = "",
+    val username: String = "",
+    @SerialName("is_default") val isDefault: Boolean = false,
+    val complete: Boolean = false,
+)
+
+@Serializable
+data class NavidromeAccountsResponse(
+    val ok: Boolean = true,
+    val accounts: List<NavidromeAccount> = emptyList(),
+    val default: String? = null,
+)
+
 @Serializable
 data class MixTrack(
     val id: String = "",

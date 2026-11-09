@@ -55,4 +55,5 @@ class FakeD2nApi : D2nApi {
     override suspend fun mixKeep(deezerId: String): io.github.catchow0.d2n.data.MixesResponse = error("mixKeep was not expected")
     override suspend fun mixRemove(deezerId: String): io.github.catchow0.d2n.data.MixesResponse = error("mixRemove was not expected")
     override suspend fun mixRestore(deezerId: String): io.github.catchow0.d2n.data.MixesResponse = error("mixRestore was not expected")
+    override suspend fun navidromeAccounts(): io.github.catchow0.d2n.data.NavidromeAccountsResponse = error("navidromeAccounts was not expected")
 }

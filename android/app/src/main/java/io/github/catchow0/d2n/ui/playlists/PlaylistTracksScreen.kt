@@ -8,8 +8,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -31,12 +34,44 @@ fun PlaylistTracksScreen(viewModel: PlaylistTracksViewModel) {
             Button(onClick = { viewModel.scan(false) }) { Text("Full scan") }
             Button(onClick = viewModel::downloadMissing) { Text("Download missing") }
             Button(onClick = viewModel::publish) { Text("Publish") }
+            Button(onClick = viewModel::openSettings) { Text("Settings") }
         }
         if (state.loading || state.scanning) {
             androidx.compose.foundation.layout.Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
         }
         state.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         state.message?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
+        if (state.showSettings) {
+            AlertDialog(
+                onDismissRequest = viewModel::closeSettings,
+                title = { Text("Playlist settings") },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("Target Navidrome accounts", style = MaterialTheme.typography.labelLarge)
+                        state.accounts.forEach { acc ->
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Checkbox(checked = acc.id in state.selectedAccounts, onCheckedChange = { viewModel.toggleAccount(acc.id) })
+                                Text(acc.label.ifBlank { acc.username.ifBlank { acc.id } })
+                            }
+                        }
+                        Text("Automation", style = MaterialTheme.typography.labelLarge)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(checked = state.autoScan, onCheckedChange = viewModel::setAutoScan)
+                            Text("Auto scan")
+                        }
+                        if (state.autoScan) {
+                            OutlinedTextField(value = state.autoInterval, onValueChange = viewModel::setAutoInterval, label = { Text("Interval (min)") })
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Checkbox(checked = state.autoDownload, onCheckedChange = viewModel::setAutoDownload)
+                                Text("Download missing after scan")
+                            }
+                        }
+                    }
+                },
+                confirmButton = { Button(onClick = viewModel::saveSettings, enabled = !state.settingsLoading) { Text("Save") } },
+                dismissButton = { Button(onClick = viewModel::closeSettings) { Text("Cancel") } },
+            )
+        }
         state.preview?.let { p ->
             Text(p.playlistTitle, style = MaterialTheme.typography.titleMedium)
             Text("${p.matchedCount ?: 0} matched / ${p.unmatchedCount ?: 0} unmatched / ${p.uncheckedCount ?: 0} unchecked", style = MaterialTheme.typography.bodySmall)

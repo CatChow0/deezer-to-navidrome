@@ -9,6 +9,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.SwipeToDismissBox
+import androidx.compose.material3.SwipeToDismissBoxState
+import androidx.compose.material3.SwipeToDismissBoxValue
+import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -24,6 +29,7 @@ import coil.compose.AsyncImage
 import androidx.compose.foundation.layout.size
 import androidx.compose.ui.layout.ContentScale
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MixesScreen(viewModel: MixesViewModel) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -33,7 +39,27 @@ fun MixesScreen(viewModel: MixesViewModel) {
         state.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         Text("On trial (${state.onTrial.size})", style = MaterialTheme.typography.titleSmall)
         LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.weight(1f, fill = false)) {
-            items(state.onTrial, key = { it.id }) { t -> MixTrackRow(t, onKeep = { viewModel.keep(t.id) }, onRemove = { viewModel.remove(t.id) }) }
+            items(state.onTrial, key = { it.id }) { t ->
+                val dismissState = rememberSwipeToDismissBoxState(
+                    confirmValueChange = { value ->
+                        when (value) {
+                            SwipeToDismissBoxValue.StartToEnd -> { viewModel.keep(t.id); false }
+                            SwipeToDismissBoxValue.EndToStart -> { viewModel.remove(t.id); false }
+                            else -> false
+                        }
+                    }
+                )
+                SwipeToDismissBox(
+                    state = dismissState,
+                    backgroundContent = {
+                        Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                            Text("Keep", modifier = Modifier.padding(start = 16.dp))
+                            Text("Remove", modifier = Modifier.padding(end = 16.dp))
+                        }
+                    },
+                    content = { MixTrackRow(t, onKeep = { viewModel.keep(t.id) }, onRemove = { viewModel.remove(t.id) }) },
+                )
+            }
         }
         Text("Pending (${state.pending.size})", style = MaterialTheme.typography.titleSmall)
         LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.weight(1f, fill = false)) {
