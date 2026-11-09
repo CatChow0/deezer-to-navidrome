@@ -37,10 +37,16 @@ import io.github.catchow0.d2n.ui.about.AboutViewModel
 import io.github.catchow0.d2n.ui.activity.ActivityScreen
 import io.github.catchow0.d2n.ui.activity.ActivityViewModel
 import io.github.catchow0.d2n.ui.activity.TaskScreen
+import io.github.catchow0.d2n.ui.playlists.PlaylistTracksScreen
+import io.github.catchow0.d2n.ui.playlists.PlaylistTracksViewModel
+import io.github.catchow0.d2n.ui.playlists.PlaylistsScreen
+import io.github.catchow0.d2n.ui.playlists.PlaylistsViewModel
 import io.github.catchow0.d2n.ui.search.SearchScreen
 import io.github.catchow0.d2n.ui.search.SearchViewModel
 import io.github.catchow0.d2n.ui.activity.TaskViewModel
 import io.github.catchow0.d2n.ui.components.Aurora
+import io.github.catchow0.d2n.ui.madeforyou.MixesScreen
+import io.github.catchow0.d2n.ui.madeforyou.MixesViewModel
 import io.github.catchow0.d2n.ui.components.Banner
 import io.github.catchow0.d2n.ui.components.BannerTone
 import io.github.catchow0.d2n.ui.components.Brand
@@ -60,6 +66,9 @@ object SearchRoute
 
 @Serializable
 object PlaylistsRoute
+
+@Serializable
+data class PlaylistTracksRoute(val id: String)
 
 @Serializable
 object MadeForYouRoute
@@ -144,10 +153,17 @@ fun MainScaffold(graph: AppGraph, onSignedOut: (notice: String?) -> Unit, onOthe
                         SearchScreen(viewModel { SearchViewModel(graph::requireApi) })
                     }
                     composable<PlaylistsRoute> {
-                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("Playlists — phase 7", color = D2nColors.Text) }
+                        PlaylistsScreen(
+                            viewModel { PlaylistsViewModel(graph::requireApi) },
+                            onOpenPlaylist = { id -> inner.navigate(PlaylistTracksRoute(id)) },
+                        )
+                    }
+                    composable<PlaylistTracksRoute> { back ->
+                        val id = back.toRoute<PlaylistTracksRoute>().id
+                        PlaylistTracksScreen(viewModel(key = "tracks-$id") { PlaylistTracksViewModel(graph::requireApi, id) })
                     }
                     composable<MadeForYouRoute> {
-                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("Made for you — phase 7", color = D2nColors.Text) }
+                        MixesScreen(viewModel { MixesViewModel(graph::requireApi) })
                     }
                     composable<AboutRoute> {
                         AboutScreen(
@@ -183,7 +199,14 @@ fun MainScaffold(graph: AppGraph, onSignedOut: (notice: String?) -> Unit, onOthe
                     colors = colors,
                 )
                 NavigationBarItem(
-                    selected = false,
+                    selected = entry?.destination?.hasRoute<PlaylistsRoute>() == true,
+                    onClick = { inner.navigate(PlaylistsRoute) { launchSingleTop = true } },
+                    icon = { Icon(painterResource(R.drawable.ic_playlist), contentDescription = null) },
+                    label = { Text("Playlists") },
+                    colors = colors,
+                )
+                NavigationBarItem(
+                    selected = entry?.destination?.hasRoute<MadeForYouRoute>() == true,
                     onClick = { inner.navigate(MadeForYouRoute) { launchSingleTop = true } },
                     icon = { Icon(painterResource(R.drawable.ic_activity), contentDescription = null) },
                     label = { Text("Made for you") },

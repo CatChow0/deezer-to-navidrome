@@ -102,6 +102,110 @@ data class AppInfo(
 @Serializable
 data class ApiErrorDetail(val code: String, val message: String, @SerialName("retry_after") val retryAfter: Int? = null)
 
+// Phase 7: playlists.
+@Serializable
+data class PlaylistTile(
+    val id: String,
+    val title: String = "",
+    @SerialName("deezer_title") val deezerTitle: String = "",
+    val kind: String = "",
+    val source: String = "",
+    val subtitle: String = "",
+    val cover: String = "",
+    val accounts: List<String> = emptyList(),
+    val automation: PlaylistAutomation = PlaylistAutomation(),
+)
+
+@Serializable
+data class PlaylistAutomation(
+    val scan: Boolean = false,
+    @SerialName("interval_minutes") val intervalMinutes: Int = 60,
+    val download: Boolean = false,
+)
+
+@Serializable
+data class PlaylistListResponse(
+    val profile: String? = null,
+    val playlists: List<PlaylistTile> = emptyList(),
+    val navidrome: List<PlaylistTile> = emptyList(),
+)
+
+@Serializable
+data class LinkBody(val link: String)
+
+@Serializable
+data class PlaylistAddResponse(
+    val added: Boolean = false,
+    val playlist: PlaylistTile? = null,
+)
+
+@Serializable
+data class PlaylistImportResponse(
+    val id: String = "",
+    @SerialName("task_id") val taskId: String? = null,
+    val message: String? = null,
+)
+
+@Serializable
+data class TaskStartResponse(
+    @SerialName("task_id") val taskId: String? = null,
+    val total: Int? = null,
+)
+
+@Serializable
+data class PlaylistRow(
+    val number: Int = 0,
+    @SerialName("track_id") val trackId: String? = null,
+    @SerialName("deezer_name") val deezerName: String = "",
+    @SerialName("deezer_artist") val deezerArtist: String = "",
+    @SerialName("deezer_title") val deezerTitle: String = "",
+    @SerialName("deezer_album") val deezerAlbum: String = "",
+    val matched: Boolean? = null,
+    @SerialName("source_name") val sourceName: String = "",
+    val manual: Boolean = false,
+    val downloaded: Boolean = false,
+    @SerialName("local_path") val localPath: String? = null,
+)
+
+@Serializable
+data class PlaylistPreview(
+    @SerialName("playlist_id") val playlistId: String = "",
+    @SerialName("playlist_title") val playlistTitle: String = "",
+    val rows: List<PlaylistRow> = emptyList(),
+    @SerialName("matched_count") val matchedCount: Int? = null,
+    @SerialName("unmatched_count") val unmatchedCount: Int? = null,
+    @SerialName("unchecked_count") val uncheckedCount: Int? = null,
+)
+
+@Serializable
+data class PlaylistTracksResponse(
+    val ok: Boolean = true,
+    val playlist: PlaylistPreview? = null,
+)
+
+@Serializable
+data class MixTrack(
+    val id: String = "",
+    val artist: String = "",
+    val title: String = "",
+    val album: String = "",
+    val plays: Int = 0,
+    val reason: String = "",
+    val source: String = "",
+    val cover: String? = null,
+    @SerialName("days_left") val daysLeft: Int = 0,
+    @SerialName("trash_days_left") val trashDaysLeft: Int = 0,
+)
+
+@Serializable
+data class MixesResponse(
+    @SerialName("on_trial") val onTrial: List<MixTrack> = emptyList(),
+    val pending: List<MixTrack> = emptyList(),
+    val trash: List<MixTrack> = emptyList(),
+)
+
+// Phase 7: helpers for made-for-you (deferred data models).
+
 @Serializable
 data class ApiErrorBody(val error: ApiErrorDetail)
 

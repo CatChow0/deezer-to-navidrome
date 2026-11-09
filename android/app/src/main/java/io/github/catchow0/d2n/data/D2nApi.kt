@@ -3,6 +3,10 @@ package io.github.catchow0.d2n.data
 import retrofit2.http.Body
 import retrofit2.http.GET
 import retrofit2.http.POST
+import retrofit2.http.DELETE
+import okhttp3.MultipartBody
+import retrofit2.http.Multipart
+import retrofit2.http.Part
 import retrofit2.http.Path
 import retrofit2.http.Query
 
@@ -54,4 +58,37 @@ interface D2nApi {
 
     @POST("api/v1/library/check")
     suspend fun libraryCheck(@Body body: LibraryCheckRequest): LibraryCheckResponse
+
+    // Phase 7: playlists.
+    @GET("api/v1/playlists")
+    suspend fun playlists(): PlaylistListResponse
+
+    @POST("api/v1/playlists")
+    suspend fun addPlaylist(@Body body: LinkBody): PlaylistAddResponse
+
+    @DELETE("api/v1/playlists/{id}")
+    suspend fun deletePlaylist(@Path("id") id: String): PlaylistListResponse
+
+    @Multipart
+    @POST("api/v1/playlists/import")
+    suspend fun importPlaylist(@Part csvFile: MultipartBody.Part): PlaylistImportResponse
+
+    @GET("api/v1/playlists/{id}/tracks")
+    suspend fun playlistTracks(@Path("id") id: String): PlaylistTracksResponse
+
+    @POST("api/v1/playlists/{id}/scan")
+    suspend fun playlistScan(@Path("id") id: String, @Body body: Map<String, Any?> = emptyMap()): TaskStartResponse
+
+    // Phase 7: Made for you.
+    @GET("api/v1/mixes")
+    suspend fun mixes(): MixesResponse
+
+    @POST("api/v1/mixes/trial/{deezer_id}/keep")
+    suspend fun mixKeep(@Path("deezer_id") deezerId: String): MixesResponse
+
+    @POST("api/v1/mixes/trial/{deezer_id}/remove")
+    suspend fun mixRemove(@Path("deezer_id") deezerId: String): MixesResponse
+
+    @POST("api/v1/mixes/trial/{deezer_id}/restore")
+    suspend fun mixRestore(@Path("deezer_id") deezerId: String): MixesResponse
 }
