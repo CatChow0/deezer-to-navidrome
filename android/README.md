@@ -42,6 +42,6 @@ A release build needs the signing key; without it, Gradle stops with "No signing
 | `data` | The API client (Retrofit, OkHttp with the token and profile headers, an HTTP cache for ETags), its errors, server addresses, and the session stored in DataStore with the token sealed by Tink and the Android Keystore |
 | `tasks` | Following a task: the event stream resumed with `Last-Event-ID`, then waiting for events when the stream does not get through |
 | `update` | The update rule, the checked download, and Android's `PackageInstaller` |
-| `ui` | The theme from the web's `tokens.css`, the components, sign-in, and the app's inside: profile, Activity, More |
+| `ui` | The theme from the web's `tokens.css`, the components, sign-in, Deezer search, playlists and Made for you, and the app's inside: profile, Activity, More |
 
 The fonts are Unbounded and Instrument Sans, under the SIL Open Font License (`app/src/main/assets/licenses/`).

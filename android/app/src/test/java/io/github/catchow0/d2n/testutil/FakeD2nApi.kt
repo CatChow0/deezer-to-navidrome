@@ -22,6 +22,9 @@ class FakeD2nApi : D2nApi {
     var onCancel: suspend (String) -> CancelAnswer = { error("cancel was not expected") }
     var onLogout: suspend () -> SignedOut = { SignedOut(true) }
     var onApp: suspend () -> AppInfo = { error("app was not expected") }
+    var onPlaylists: suspend () -> io.github.catchow0.d2n.data.PlaylistListResponse = { error("playlists was not expected") }
+    var onPlaylistTracks: suspend (String) -> io.github.catchow0.d2n.data.PlaylistTracksResponse = { error("playlistTracks was not expected") }
+    var onNavidromeAccounts: suspend () -> io.github.catchow0.d2n.data.NavidromeAccountsResponse = { error("navidromeAccounts was not expected") }
     var onSearch: suspend (String, String) -> io.github.catchow0.d2n.data.SearchResponse = { _, _ -> error("search was not expected") }
     var onLibraryCheck: suspend (io.github.catchow0.d2n.data.LibraryCheckRequest) -> io.github.catchow0.d2n.data.LibraryCheckResponse = { error("libraryCheck was not expected") }
     var onMixes: suspend () -> io.github.catchow0.d2n.data.MixesResponse = { error("mixes was not expected") }
@@ -46,11 +49,11 @@ class FakeD2nApi : D2nApi {
     override suspend fun searchArtist(artistId: String): io.github.catchow0.d2n.data.SearchArtistResponse = error("searchArtist was not expected")
     override suspend fun preview(trackId: String): io.github.catchow0.d2n.data.Preview = error("preview was not expected")
     override suspend fun libraryCheck(body: io.github.catchow0.d2n.data.LibraryCheckRequest): io.github.catchow0.d2n.data.LibraryCheckResponse = onLibraryCheck(body)
-    override suspend fun playlists(): io.github.catchow0.d2n.data.PlaylistListResponse = error("playlists was not expected")
+    override suspend fun playlists(): io.github.catchow0.d2n.data.PlaylistListResponse = onPlaylists()
     override suspend fun addPlaylist(body: io.github.catchow0.d2n.data.LinkBody): io.github.catchow0.d2n.data.PlaylistAddResponse = error("addPlaylist was not expected")
     override suspend fun deletePlaylist(id: String): io.github.catchow0.d2n.data.PlaylistListResponse = error("deletePlaylist was not expected")
     override suspend fun importPlaylist(csvFile: okhttp3.MultipartBody.Part): io.github.catchow0.d2n.data.PlaylistImportResponse = error("importPlaylist was not expected")
-    override suspend fun playlistTracks(id: String): io.github.catchow0.d2n.data.PlaylistTracksResponse = error("playlistTracks was not expected")
+    override suspend fun playlistTracks(id: String): io.github.catchow0.d2n.data.PlaylistTracksResponse = onPlaylistTracks(id)
     override suspend fun playlistScan(id: String, body: Map<String, Any?>): io.github.catchow0.d2n.data.TaskStartResponse = error("playlistScan was not expected")
     override suspend fun playlistDownloadMissing(id: String): io.github.catchow0.d2n.data.TaskStartResponse = error("playlistDownloadMissing was not expected")
     override suspend fun playlistMatch(id: String, body: Map<String, Any?>): kotlinx.serialization.json.JsonObject = error("playlistMatch was not expected")
@@ -61,5 +64,5 @@ class FakeD2nApi : D2nApi {
     override suspend fun mixKeep(deezerId: String): io.github.catchow0.d2n.data.MixesResponse = onMixKeep(deezerId)
     override suspend fun mixRemove(deezerId: String): io.github.catchow0.d2n.data.MixesResponse = onMixRemove(deezerId)
     override suspend fun mixRestore(deezerId: String): io.github.catchow0.d2n.data.MixesResponse = onMixRestore(deezerId)
-    override suspend fun navidromeAccounts(): io.github.catchow0.d2n.data.NavidromeAccountsResponse = error("navidromeAccounts was not expected")
+    override suspend fun navidromeAccounts(): io.github.catchow0.d2n.data.NavidromeAccountsResponse = onNavidromeAccounts()
 }
