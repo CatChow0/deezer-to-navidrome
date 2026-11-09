@@ -5,11 +5,15 @@ from core.stats_db import add_play, connect, play_count, split_artists, track_ke
 
 
 def reset():
-    path = stats_db.db_path()
+    """Every account's history goes."""
+    import shutil
+
+    path = stats_db.db_path("nd1")
     for suffix in ("", "-wal", "-shm"):
         target = path.with_name(path.name + suffix)
         if target.exists():
             target.unlink()
+    shutil.rmtree(path.parent / "stats", ignore_errors=True)
 
 
 class TrackKey(unittest.TestCase):
@@ -42,7 +46,7 @@ class TrackKey(unittest.TestCase):
 class Storage(unittest.TestCase):
     def setUp(self):
         reset()
-        self.conn = connect()
+        self.conn = connect("nd1")
 
     def tearDown(self):
         self.conn.close()

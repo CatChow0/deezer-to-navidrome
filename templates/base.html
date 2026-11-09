@@ -11,7 +11,7 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='css/' ~ sheet ~ '.css') }}">
   {% endfor %}
 </head>
-<body>
+<body{% if nd_active %} data-profile="{{ nd_active }}"{% endif %}>
   <canvas id="bg-noise" aria-hidden="true"></canvas>
   <div class="blur-field" aria-hidden="true"></div>
   <div class="grain" aria-hidden="true"></div>

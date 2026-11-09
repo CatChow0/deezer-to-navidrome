@@ -222,7 +222,10 @@ export async function playStoryTrack(track) {
     if (token === loadToken) setLevel(storyLevel(), FADE_MS);
   };
   try {
-    await attempt(`/stats/audio/${encodeURIComponent(track.id)}`, track.duration ? hookTime(track.duration) : undefined);
+    // The track ids are those of this profile's history.
+    const profile = document.body.dataset.profile;
+    const source = `/stats/audio/${encodeURIComponent(track.id)}${profile ? `?a=${encodeURIComponent(profile)}` : ''}`;
+    await attempt(source, track.duration ? hookTime(track.duration) : undefined);
   } catch (_) {
     if (token !== loadToken) return;
     try {

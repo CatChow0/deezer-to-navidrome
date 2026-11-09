@@ -22,7 +22,7 @@ class Base(unittest.TestCase):
         self.playlists_dir = self.root / "playlists"
         self.library_dir = self.root / "library"
         self.library_dir.mkdir()
-        for db in (mixes_db.db_path(), stats_db.db_path()):
+        for db in (mixes_db.db_path(), stats_db.db_path("nd1")):
             for suffix in ("", "-wal", "-shm"):
                 Path(f"{db}{suffix}").unlink(missing_ok=True)
         save_playlists([])
@@ -47,7 +47,7 @@ class Base(unittest.TestCase):
             self.addCleanup(patch.stop)
         self.conn = mixes_db.connect()
         self.addCleanup(self.conn.close)
-        self.stats = stats_db.connect()
+        self.stats = stats_db.connect("nd1")
         self.addCleanup(self.stats.close)
 
     def own(self, artist, title, genre="Rock", bpm=120, plays=0, album=None):

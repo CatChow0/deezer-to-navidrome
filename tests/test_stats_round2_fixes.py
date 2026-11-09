@@ -36,20 +36,20 @@ class CoverUrls(CoversCase):
     def test_row_url_changes_with_the_image(self):
         song = flac_file(self.music / "A" / "Album" / "01.flac", image_bytes((200, 30, 60)))
         track, _ = self.track(path=song)
-        stats_covers.cover_for("track", track)
-        first = stats_queries.overview("all", "", UTC)["top"]["tracks"][0]["image"]
+        stats_covers.cover_for("nd1", "track", track)
+        first = stats_queries.overview("nd1", "all", "", UTC)["top"]["tracks"][0]["image"]
         self.assertIn("?v=", first)
         self.conn.execute("DELETE FROM covers")
         self.conn.commit()
         flac_file(song, image_bytes((10, 200, 10)))
-        stats_covers.cover_for("track", track)
-        self.assertNotEqual(first, stats_queries.overview("all", "", UTC)["top"]["tracks"][0]["image"])
+        stats_covers.cover_for("nd1", "track", track)
+        self.assertNotEqual(first, stats_queries.overview("nd1", "all", "", UTC)["top"]["tracks"][0]["image"])
 
     def test_versioned_url_may_be_kept_but_only_privately(self):
         song = flac_file(self.music / "A" / "Album" / "01.flac", image_bytes())
         track, _ = self.track(path=song)
-        stats_covers.cover_for("track", track)
-        url = stats_queries.overview("all", "", UTC)["top"]["tracks"][0]["image"]
+        stats_covers.cover_for("nd1", "track", track)
+        url = stats_queries.overview("nd1", "all", "", UTC)["top"]["tracks"][0]["image"]
         response = self.client.get(url)
         self.assertIn("private", response.headers["Cache-Control"])
         self.assertIn("max-age", response.headers["Cache-Control"])
@@ -78,19 +78,19 @@ class StuckCovers(CoversCase):
     def test_the_real_source_is_recorded(self):
         embedded = flac_file(self.music / "A" / "E" / "1.flac", image_bytes())
         track, _ = self.track("One", path=embedded)
-        stats_covers.cover_for("track", track)
+        stats_covers.cover_for("nd1", "track", track)
         self.assertEqual(self.source("track"), "embedded")
         self.conn.execute("DELETE FROM covers")
         self.conn.commit()
         self.conn.execute("UPDATE tracks SET file_path = NULL, cover_url = 'http://d/x.jpg' WHERE id = ?", (track,))
         self.conn.commit()
         with mock.patch("core.stats_covers.requests.get", return_value=mock.Mock(status_code=200, content=image_bytes())):
-            stats_covers.cover_for("track", track)
+            stats_covers.cover_for("nd1", "track", track)
         self.assertEqual(self.source("track"), "deezer")
 
     def test_album_gets_another_look_when_a_track_gains_a_cover(self):
         track, album = self.track(album="Alb")
-        self.assertIsNone(stats_covers.cover_for("album", album))
+        self.assertIsNone(stats_covers.cover_for("nd1", "album", album))
         result = {"id": 11, "title": "Song", "duration": 100, "artist": {"id": 3, "name": "A"},
                   "album": {"id": 22, "title": "Alb", "cover_big": "http://img/big.jpg"}}
 
@@ -99,16 +99,16 @@ class StuckCovers(CoversCase):
 
         from core import stats_enrich
         with mock.patch("core.deezer._public_api", api):
-            stats_enrich.enrich_batch(5)
+            stats_enrich.enrich_batch("nd1", 5)
         with mock.patch("core.stats_covers.requests.get", return_value=mock.Mock(status_code=200, content=image_bytes())):
-            self.assertIsNotNone(stats_covers.cover_for("album", album))
+            self.assertIsNotNone(stats_covers.cover_for("nd1", "album", album))
 
 
 class MergeRefreshesCovers(ImportCase):
     def test_merge_gives_gaps_and_deezer_covers_another_look(self):
         make_navidrome(self.nav, [{"ts": 1000, "title": "One", "album": "Alb"}])
-        run_import("merge")
-        conn = stats_db.connect()
+        run_import("nd1", "merge")
+        conn = stats_db.connect("nd1")
         track_key = conn.execute("SELECT key FROM tracks").fetchone()[0]
         album_key = conn.execute("SELECT key FROM albums").fetchone()[0]
         conn.executemany("INSERT INTO covers(kind, item_key, file, source, checked_at, retry_at) VALUES (?, ?, ?, ?, 1, ?)", [
@@ -119,22 +119,22 @@ class MergeRefreshesCovers(ImportCase):
         conn.close()
         with mock.patch("core.stats_files.PurePosixPath", wraps=__import__("pathlib").PurePosixPath):
             with mock.patch("core.config.get_paths_from_config", return_value=([Path("/m")], Path("/n"), Path("/none.json"), {Path("/m"): Path("/music")})):
-                run_import("merge")
-        conn = stats_db.connect()
+                run_import("nd1", "merge")
+        conn = stats_db.connect("nd1")
         self.assertEqual(conn.execute("SELECT COUNT(*) FROM covers").fetchone()[0], 0)
         conn.close()
 
     def test_merge_keeps_art_from_your_files(self):
         make_navidrome(self.nav, [{"ts": 1000, "title": "One", "album": "Alb"}])
-        run_import("merge")
-        conn = stats_db.connect()
+        run_import("nd1", "merge")
+        conn = stats_db.connect("nd1")
         key = conn.execute("SELECT key FROM tracks").fetchone()[0]
         conn.execute("INSERT INTO covers(kind, item_key, file, source, checked_at) VALUES ('track', ?, 'x.jpg', 'embedded', 1)", (key,))
         conn.commit()
         conn.close()
         with mock.patch("core.config.get_paths_from_config", return_value=([Path("/m")], Path("/n"), Path("/none.json"), {Path("/m"): Path("/music")})):
-            run_import("merge")
-        conn = stats_db.connect()
+            run_import("nd1", "merge")
+        conn = stats_db.connect("nd1")
         self.assertEqual(conn.execute("SELECT COUNT(*) FROM covers").fetchone()[0], 1)
         conn.close()
 
@@ -143,7 +143,7 @@ class TrueLines(unittest.TestCase):
     def setUp(self):
         from tests.test_stats_db import reset
         reset()
-        self.conn = stats_db.connect()
+        self.conn = stats_db.connect("nd1")
         self.addCleanup(self.conn.close)
 
     def play(self, ts, title="Song", artists=("A",), album="Album", duration=200):
@@ -152,7 +152,7 @@ class TrueLines(unittest.TestCase):
 
     def story(self, key="2026-10", kind="month"):
         self.conn.commit()
-        return recap(kind, key, UTC)["story"]
+        return recap("nd1", kind, key, UTC)["story"]
 
     def test_mostly_needs_a_real_majority(self):
         for i in range(12):
@@ -233,7 +233,7 @@ class TrueLines(unittest.TestCase):
         for i in range(96):
             self.play(at(10, 2) + i * 300, title=f"U{i}", artists=("[Unknown Artist]",))
         self.play(at(10, 20), title="R", artists=("Real",))
-        data = (self.conn.commit(), recap("month", "2026-10", UTC))[1]
+        data = (self.conn.commit(), recap("nd1", "month", "2026-10", UTC))[1]
         self.assertNotIn("[Unknown Artist]", [a["name"] for a in data["new_artists"]])
         self.assertNotEqual((data["discovery"] or {}).get("name"), "[Unknown Artist]")
         self.assertNotEqual(data["story"]["personality"]["name"], "Superfan")

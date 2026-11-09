@@ -5,7 +5,7 @@ import sqlite3
 
 def make_navidrome(path, plays):
     """plays: dicts with ts, title, and optional artist, artists, album,
-    album_artist, duration, genres, file."""
+    album_artist, duration, genres, file, user (the Navidrome user who played it, "u" by default)."""
     conn = sqlite3.connect(path)
     conn.executescript("""
         CREATE TABLE media_file (id TEXT PRIMARY KEY, title TEXT, artist TEXT, album TEXT, album_artist TEXT,
@@ -28,7 +28,8 @@ def make_navidrome(path, plays):
              play.get("album_artist", artists[0]), play.get("duration", 200),
              json.dumps(tags), json.dumps(participants), play.get("path", file_id)),
         )
-        conn.execute("INSERT INTO scrobbles(media_file_id, user_id, submission_time) VALUES (?, 'u', ?)", (file_id, play["ts"]))
+        conn.execute("INSERT INTO scrobbles(media_file_id, user_id, submission_time) VALUES (?, ?, ?)",
+                     (file_id, play.get("user", "u"), play["ts"]))
     conn.commit()
     conn.close()
 

@@ -18,7 +18,7 @@ def at(month, day, hour=12, minute=0, year=2026):
 class StoryCase(unittest.TestCase):
     def setUp(self):
         reset()
-        self.conn = stats_db.connect()
+        self.conn = stats_db.connect("nd1")
         self.addCleanup(self.conn.close)
         self.seconds = 0
 
@@ -33,7 +33,7 @@ class StoryCase(unittest.TestCase):
 
     def story(self, key="2026-10", kind="month"):
         self.conn.commit()
-        return recap(kind, key, UTC)["story"]
+        return recap("nd1", kind, key, UTC)["story"]
 
     def filler(self, month=10, count=30, artist="Filler", year=2026):
         """Plays spread out over a month, so they trigger nothing on their own."""

@@ -7,14 +7,20 @@
   </div>
 
   <div class="doc-block">
+    <h4>One history per profile</h4>
+    <p>Each Navidrome account has its own history, its own token and its own recaps: the Stats tab shows those of the profile chosen at the top of the page. A rebuild only takes the plays of the profile's Navidrome user in Navidrome's database, the user found by <b>Test</b> in Settings → Navidrome accounts, else the one with its user name. Maloja kept one person's plays, so only the account made from your install reads it.</p>
+    <p>Your install's history stays where it was. A removed account's history is kept in <code>backups/removed-accounts/</code>. Made for you still reads your install's history for now.</p>
+  </div>
+
+  <div class="doc-block">
     <h4>Recording new plays</h4>
     <ol>
-      <li>Create a token in <b>Settings → Listening stats</b>, or set <code>SCROBBLE_TOKEN</code>.</li>
-      <li>Set <code>ND_LISTENBRAINZ_BASEURL=http://deezer-to-navidrome:8080/apis/listenbrainz/1/</code> in Navidrome and restart it. Change the host if Navidrome reaches this app under another name.</li>
-      <li>In Navidrome's personal settings, link ListenBrainz using that token. If Navidrome already holds a token, you can paste that one in Settings instead.</li>
+      <li>Create a token in <b>Settings → Listening stats</b>, or set <code>SCROBBLE_TOKEN</code>. Each profile has its own: choose the profile at the top of the page first.</li>
+      <li>Set <code>ND_LISTENBRAINZ_BASEURL=http://deezer-to-navidrome:8080/apis/listenbrainz/1/</code> in Navidrome and restart it, once for all its users. Change the host if Navidrome reaches this app under another name.</li>
+      <li>Signed in to Navidrome as that profile's user, link ListenBrainz in the personal settings using its token. If Navidrome already holds a token, you can paste that one in Settings instead.</li>
       <li>Play a track and find it under <b>Stats → Recent plays</b>.</li>
     </ol>
-    <p>This token is checked even with <code>DISABLE_AUTH</code>. Making a new one stops Navidrome until it is linked again.</p>
+    <p>The tokens are checked even with <code>DISABLE_AUTH</code>, and two profiles cannot share one: the token says whose play it is. Making a new one stops that user's plays until it is linked again.</p>
   </div>
 
   <div class="doc-block">
@@ -42,7 +48,7 @@
 
   <div class="doc-block">
     <h4>Going back to a backup</h4>
-    <p>Both rebuilds first keep a backup of the history (the last 3, as <code>stats.db.bak-*</code> in the data folder). To restore one, stop the container, delete <code>stats.db</code> and its <code>-wal</code> and <code>-shm</code> files, rename the backup to <code>stats.db</code>, and start it again.</p>
+    <p>Both rebuilds first keep a backup of the profile's history (the last 3, as <code>stats.db.bak-*</code> in the data folder for your install's account, <code>stats/nd2.db.bak-*</code>… for the others). To restore one, stop the container, delete the history and its <code>-wal</code> and <code>-shm</code> files, rename the backup to its name, and start it again.</p>
     <p><b>Reset data</b> in Settings does not touch your listening history.</p>
   </div>
 

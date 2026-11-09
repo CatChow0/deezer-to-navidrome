@@ -129,13 +129,14 @@ def _rewrite_playlist(playlist_id) -> None:
 
 
 def _follow_move(old, new) -> None:
-    """The history and the saved playlists keep pointing at the file."""
-    conn = stats_db.connect()
-    try:
-        conn.execute("UPDATE tracks SET file_path=? WHERE file_path=?", (str(new), str(old)))
-        conn.commit()
-    finally:
-        conn.close()
+    """Every history and the saved playlists keep pointing at the file."""
+    for account in stats_db.accounts_with_history():
+        conn = stats_db.connect(account)
+        try:
+            conn.execute("UPDATE tracks SET file_path=? WHERE file_path=?", (str(new), str(old)))
+            conn.commit()
+        finally:
+            conn.close()
     for playlist_id, state in config.load_preview_state().items():
         rows = state.get("rows") if isinstance(state, dict) else None
         if not isinstance(rows, list) or not any(r.get("local_path") == str(old) for r in rows):

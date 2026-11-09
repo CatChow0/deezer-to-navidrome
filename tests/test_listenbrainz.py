@@ -45,7 +45,7 @@ class ListenBrainz(unittest.TestCase):
         return self.post({"listen_type": "single", "payload": list(listens)})
 
     def plays(self):
-        conn = stats_db.connect()
+        conn = stats_db.connect("nd1")
         try:
             return stats_db.play_count(conn)
         finally:
@@ -90,7 +90,7 @@ class ListenBrainz(unittest.TestCase):
         response = self.single(listen(title="Song", artist="A • B", additional_info={"duration_ms": 200000}))
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json()["status"], "ok")
-        conn = stats_db.connect()
+        conn = stats_db.connect("nd1")
         self.assertEqual([r[0] for r in conn.execute("SELECT name FROM artists ORDER BY name")], ["A", "B"])
         play = conn.execute("SELECT duration_sec, source FROM plays").fetchone()
         self.assertEqual((play["duration_sec"], play["source"]), (200.0, "live"))
@@ -134,7 +134,7 @@ class ListenBrainz(unittest.TestCase):
         Path(config.LIBRARY_CACHE_FILE).write_text(json.dumps(
             {"library": [{"tag_artist": "A", "tag_title": "Song", "duration": 123.0}]}), encoding="utf-8")
         self.single(listen())
-        conn = stats_db.connect()
+        conn = stats_db.connect("nd1")
         row = conn.execute("SELECT duration_sec, duration_source FROM tracks").fetchone()
         self.assertEqual((row["duration_sec"], row["duration_source"]), (123.0, "library"))
         conn.close()
@@ -144,8 +144,8 @@ class ListenBrainz(unittest.TestCase):
             self.assertEqual(self.single(listen()).status_code, 503)
 
     def test_listen_waits_during_import_transaction(self):
-        stats_db.connect().close()
-        holder = sqlite3.connect(stats_db.db_path(), check_same_thread=False)
+        stats_db.connect("nd1").close()
+        holder = sqlite3.connect(stats_db.db_path("nd1"), check_same_thread=False)
         holder.execute("BEGIN IMMEDIATE")
         threading.Timer(1.0, holder.rollback).start()
         started = time.time()

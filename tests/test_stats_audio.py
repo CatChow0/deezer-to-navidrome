@@ -34,7 +34,7 @@ class Audio(unittest.TestCase):
         self.client = self.app.test_client()
 
     def track(self, path=None):
-        conn = stats_db.connect()
+        conn = stats_db.connect("nd1")
         track = stats_db.upsert_track(conn, "Song", ["A"])
         conn.execute("UPDATE tracks SET file_path = ? WHERE id = ?", (str(path) if path else None, track))
         conn.commit()

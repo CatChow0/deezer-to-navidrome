@@ -1,14 +1,27 @@
 """The listening history: plays, the tracks and artists they point to, in SQLite.
 
 Each play keeps the album and length of what was actually played, since one
-track can appear on several albums, in versions of different lengths."""
+track can appear on several albums, in versions of different lengths.
+
+Each Navidrome account has its own history, in its own database: the first
+one, made from the install, keeps stats.db where it always was; the others
+have stats/<id>.db. Every caller names the account: there is no default, so
+that nothing can read the wrong one by forgetting it."""
 import json
+import logging
 import re
 import sqlite3
+import time
 import unicodedata
 from pathlib import Path
+from urllib.parse import quote
 
 from core import config
+
+logger = logging.getLogger(__name__)
+
+FIRST_ACCOUNT = "nd1"
+_ACCOUNT_ID = re.compile(r"^nd[1-9][0-9]*$")
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS artists (
@@ -89,12 +102,40 @@ _FEAT_INLINE = re.compile(r"\s(?:feat\.?|ft\.?|featuring)\s.*$", re.I)
 _FEAT_SPLIT = re.compile(r"\s+(?:feat\.?|ft\.?|featuring)\s+", re.I)
 
 
-def db_path() -> Path:
-    return Path(config.DATA_DIR) / "stats.db"
+def checked_account(account) -> str:
+    """The account ID, refused unless it has the shape of one: it names a file."""
+    account = str(account or "")
+    if not _ACCOUNT_ID.match(account):
+        raise ValueError(f"Not a Navidrome account: {account!r}")
+    return account
 
 
-def connect() -> sqlite3.Connection:
-    path = db_path()
+def db_path(account) -> Path:
+    account = checked_account(account)
+    if account == FIRST_ACCOUNT:
+        return Path(config.DATA_DIR) / "stats.db"
+    return Path(config.DATA_DIR) / "stats" / f"{account}.db"
+
+
+def has_history(account) -> bool:
+    return db_path(account).exists()
+
+
+def accounts_with_history() -> list:
+    """The accounts whose history exists, in the order of Settings: for what
+    reads every history, as the library is shared."""
+    from core import nd_accounts
+
+    try:
+        ids = [a["id"] for a in nd_accounts.list_accounts()]
+    except Exception as e:
+        logger.error("Could not read the Navidrome accounts: %s", e)
+        ids = [FIRST_ACCOUNT]
+    return [account for account in ids if has_history(account)]
+
+
+def connect(account) -> sqlite3.Connection:
+    path = db_path(account)
     path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(path, timeout=30)
     conn.row_factory = sqlite3.Row
@@ -262,3 +303,43 @@ def set_meta(conn, key, value) -> None:
 
 def play_count(conn) -> int:
     return conn.execute("SELECT COUNT(*) FROM plays").fetchone()[0]
+
+
+def with_account(data, account):
+    """Points every cover in an answer at this account's history: its ids are
+    its own, so the same address must never show another account's cover."""
+    if isinstance(data, list):
+        for item in data:
+            with_account(item, account)
+    elif isinstance(data, dict):
+        for key, value in data.items():
+            if key == "image" and isinstance(value, str) and value.startswith("/stats/cover/") and "a=" not in value:
+                data[key] = f"{value}{'&' if '?' in value else '?'}a={quote(account)}"
+            elif isinstance(value, (dict, list)):
+                with_account(value, account)
+    return data
+
+
+def archive(account) -> str:
+    """Moves the history of a removed account to backups/removed-accounts/, as
+    one file, and returns its path; "" when it had none. The original goes only
+    once the copy is complete."""
+    path = db_path(account)
+    if not path.exists():
+        return ""
+    folder = Path(config.DATA_DIR) / "backups" / "removed-accounts"
+    folder.mkdir(parents=True, exist_ok=True)
+    target = folder / f"{account}-{time.strftime('%Y%m%d-%H%M%S')}.db"
+    source = sqlite3.connect(path)
+    copy = sqlite3.connect(target)
+    try:
+        source.backup(copy)
+    finally:
+        copy.close()
+        source.close()
+    for old in [path.with_name(path.name + suffix) for suffix in ("", "-wal", "-shm")] + list(path.parent.glob(f"{path.name}.bak-*")):
+        try:
+            old.unlink(missing_ok=True)
+        except OSError as e:
+            logger.error("Could not remove %s: %s", old, e)
+    return str(target)

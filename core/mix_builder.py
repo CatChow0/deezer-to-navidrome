@@ -12,7 +12,7 @@ import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from core import config, deezer_dl, mix_candidates, metadata_fix, mix_taste, mixes_db, stats_db, trial
+from core import account_context, config, deezer_dl, mix_candidates, metadata_fix, mix_taste, mixes_db, stats_db, trial
 from core.library import load_library_cache
 from core.mix_taste import MIN_MIX_SIZE, MIX_COUNT, MIX_SIZE
 
@@ -421,7 +421,7 @@ def review_quarantine(now=None):
                                    (trial.ON_TRIAL, trial.PENDING, trial.TRASH)).fetchone()[0]
             if not waiting:
                 return None
-            stats_conn = stats_db.connect()
+            stats_conn = stats_db.connect(account_context.made_for_you_account())
             try:
                 report = review_trial(conn, stats_conn, now)
             finally:
@@ -451,7 +451,7 @@ def generate(versions=None, progress=None, now=None) -> dict:
         raise RuntimeError("Your mixes are already being generated")
     emit = progress or (lambda message: None)
     now = int(now or time.time())
-    conn, stats_conn = mixes_db.connect(), stats_db.connect()
+    conn, stats_conn = mixes_db.connect(), stats_db.connect(account_context.made_for_you_account())
     try:
         settings = load_settings(conn)
         wanted = versions if versions is not None else enabled_versions(settings)

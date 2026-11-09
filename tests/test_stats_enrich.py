@@ -53,7 +53,7 @@ class MatchRule(unittest.TestCase):
 class Batches(unittest.TestCase):
     def setUp(self):
         reset()
-        self.conn = stats_db.connect()
+        self.conn = stats_db.connect("nd1")
 
     def tearDown(self):
         self.conn.close()
@@ -71,7 +71,7 @@ class Batches(unittest.TestCase):
 
     def run_batch(self, api=None, limit=10):
         with mock.patch("core.deezer._public_api", api or fake_api()):
-            return enrich_batch(limit)
+            return enrich_batch("nd1", limit)
 
     def test_fills_missing_fields(self):
         track = self.track()

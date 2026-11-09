@@ -806,7 +806,7 @@ class StepAside(Base):
 
     def test_known_history_saves_the_search(self):
         mock.patch.stopall()
-        stats = stats_db.connect()
+        stats = stats_db.connect("nd1")
         self.addCleanup(stats.close)
         stats_db.upsert_track(stats, "History song", ["Known Artist"], genre="Rap", genre_source="deezer")
         stats.commit()

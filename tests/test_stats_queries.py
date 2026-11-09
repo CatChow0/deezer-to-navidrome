@@ -61,7 +61,7 @@ class Periods(unittest.TestCase):
 class WithPlays(unittest.TestCase):
     def setUp(self):
         reset()
-        self.conn = stats_db.connect()
+        self.conn = stats_db.connect("nd1")
 
     def tearDown(self):
         self.conn.close()
@@ -76,16 +76,16 @@ class WithPlays(unittest.TestCase):
 
     def test_play_at_month_boundary_in_one_period_only(self):
         self.play(stamp(2026, 11, 1, 0, 0))
-        self.assertEqual(overview("month", "2026-10", UTC)["totals"]["plays"], 0)
-        self.assertEqual(overview("month", "2026-11", UTC)["totals"]["plays"], 1)
+        self.assertEqual(overview("nd1", "month", "2026-10", UTC)["totals"]["plays"], 0)
+        self.assertEqual(overview("nd1", "month", "2026-11", UTC)["totals"]["plays"], 1)
         # 1 Nov 00:00 UTC is still 31 Oct in New York.
-        self.assertEqual(overview("month", "2026-10", "America/New_York")["totals"]["plays"], 1)
+        self.assertEqual(overview("nd1", "month", "2026-10", "America/New_York")["totals"]["plays"], 1)
 
     def test_seconds_use_play_then_track_length(self):
         self.play(stamp(2026, 10, 1), title="Known", duration=200)
         self.play(stamp(2026, 10, 2), title="Fallback", duration=None, track_duration=100)
         self.play(stamp(2026, 10, 3), title="Unknown", duration=None)
-        data = overview("month", "2026-10", UTC)
+        data = overview("nd1", "month", "2026-10", UTC)
         self.assertEqual(data["totals"]["seconds"], 300)
         self.assertEqual(data["coverage"]["length_pct"], 67)
 
@@ -93,20 +93,20 @@ class WithPlays(unittest.TestCase):
         self.play(stamp(2026, 10, 1), album="First")
         self.play(stamp(2026, 10, 2), album="Second")
         self.play(stamp(2026, 10, 3), album="Second")
-        data = overview("month", "2026-10", UTC)
+        data = overview("nd1", "month", "2026-10", UTC)
         self.assertEqual([(a["title"], a["plays"]) for a in data["top"]["albums"]], [("Second", 2), ("First", 1)])
         self.assertEqual(data["top"]["tracks"][0]["plays"], 3)
 
     def test_featured_artist_counted_for_both_play_once_in_total(self):
         self.play(stamp(2026, 10, 1), artists=("A", "B"))
-        data = overview("month", "2026-10", UTC)
+        data = overview("nd1", "month", "2026-10", UTC)
         self.assertEqual(data["totals"]["plays"], 1)
         self.assertEqual({a["name"]: a["plays"] for a in data["top"]["artists"]}, {"A": 1, "B": 1})
 
     def test_unique_artists_not_capped(self):
         for i in range(15):
             self.play(stamp(2026, 10, 1) + i * 300, title=f"S{i}", artists=(f"Artist {i}",))
-        data = overview("month", "2026-10", UTC)
+        data = overview("nd1", "month", "2026-10", UTC)
         self.assertEqual(data["totals"]["artists"], 15)
         self.assertEqual(len(data["top"]["artists"]), 10)
 
@@ -116,16 +116,16 @@ class WithPlays(unittest.TestCase):
             self.play(stamp(2026, 9, 1) + i * 300, title=f"Fill {i}", artists=(f"Filler {i}",))
         self.play(stamp(2026, 10, 1), title="Again", artists=("Old Friend",))
         self.play(stamp(2026, 10, 2), title="Fresh", artists=("Newcomer",))
-        names = [a["name"] for a in recap("month", "2026-10", UTC)["new_artists"]]
+        names = [a["name"] for a in recap("nd1", "month", "2026-10", UTC)["new_artists"]]
         self.assertEqual(names, ["Newcomer"])
-        self.assertEqual(recap("month", "2026-10", UTC)["discovery"]["name"], "Newcomer")
+        self.assertEqual(recap("nd1", "month", "2026-10", UTC)["discovery"]["name"], "Newcomer")
 
     def test_comparison_uses_whole_previous_period(self):
         for i in range(60):
             for n in range(60 - i):
                 self.play(stamp(2026, 9, 1 + (n % 28), 1 + (i % 22)) + n, title=f"S{i}", artists=(f"Artist {i}",))
         self.play(stamp(2026, 10, 1), title="S55", artists=("Artist 55",))
-        data = recap("month", "2026-10", UTC)
+        data = recap("nd1", "month", "2026-10", UTC)
         self.assertTrue(data["has_previous"])
         self.assertEqual(data["top"]["artists"][0]["previous_plays"], 5)
         self.assertEqual(data["top"]["tracks"][0]["previous_plays"], 5)
@@ -134,11 +134,11 @@ class WithPlays(unittest.TestCase):
     def test_entity_absent_from_previous_is_null(self):
         self.play(stamp(2026, 9, 1), title="Old", artists=("B",))
         self.play(stamp(2026, 10, 1), title="New", artists=("A",))
-        self.assertIsNone(recap("month", "2026-10", UTC)["top"]["artists"][0]["previous_plays"])
+        self.assertIsNone(recap("nd1", "month", "2026-10", UTC)["top"]["artists"][0]["previous_plays"])
 
     def test_first_period_has_no_previous(self):
         self.play(stamp(2026, 2, 16))
-        data = recap("month", "2026-02", UTC)
+        data = recap("nd1", "month", "2026-02", UTC)
         self.assertFalse(data["has_previous"])
         self.assertEqual(data["new_artists"], [])
         self.assertIsNone(data["discovery"])
@@ -146,12 +146,12 @@ class WithPlays(unittest.TestCase):
 
     def test_first_period_starting_on_the_first_is_not_partial(self):
         self.play(stamp(2026, 2, 1))
-        self.assertFalse(recap("month", "2026-02", UTC)["partial"])
+        self.assertFalse(recap("nd1", "month", "2026-02", UTC)["partial"])
 
     def test_gap_in_history_does_not_hide_comparison(self):
         self.play(stamp(2026, 1, 5))
         self.play(stamp(2026, 3, 5))
-        data = recap("month", "2026-03", UTC)
+        data = recap("nd1", "month", "2026-03", UTC)
         self.assertTrue(data["has_previous"])
         self.assertEqual(data["previous"]["totals"]["plays"], 0)
 
@@ -160,30 +160,30 @@ class WithPlays(unittest.TestCase):
         current = f"{now.year}-{now.month:02d}"
         self.play(int(now.timestamp()) - 1)
         self.play(stamp(2020, 3, 10))
-        index = recap_index(UTC)
+        index = recap_index("nd1", UTC)
         self.assertEqual(index["months"][0]["key"], current)
         self.assertTrue(index["months"][0]["so_far"])
         self.assertEqual(index["latest_complete"], "2020-03")
-        self.assertTrue(recap("month", current, UTC)["so_far"])
+        self.assertTrue(recap("nd1", "month", current, UTC)["so_far"])
         self.assertEqual([y["key"] for y in index["years"]][-1], "2020")
 
     def test_recap_index_empty(self):
-        self.assertEqual(recap_index(UTC), {"months": [], "years": [], "latest_complete": None})
+        self.assertEqual(recap_index("nd1", UTC), {"months": [], "years": [], "latest_complete": None})
 
     def test_genres_group_and_share_sums_to_one(self):
         self.play(stamp(2026, 10, 1), title="R1", genre="Rap", duration=100)
         self.play(stamp(2026, 10, 2), title="R2", genre="Hip Hop", duration=100)
         self.play(stamp(2026, 10, 3), title="P1", genre="Pop", duration=200)
         self.play(stamp(2026, 10, 4), title="None", duration=100)
-        data = overview("month", "2026-10", UTC)
+        data = overview("nd1", "month", "2026-10", UTC)
         self.assertEqual([(g["name"], g["plays"], g["seconds"]) for g in data["genres"]], [("Rap & Hip-Hop", 2, 200), ("Pop", 1, 200)])
         self.assertAlmostEqual(sum(g["share"] for g in data["genres"]), 1.0)
         self.assertEqual(data["coverage"]["genre_pct"], 75)
 
     def test_heatmap_uses_timezone(self):
         self.play(stamp(2026, 10, 5, 22))  # Monday 22:00 UTC, Tuesday 07:00 in Tokyo
-        utc = overview("month", "2026-10", UTC)["habits"]["heatmap"]
-        tokyo = overview("month", "2026-10", "Asia/Tokyo")["habits"]["heatmap"]
+        utc = overview("nd1", "month", "2026-10", UTC)["habits"]["heatmap"]
+        tokyo = overview("nd1", "month", "2026-10", "Asia/Tokyo")["habits"]["heatmap"]
         self.assertEqual(utc[0][22], 1)
         self.assertEqual(tokyo[1][7], 1)
 
@@ -193,17 +193,17 @@ class WithPlays(unittest.TestCase):
         for day in (1, 2):
             self.play(stamp(2026, 11, day), title=f"N{day}")
         self.play(stamp(2026, 11, 20), title="Later")
-        habits = overview("all", "", UTC)["habits"]
+        habits = overview("nd1", "all", "", UTC)["habits"]
         self.assertEqual(habits["longest_streak"], {"days": 4, "start": "2026-10-30", "end": "2026-11-02"})
 
     def test_busiest_day(self):
         self.play(stamp(2026, 10, 1))
         self.play(stamp(2026, 10, 2, 10))
         self.play(stamp(2026, 10, 2, 11))
-        self.assertEqual(overview("all", "", UTC)["habits"]["busiest_day"], {"date": "2026-10-02", "plays": 2})
+        self.assertEqual(overview("nd1", "all", "", UTC)["habits"]["busiest_day"], {"date": "2026-10-02", "plays": 2})
 
     def test_overview_empty_period(self):
-        data = overview("month", "2026-10", UTC)
+        data = overview("nd1", "month", "2026-10", UTC)
         self.assertEqual(data["totals"], {"plays": 0, "seconds": 0, "artists": 0, "albums": 0, "tracks": 0})
         self.assertEqual(data["top"], {"artists": [], "albums": [], "tracks": []})
         self.assertEqual(data["genres"], [])
@@ -214,7 +214,7 @@ class WithPlays(unittest.TestCase):
     def test_recap_and_overview_agree(self):
         self.play(stamp(2026, 10, 1), title="A1", artists=("X", "Y"), genre="Rap")
         self.play(stamp(2026, 10, 2), title="A2", artists=("X",), duration=None)
-        base, story = overview("month", "2026-10", UTC), recap("month", "2026-10", UTC)
+        base, story = overview("nd1", "month", "2026-10", UTC), recap("nd1", "month", "2026-10", UTC)
         self.assertEqual(base["totals"], story["totals"])
         strip = lambda rows: [{k: v for k, v in row.items() if k not in ("previous_plays", "is_new")} for row in rows]
         for kind in ("artists", "albums", "tracks"):
@@ -223,43 +223,43 @@ class WithPlays(unittest.TestCase):
 
     def test_label(self):
         self.play(stamp(2026, 10, 1))
-        self.assertEqual(overview("month", "2026-10", UTC)["label"], "October 2026")
-        self.assertEqual(overview("year", "2026", UTC)["label"], "2026")
-        self.assertEqual(overview("all", "", UTC)["label"], "All time")
-        self.assertEqual(overview("week", "2026-W43", UTC)["label"], "Week 43, 2026")
+        self.assertEqual(overview("nd1", "month", "2026-10", UTC)["label"], "October 2026")
+        self.assertEqual(overview("nd1", "year", "2026", UTC)["label"], "2026")
+        self.assertEqual(overview("nd1", "all", "", UTC)["label"], "All time")
+        self.assertEqual(overview("nd1", "week", "2026-W43", UTC)["label"], "Week 43, 2026")
 
     def test_search_plays_filters_and_pages(self):
         self.play(stamp(2026, 10, 1), title="Déjà Vu", artists=("Beyoncé",), album="B'Day")
         for i in range(60):
             self.play(stamp(2026, 10, 2) + i, title="Other", artists=("Someone",), album="Filler")
-        self.assertEqual(search_plays("deja", 1)["total"], 1)
-        self.assertEqual(search_plays("BEYONCE", 1)["plays"][0]["title"], "Déjà Vu")
-        self.assertEqual(search_plays("b'day", 1)["total"], 1)
-        first = search_plays("", 1)
+        self.assertEqual(search_plays("nd1", "deja", 1)["total"], 1)
+        self.assertEqual(search_plays("nd1", "BEYONCE", 1)["plays"][0]["title"], "Déjà Vu")
+        self.assertEqual(search_plays("nd1", "b'day", 1)["total"], 1)
+        first = search_plays("nd1", "", 1)
         self.assertEqual((first["total"], len(first["plays"]), first["page"], first["pages"]), (61, 50, 1, 2))
         self.assertGreater(first["plays"][0]["listened_at"], first["plays"][1]["listened_at"])
-        self.assertEqual(len(search_plays("", 2)["plays"]), 11)
-        self.assertEqual(len(search_plays("", 99)["plays"]), 0)
-        self.assertEqual(search_plays("100%_'\"", 1)["total"], 0)
+        self.assertEqual(len(search_plays("nd1", "", 2)["plays"]), 11)
+        self.assertEqual(len(search_plays("nd1", "", 99)["plays"]), 0)
+        self.assertEqual(search_plays("nd1", "100%_'\"", 1)["total"], 0)
 
     def test_entity_detail(self):
         track = self.play(stamp(2026, 9, 1), title="One", artists=("A", "B"))
         self.play(stamp(2026, 10, 1), title="One", artists=("A", "B"))
         self.play(stamp(2026, 10, 2), title="Two", artists=("A",))
         artist_id = self.conn.execute("SELECT id FROM artists WHERE name='A'").fetchone()[0]
-        artist = entity("artist", artist_id, UTC)
+        artist = entity("nd1", "artist", artist_id, UTC)
         self.assertEqual(artist["name"], "A")
         self.assertEqual(artist["plays"], 3)
         self.assertEqual(artist["first_play"], stamp(2026, 9, 1))
         self.assertEqual(artist["last_play"], stamp(2026, 10, 2))
         self.assertEqual(artist["by_month"], [{"key": "2026-09", "plays": 1}, {"key": "2026-10", "plays": 2}])
         self.assertEqual([t["title"] for t in artist["top_tracks"]], ["One", "Two"])
-        self.assertEqual(entity("track", track, UTC)["plays"], 2)
+        self.assertEqual(entity("nd1", "track", track, UTC)["plays"], 2)
         album_id = self.conn.execute("SELECT id FROM albums").fetchone()[0]
-        self.assertEqual(entity("album", album_id, UTC)["plays"], 3)
-        self.assertIsNone(entity("artist", 99999, UTC))
+        self.assertEqual(entity("nd1", "album", album_id, UTC)["plays"], 3)
+        self.assertIsNone(entity("nd1", "artist", 99999, UTC))
         with self.assertRaises(BadPeriod):
-            entity("label", 1, UTC)
+            entity("nd1", "label", 1, UTC)
 
 
 if __name__ == "__main__":

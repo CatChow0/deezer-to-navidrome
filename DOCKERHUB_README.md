@@ -100,9 +100,9 @@ Each download shows its progress on its button (*Queued* → `42%` or `3/14` →
 
 ## Listening stats
 
-The **Stats** tab keeps its own play history in `stats.db`. No Maloja, lb-enricher or Navidrome password needed. Recaps are stories built from what stood out in each period, playing your own files, with covers taken from your files and Deezer and cached locally.
+The **Stats** tab keeps its own play history in `stats.db`, one per Navidrome account (`stats/nd2.db`… for the others). No Maloja, lb-enricher or Navidrome password needed. Recaps are stories built from what stood out in each period, playing your own files, with covers taken from your files and Deezer and cached locally.
 
-- **New plays:** create a token in Settings → Listening stats, set `ND_LISTENBRAINZ_BASEURL=http://deezer-to-navidrome:8080/apis/listenbrainz/1/` in Navidrome, restart it, and link ListenBrainz in its personal settings with that token.
+- **New plays:** create a token in Settings → Listening stats, set `ND_LISTENBRAINZ_BASEURL=http://deezer-to-navidrome:8080/apis/listenbrainz/1/` in Navidrome, restart it, and link ListenBrainz in its personal settings with that token. Each Navidrome user has their own token: the token says whose play it is.
 - **Past plays:** mount Navidrome's and Maloja's data folders read-only at `/import/navidrome` and `/import/maloja`, then choose **Rebuild (merge)** under Stats → Your history. Merge never removes a play and can be run again at any time. **Start clean** wipes and rebuilds from the sources, and needs Navidrome's database.
 
 ---
@@ -128,7 +128,8 @@ The **Stats** tab keeps its own play history in `stats.db`. No Maloja, lb-enrich
 | `D2N_ENCRYPTION_KEY` | random, kept in `encryption.key` | Key the saved credentials are encrypted with |
 | `APP_USERNAME` / `APP_PASSWORD` | — | The sign-in account; else the first visit asks you to create it |
 | `API_TOKEN` | — | Token for other apps (CatBoard); else create one in Settings |
-| `SCROBBLE_TOKEN` | — | Token Navidrome sends plays with; else create one in Settings |
+| `SCROBBLE_TOKEN` | — | Token Navidrome sends the first account's plays with; else create one in Settings |
+| `SCROBBLE_TOKEN_ND2`… | — | Token of the other Navidrome accounts |
 | `STATS_NAVIDROME_DB` | `/import/navidrome/navidrome.db` | Navidrome's database, for importing your history |
 | `STATS_MALOJA_DB` | `/import/maloja/malojadb.sqlite` | Maloja's database, for importing your history |
 | `DISABLE_AUTH` | `false` | `true` turns sign-in off (a reverse proxy already asks for a login) |
@@ -208,7 +209,7 @@ Similarities use `rapidfuzz` (C++, GIL-releasing), so matching threads run in pa
 | `playlist_preview_state.json` | Per-playlist match results (enables Quick scan) |
 | `releases.json` / `release_prefs.json` | Release feed / muted artists |
 | `dedup_report.json` / `dedup_choices.json` | Latest duplicate analysis / persistent decisions |
-| `stats.db`, `stats.db.bak-*` | Listening history and the last 3 backups |
+| `stats.db`, `stats/*.db`, their `.bak-*` | Listening history of each Navidrome account and the last 3 backups |
 | `stats_sources/` | Saved copy of Maloja's database |
 | `stats_covers/` | Cached artist, album and track covers |
 | `covers/` | Playlist artwork |

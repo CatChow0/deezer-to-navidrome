@@ -24,7 +24,7 @@ class Api(unittest.TestCase):
         folder = tempfile.TemporaryDirectory()
         self.addCleanup(folder.cleanup)
         self.root = Path(folder.name)
-        for db in (mixes_db.db_path(), stats_db.db_path()):
+        for db in (mixes_db.db_path(), stats_db.db_path("nd1")):
             for suffix in ("", "-wal", "-shm"):
                 Path(f"{db}{suffix}").unlink(missing_ok=True)
         save_playlists([])

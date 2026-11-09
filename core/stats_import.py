@@ -32,7 +32,7 @@ NAVIDROME_DEFAULT = "/import/navidrome/navidrome.db"
 MALOJA_DEFAULT = "/import/maloja/malojadb.sqlite"
 
 NAVIDROME_NEEDS = {
-    "scrobbles": {"media_file_id", "submission_time"},
+    "scrobbles": {"media_file_id", "submission_time", "user_id"},
     "media_file": {"id", "title", "artist", "album", "album_artist", "duration", "tags", "participants"},
 }
 MALOJA_NEEDS = {
@@ -48,8 +48,20 @@ _running = threading.Lock()
 _library_cache = {}
 
 
+NO_USER = ("Navidrome's plays were not read: this profile is not linked to a Navidrome user yet."
+           " Add its user name in Settings → Navidrome accounts, then test it.")
+
+
 class ImportRefused(Exception):
     """The import cannot run; the message is shown to the user as it is."""
+
+
+def maloja_account():
+    """Maloja keeps one person's plays: those of the install, whose account was
+    made from it (else the default one). No other profile reads it."""
+    from core import nd_accounts
+
+    return nd_accounts.owner_fallback() or stats_db.FIRST_ACCOUNT
 
 
 def same_play(a_ts, a_key, a_title, b_ts, b_key, b_title) -> bool:
@@ -79,18 +91,30 @@ def _kept_maloja() -> Path:
     return Path(config.DATA_DIR) / "stats_sources" / "malojadb.sqlite"
 
 
-def source_status() -> dict:
+def source_status(account) -> dict:
+    from core import nd_accounts
+
     navidrome, maloja, kept = _navidrome_path(), _maloja_path(), _kept_maloja()
     kept_exists = kept.exists()
+    profile = nd_accounts.get(account) or {}
+    owner = maloja_account()
+    used = account == owner
     return {
-        "navidrome": {"path": str(navidrome), "found": navidrome.is_file()},
+        "navidrome": {
+            "path": str(navidrome),
+            "found": navidrome.is_file(),
+            "user": profile.get("username") or "",
+            "linked": bool(profile.get("navidrome_user_id")),
+        },
         "maloja": {
             "path": str(maloja),
             "found": maloja.is_file(),
             "kept_copy": kept_exists,
             "kept_at": int(kept.stat().st_mtime) if kept_exists else None,
+            "used": used,
+            "owner": (nd_accounts.get(owner) or {}).get("label") or owner or "",
         },
-        "can_merge": navidrome.is_file() or maloja.is_file() or kept_exists,
+        "can_merge": navidrome.is_file() or (used and (maloja.is_file() or kept_exists)),
         "can_clean": navidrome.is_file(),
     }
 
@@ -152,14 +176,40 @@ def _file_columns(conn) -> tuple:
     return "NULL file_path, NULL library_path", ""
 
 
-def _read_navidrome(conn) -> list:
+def _navidrome_user(conn, account):
+    """The Navidrome user whose plays are this profile's: the one its test
+    found, else the one with its user name. On a Navidrome where a single user
+    ever played, those plays are the install's, as they were before profiles."""
+    from core import nd_accounts
+
+    profile = nd_accounts.get(account) or {}
+    try:
+        users = {row["id"]: row["user_name"] or "" for row in conn.execute('SELECT id, user_name FROM "user"')}
+    except sqlite3.DatabaseError:
+        users = {}
+    if profile.get("navidrome_user_id") in users:
+        return profile["navidrome_user_id"]
+    name = (profile.get("username") or "").strip().casefold()
+    for user_id, user_name in users.items():
+        if name and user_name.casefold() == name:
+            return user_id
+    if account == maloja_account():
+        players = [row[0] for row in conn.execute("SELECT DISTINCT user_id FROM scrobbles LIMIT 2")]
+        if len(players) == 1:
+            return players[0]
+    return None
+
+
+def _read_navidrome(conn, user_id) -> list:
+    """The plays of one Navidrome user: the others' are theirs."""
     from core.stats_files import container_path
 
     file_columns, library_join = _file_columns(conn)
     rows = conn.execute(
         "SELECT DISTINCT s.submission_time ts, s.media_file_id file, f.title, f.artist, f.album, f.album_artist,"
         f" f.duration, f.tags, f.participants, {file_columns}"
-        f" FROM scrobbles s JOIN media_file f ON f.id = s.media_file_id {library_join} ORDER BY s.submission_time"
+        f" FROM scrobbles s JOIN media_file f ON f.id = s.media_file_id {library_join}"
+        " WHERE s.user_id = ? ORDER BY s.submission_time", (user_id,),
     ).fetchall()
     _, _, _, mappings = config.get_paths_from_config()
     return [{
@@ -230,20 +280,26 @@ def _load_saved_maloja(folder: Path, warnings: list):
         return None
 
 
-def _load_sources(folder: Path, warnings: list, keep_copy=True) -> tuple:
+def _load_sources(account, folder: Path, warnings: list, keep_copy=True) -> tuple:
     navidrome_plays, maloja_plays = [], []
     navidrome, maloja = _navidrome_path(), _maloja_path()
     try:
         if navidrome.is_file():
             conn = _open_copy(navidrome, folder, "navidrome.db", NAVIDROME_NEEDS, "Navidrome")
             try:
-                navidrome_plays = _read_navidrome(conn)
+                user_id = _navidrome_user(conn, account)
+                if user_id is not None:
+                    navidrome_plays = _read_navidrome(conn, user_id)
+                elif conn.execute("SELECT 1 FROM scrobbles LIMIT 1").fetchone():
+                    warnings.append(NO_USER)
             finally:
                 conn.close()
         else:
             warnings.append("Navidrome's database is not mounted: its new plays were not read.")
     except sqlite3.DatabaseError as e:
         raise ImportRefused(f"Navidrome's database could not be read: {e}") from e
+    if account != maloja_account():
+        return navidrome_plays, maloja_plays
 
     live = saved = None
     try:
@@ -315,16 +371,19 @@ def library_paths() -> dict:
 
 # --- Writing -------------------------------------------------------------------
 
-def _backup() -> str:
-    source = sqlite3.connect(stats_db.db_path())
-    name = f"stats.db.bak-{time.time_ns()}"
-    target = sqlite3.connect(Path(config.DATA_DIR) / name)
+def _backup(account) -> str:
+    """A copy beside the history (stats.db.bak-… for the first account), the
+    last ones kept."""
+    path = stats_db.db_path(account)
+    source = sqlite3.connect(path)
+    name = f"{path.name}.bak-{time.time_ns()}"
+    target = sqlite3.connect(path.parent / name)
     try:
         source.backup(target)
     finally:
         target.close()
         source.close()
-    backups = sorted(Path(config.DATA_DIR).glob("stats.db.bak-*"), key=lambda p: int(p.name.rsplit("-", 1)[1]))
+    backups = sorted(path.parent.glob(f"{path.name}.bak-*"), key=lambda p: int(p.name.rsplit("-", 1)[1]))
     for old in backups[:-KEEP_BACKUPS]:
         old.unlink()
     return name
@@ -575,10 +634,10 @@ def _count_removed(old_plays, conn) -> int:
     return removed
 
 
-def check_can_run(mode: str) -> None:
+def check_can_run(account, mode: str) -> None:
     if mode not in ("merge", "clean"):
         raise ValueError(f"Unknown import mode: {mode}")
-    status = source_status()
+    status = source_status(account)
     if mode == "clean" and not status["can_clean"]:
         raise ImportRefused(f"Start clean needs Navidrome's database, and it was not found at {status['navidrome']['path']}.")
     if not status["can_merge"]:
@@ -600,9 +659,10 @@ def _plays_since(conn, last_id) -> list:
     return plays
 
 
-def run_import(mode: str, progress=None, dry_run=False) -> dict:
-    """`dry_run` works out the same report and leaves everything as it was."""
-    check_can_run(mode)
+def run_import(account, mode: str, progress=None, dry_run=False) -> dict:
+    """Rebuilds one account's history. `dry_run` works out the same report and
+    leaves everything as it was."""
+    check_can_run(account, mode)
     say = progress or (lambda message, percent=None: None)
 
     report = {
@@ -610,26 +670,29 @@ def run_import(mode: str, progress=None, dry_run=False) -> dict:
         "added": 0, "updated": 0, "merged": 0, "removed": 0, "from_navidrome": 0, "from_maloja": 0,
         "maloja_only": 0, "read_navidrome": 0, "read_maloja": 0, "backup": None, "warnings": [],
     }
-    conn = stats_db.connect()
+    conn = stats_db.connect(account)
     try:
         last_id = conn.execute("SELECT COALESCE(MAX(id), 0) FROM plays").fetchone()[0]
         folder = Path(tempfile.mkdtemp(prefix="stats_import", dir=config.DATA_DIR))
         try:
             say("Reading the sources", 5)
             if dry_run:
-                navidrome_plays, maloja_plays = _load_sources(folder, report["warnings"], False)
+                navidrome_plays, maloja_plays = _load_sources(account, folder, report["warnings"], False)
             else:
-                navidrome_plays, maloja_plays = _load_sources(folder, report["warnings"])
+                navidrome_plays, maloja_plays = _load_sources(account, folder, report["warnings"])
         finally:
             shutil.rmtree(folder, ignore_errors=True)
         report["read_navidrome"] = len(navidrome_plays)
         report["read_maloja"] = len(maloja_plays)
         if mode == "clean" and not navidrome_plays:
+            if NO_USER in report["warnings"]:
+                raise ImportRefused("Start clean needs this profile's Navidrome user: add its user name in"
+                                    " Settings → Navidrome accounts, then test it. Nothing was changed.")
             raise ImportRefused("Navidrome's database has no plays, so Start clean would empty your history. Nothing was changed.")
 
         if not dry_run:
             say("Backing up the current history", 30)
-            report["backup"] = _backup()
+            report["backup"] = _backup(account)
         conn.execute("BEGIN IMMEDIATE")
         try:
             report["before"] = stats_db.play_count(conn)
@@ -670,7 +733,7 @@ def run_import(mode: str, progress=None, dry_run=False) -> dict:
             raise
     finally:
         conn.close()
-    if not dry_run:
+    if not dry_run and account == maloja_account():
         # Plays just merged may decide tracks in quarantine: no need to wait.
         try:
             from core import mix_builder
@@ -680,27 +743,32 @@ def run_import(mode: str, progress=None, dry_run=False) -> dict:
     return report
 
 
-def preview_clean() -> dict:
+def preview_clean(account) -> dict:
     """What Start clean would do, for its confirmation."""
-    return run_import("clean", dry_run=True)
+    return run_import(account, "clean", dry_run=True)
 
 
 def import_running() -> bool:
     return _running.locked()
 
 
-def start_import_task(mode: str) -> str:
-    """Runs the import in the background, listed in Activity."""
-    check_can_run(mode)
+def start_import_task(account, mode: str) -> str:
+    """Runs the import of one account's history in the background, listed in
+    Activity. One rebuild at a time, whoever it is for."""
+    from core import nd_accounts
+
+    check_can_run(account, mode)
     if not _running.acquire(blocking=False):
         raise ImportRefused("A rebuild is already running.")
     title = "Stats history: start clean" if mode == "clean" else "Stats history: merge"
+    if len(nd_accounts.list_accounts()) > 1:
+        title += f" ({(nd_accounts.get(account) or {}).get('label') or account})"
     try:
         task_id = config.create_task(title, kind="stats", cancellable=True)
 
         def work():
             try:
-                report = run_import(mode, lambda message, percent=None: config.push_task_event(task_id, message=message, progress=percent))
+                report = run_import(account, mode, lambda message, percent=None: config.push_task_event(task_id, message=message, progress=percent))
                 summary = f"{report['after']} plays: {report['added']} added, {report['updated']} updated"
                 if report["removed"]:
                     summary += f", {report['removed']} removed"

@@ -285,7 +285,7 @@ The **To review** filter lists the tracks to check. **Find on Deezer** on a row 
 
 The **Stats** tab shows what you listen to: a story recap of each month and year, top artists, albums and tracks for any week, month or year, genres, when you listen, and a searchable list of your plays. Open an artist, album or track for its plays over time.
 
-It keeps its own history in `stats.db`, so it needs neither Maloja nor lb-enricher, and no Navidrome password. Track lengths come from Navidrome and your library index; missing genres come from Deezer, a few tracks at a time in the background, most played first. Listening time is plays × track length, so it is an estimate.
+It keeps its own history in `stats.db`, so it needs neither Maloja nor lb-enricher, and no Navidrome password. Each Navidrome account has its own history: the Stats tab shows the one of the profile chosen at the top of the page (see [Histories per profile](#histories-per-profile)). Track lengths come from Navidrome and your library index; missing genres come from Deezer, a few tracks at a time in the background, most played first. Listening time is plays × track length, so it is an estimate.
 
 ### Recaps
 
@@ -301,12 +301,22 @@ Covers are cached in `stats_covers/` in `DATA_DIR`, at most 600 px. Tracks and a
 
 Navidrome sends plays over its ListenBrainz integration:
 
-1. Create a token in **Settings → Listening stats**, or set `SCROBBLE_TOKEN`.
-2. Set `ND_LISTENBRAINZ_BASEURL=http://deezer-to-navidrome:8080/apis/listenbrainz/1/` in Navidrome and restart it.
-3. In Navidrome's personal settings, link ListenBrainz using that token.
+1. Create a token in **Settings → Listening stats**, or set `SCROBBLE_TOKEN`. Each Navidrome account has its own: the page shows the one of the chosen profile.
+2. Set `ND_LISTENBRAINZ_BASEURL=http://deezer-to-navidrome:8080/apis/listenbrainz/1/` in Navidrome and restart it, once for all its users.
+3. Signed in to Navidrome as that profile's user, link ListenBrainz in the personal settings using its token.
 4. Play a track and find it under **Stats → Recent plays**.
 
-The route checks this token itself, even with `DISABLE_AUTH`.
+The route checks the tokens itself, even with `DISABLE_AUTH`: the token says whose play it is.
+
+### Histories per profile
+
+- **One history per Navidrome account.** The install's account keeps `stats.db` where it always was, untouched by the upgrade; the others have `stats/nd2.db`… The Stats tab, the recaps and **Your history** follow the profile chosen at the top of the page.
+- **One token per account.** The first account's is `SCROBBLE_TOKEN` (or the one made in Settings, as before); the others' are made in Settings or set with `SCROBBLE_TOKEN_ND2`… Two accounts cannot share a token.
+- **Imports read each user's plays.** Merge and Start clean only take the plays of the profile's Navidrome user in Navidrome's database: the user found by **Test** in Settings → Navidrome accounts, else the one with its user name. On a Navidrome where a single user ever played, the install's account keeps reading those plays as before.
+- **Maloja is the install's.** It kept one person's plays, so only the install's account reads it.
+- **Shared work.** Covers and what Deezer said about a track are found once and serve every history.
+- **A removed account** takes its history to `backups/removed-accounts/` and its token stops working.
+- Made for you and the quarantine still read the install's history, until they are made per profile in a next step.
 
 ### Importing your history
 
@@ -328,7 +338,7 @@ The app reads copies of these files and never writes to them. When the same play
 | Plays gone from the sources | Kept | Lost |
 | Needs Navidrome's database | No | Yes |
 
-Both back up `stats.db` first (the last 3, as `stats.db.bak-*` in `DATA_DIR`) and report what changed. To go back to a backup, stop the container, delete `stats.db` and its `-wal` and `-shm` files, rename the backup to `stats.db`, and start it again. Start clean shows how many plays it would lose before you confirm, and refuses to run if Navidrome's database has no plays. Merge can be run any time without counting anything twice. The first import saves a copy of Maloja's database in `stats_sources/`, so rebuilds keep working after you remove Maloja. **Reset data** in Settings does not touch your listening history.
+Both back up the profile's history first (the last 3, as `stats.db.bak-*` in `DATA_DIR`, or `stats/nd2.db.bak-*`…) and report what changed. To go back to a backup, stop the container, delete the history (`stats.db`, or `stats/nd2.db`…) and its `-wal` and `-shm` files, rename the backup to its name, and start it again. Start clean shows how many plays it would lose before you confirm, and refuses to run if Navidrome's database has no plays. Merge can be run any time without counting anything twice. The first import saves a copy of Maloja's database in `stats_sources/`, so rebuilds keep working after you remove Maloja. **Reset data** in Settings does not touch your listening history.
 
 ### Moving from Wrapped, Maloja and lb-enricher
 
@@ -354,8 +364,10 @@ Both back up `stats.db` first (the last 3, as `stats.db.bak-*` in `DATA_DIR`) an
 | `release_prefs.json` | Muted artists of the release feed | Survives restarts |
 | `dedup_report.json` | Latest duplicate analysis | Until a new scan |
 | `dedup_choices.json` | **Persistent** duplicate decisions | Survives restarts |
-| `stats.db` | Listening history | Survives **Reset data**; replaced only by Start clean |
-| `stats.db.bak-*` | Backups made before each rebuild (the last 3) | Replaced by newer ones |
+| `stats.db` | Listening history of the install's Navidrome account | Survives **Reset data**; replaced only by Start clean |
+| `stats/nd2.db`… | Listening history of the other Navidrome accounts | As above |
+| `stats.db.bak-*`, `stats/*.db.bak-*` | Backups made before each rebuild (the last 3 of each history) | Replaced by newer ones |
+| `backups/removed-accounts/` | The history of each removed Navidrome account | Delete it when you no longer need it |
 | `mixes.db` | Made for you (quarantine, mix history, settings), tempo and genre results, and the playlists published in Navidrome | Survives **Reset data** and Start clean |
 | `backups/pre-1.16.0/` | The saved playlists and `secrets.json` as they were before 1.16 | Can be deleted once 1.16 works for you |
 | `metadata_journal/` | Saved FLAC headers while Fix missing metadata writes them | Emptied as each file is done, or at the next start |
@@ -579,7 +591,7 @@ services:
       # Optional: Deezer accounts (you can add them in Settings instead)
       # DEEZER_ARL: ""               # a Deezer account, the default one
       # DEEZER_ARL_PREMIUM: ""       # a Deezer account marked for the downloads
-      # SCROBBLE_TOKEN: ""           # token Navidrome sends new plays with
+      # SCROBBLE_TOKEN: ""           # token Navidrome sends new plays with (first account)
 
       # Optional: the key credentials are encrypted with (else one is kept in /data)
       # D2N_ENCRYPTION_KEY: ""
@@ -647,7 +659,8 @@ The folder and performance variables are read **on first start** to create `conf
 | `D2N_ENCRYPTION_KEY` | random, kept in `encryption.key` | Key the saved credentials are encrypted with: any long random string |
 | `APP_USERNAME` / `APP_PASSWORD` | — | The sign-in account; else the first visit asks you to create it |
 | `API_TOKEN` | — | Token for other apps; else create one in Settings |
-| `SCROBBLE_TOKEN` | — | Token Navidrome sends plays with; else create one in Settings |
+| `SCROBBLE_TOKEN` | — | Token Navidrome sends the first account's plays with; else create one in Settings |
+| `SCROBBLE_TOKEN_ND2`… | — | Token of the other Navidrome accounts, by their ID |
 | `STATS_NAVIDROME_DB` | `/import/navidrome/navidrome.db` | Navidrome's database, for importing your history |
 | `STATS_MALOJA_DB` | `/import/maloja/malojadb.sqlite` | Maloja's database, for importing your history |
 | `DISABLE_AUTH` | `false` | `true` turns sign-in off (a reverse proxy already asks for a login) |
@@ -706,7 +719,7 @@ The web interface asks for a sign-in. On the first visit, the app asks you to cr
 - Playlists added go to the account of the browser, the dashboard shows that account's playlists, and **Delete** takes a shared playlist away from this account only. A deleted playlist also leaves Navidrome: Navidrome keeps a playlist it imported from a `.m3u8` even once the file is gone, so the app removes that copy through the API when the account has its password.
 - **In step with Navidrome.** Every 10 minutes, and when the dashboard opens, the app reads each user's playlists: a playlist of the app deleted there leaves that profile (and the app when no other profile has it), and one renamed there keeps its new name. If every playlist of the app vanishes at once, the app takes it as a reset of Navidrome and publishes them again. **Also in Navidrome** shows, read-only, the playlists the user made by hand there.
 - Each account chooses its Deezer account under **Deezer account** in its form: see below.
-- History and Made for you per profile come in the next steps of this version.
+- Each profile has its own listening history: see [Histories per profile](#histories-per-profile). Made for you per profile comes in the next step of this version.
 
 #### Deezer accounts
 

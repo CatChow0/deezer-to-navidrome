@@ -4,7 +4,7 @@ import time
 
 from flask import Blueprint, Response, jsonify, request
 
-from core import mix_builder, metadata_fix, mixes_db, stats_db, stats_import, trial
+from core import account_context, mix_builder, metadata_fix, mixes_db, stats_db, stats_import, trial
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +38,7 @@ def _track(row, plays, now, rules) -> dict:
 
 def _state(conn) -> dict:
     now = int(time.time())
-    stats = stats_db.connect()
+    stats = stats_db.connect(account_context.made_for_you_account())
     try:
         plays = trial.plays_since_download(conn, stats)
     finally:

@@ -391,13 +391,13 @@ class Moved(Base):
     def test_kept_file_updates_the_history(self):
         reset_stats()
         path = self.add(artist="Vald", title="Song")
-        conn = stats_db.connect()
+        conn = stats_db.connect("nd1")
         track = stats_db.upsert_track(conn, "Song", ["Vald"])
         conn.execute("UPDATE tracks SET file_path=? WHERE id=?", (str(path), track))
         conn.commit()
         conn.close()
         trial.keep(self.conn, "1", NOW)
-        conn = stats_db.connect()
+        conn = stats_db.connect("nd1")
         self.addCleanup(conn.close)
         moved = conn.execute("SELECT file_path FROM tracks WHERE id=?", (track,)).fetchone()[0]
         self.assertEqual(moved, str(self.downloads / "songs" / path.name))
@@ -462,7 +462,7 @@ class Plays(Base):
     def test_only_plays_since_the_download_count(self):
         reset_stats()
         self.add(artist="Vald", title="Song")
-        conn = stats_db.connect()
+        conn = stats_db.connect("nd1")
         self.addCleanup(conn.close)
         track = stats_db.upsert_track(conn, "Song", ["Vald"])
         stats_db.add_play(conn, track, None, 200, NOW - DAY, "navidrome")
@@ -509,7 +509,7 @@ class NavidromeMarks(Base):
 
 def reset_stats():
     for suffix in ("", "-wal", "-shm"):
-        Path(f"{stats_db.db_path()}{suffix}").unlink(missing_ok=True)
+        Path(f"{stats_db.db_path('nd1')}{suffix}").unlink(missing_ok=True)
 
 
 if __name__ == "__main__":

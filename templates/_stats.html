@@ -10,8 +10,9 @@
   <div class="span-12 st-empty" data-stats-empty hidden>
     <section class="cell">
       <div class="cell-body">
-        <h2 class="cell-title">No plays yet</h2>
-        <p class="st-empty-text">Import your history from Navidrome and Maloja below, or point Navidrome at this app to record new plays. That part is set up in Settings.</p>
+        {% set profile = (nd_accounts or []) | selectattr('id', 'equalto', nd_active) | first %}
+        <h2 class="cell-title">No plays yet{% if profile and (nd_accounts | length) > 1 %} for {{ profile.label }}{% endif %}</h2>
+        <p class="st-empty-text">Import this history from Navidrome below, or point Navidrome at this app to record new plays: each Navidrome user links ListenBrainz with their own token, set up in Settings.</p>
         <a class="btn" href="{{ url_for('system.config_view') }}" data-view-link="settings">Set up new plays</a>
       </div>
     </section>

@@ -34,11 +34,11 @@ class Migration(unittest.TestCase):
         return {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
 
     def test_current_live_schema_is_upgraded_and_keeps_plays(self):
-        old = sqlite3.connect(stats_db.db_path())
+        old = sqlite3.connect(stats_db.db_path("nd1"))
         old.executescript(OLD_SCHEMA)
         old.close()
         for _ in range(2):  # safe to run again
-            conn = stats_db.connect()
+            conn = stats_db.connect("nd1")
             self.assertEqual(stats_db.play_count(conn), 1)
             self.assertIn("file_path", self.columns(conn, "tracks"))
             self.assertIn("file_path", self.columns(conn, "albums"))
@@ -47,7 +47,7 @@ class Migration(unittest.TestCase):
             conn.close()
 
     def test_new_database_has_the_columns(self):
-        conn = stats_db.connect()
+        conn = stats_db.connect("nd1")
         self.assertIn("file_path", self.columns(conn, "tracks"))
         conn.close()
 
@@ -140,8 +140,8 @@ class MergeStoresPaths(ImportCase):
             {"ts": 1000, "title": "Song", "artist": "A", "album": "Single", "file": "A/Single/01.flac"},
             {"ts": 2000, "title": "Song", "artist": "A", "album": "Big Album", "file": "A/Big Album/05.flac"},
         ])
-        run_import("merge")
-        conn = stats_db.connect()
+        run_import("nd1", "merge")
+        conn = stats_db.connect("nd1")
         track = conn.execute("SELECT file_path FROM tracks").fetchone()[0]
         albums = {r["title"]: r["file_path"] for r in conn.execute("SELECT title, file_path FROM albums")}
         conn.close()
@@ -159,7 +159,7 @@ class MergeStoresPaths(ImportCase):
         """)
         conn.commit()
         conn.close()
-        self.assertEqual(run_import("merge")["after"], 1)
+        self.assertEqual(run_import("nd1", "merge")["after"], 1)
 
 
 if __name__ == "__main__":

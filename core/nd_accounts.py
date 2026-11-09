@@ -9,6 +9,7 @@ Kept in DATA_DIR/navidrome_accounts.json. The password or API key is encrypted
 (core/crypto.py) and only leaves this module in clear to talk to Navidrome:
 public() never includes it."""
 import json
+import logging
 import os
 import re
 import threading
@@ -17,6 +18,8 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 from core import config, crypto
+
+logger = logging.getLogger(__name__)
 
 AUTH_TYPES = ("password", "apikey")
 PUBLISH_MODES = ("m3u8", "api")
@@ -253,6 +256,25 @@ def delete(account_id) -> None:
         if data.get("default") == account_id:
             data["default"] = data["accounts"][0]["id"]
         _write(data)
+    _after_removal(account_id)
+
+
+def _after_removal(account_id) -> None:
+    """Its listening history goes to backups/removed-accounts/, and its
+    ListenBrainz token stops working. A history that cannot be moved stays
+    where it is."""
+    from core import stats_db, stats_ingest
+
+    try:
+        archived = stats_db.archive(account_id)
+        if archived:
+            logger.info("The history of %s was moved to %s", account_id, archived)
+    except Exception as e:
+        logger.error("The history of %s could not be moved, it stays in place: %s", account_id, e)
+    try:
+        stats_ingest.forget_token(account_id)
+    except Exception as e:
+        logger.error("The ListenBrainz token of %s could not be removed: %s", account_id, e)
 
 
 def forget_deezer_account(deezer_id) -> None:
