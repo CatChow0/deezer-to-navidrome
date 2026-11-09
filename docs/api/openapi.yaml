@@ -1,0 +1,348 @@
+openapi: 3.1.0
+info:
+  title: Deezer to Navidrome API
+  version: "1"
+  description: |
+    The API the Android app, and any other client, uses. Everything lives under /api/v1/.
+
+    - Every answer is a JSON object. A failure is `{"error": {"code", "message"}}` with the matching HTTP status.
+    - Reads that a client may keep carry an ETag: send it back in `If-None-Match` to get a 304 when nothing changed.
+    - A request is for the Navidrome profile named in the `X-Navidrome-Account` header, else the default account.
+    - A device signs in once with `POST /api/v1/auth/login` and sends its token as `Authorization: Bearer d2n_…`.
+      The token stops working when the device is signed out in Settings, or for every device when the password changes.
+servers:
+  - url: /
+security:
+  - deviceToken: []
+  - webSession: []
+components:
+  securitySchemes:
+    deviceToken:
+      type: http
+      scheme: bearer
+      description: The token a device received when it signed in (d2n_…).
+    webSession:
+      type: apiKey
+      in: cookie
+      name: session
+      description: The web interface's session.
+  parameters:
+    Profile:
+      name: X-Navidrome-Account
+      in: header
+      required: false
+      description: The Navidrome profile (nd1, nd2…) the request is for; the default account without it.
+      schema: {type: string, pattern: "^nd[1-9][0-9]*$"}
+    TaskId:
+      name: task_id
+      in: path
+      required: true
+      schema: {type: string}
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code: {type: string, examples: [unauthorized, not_found, wrong_credentials, too_many_attempts]}
+            message: {type: string}
+    Device:
+      type: object
+      properties:
+        id: {type: string}
+        name: {type: string}
+        created_at: {type: integer, description: Seconds since 1970.}
+        last_used_at: {type: integer}
+        last_ip: {type: string}
+        current: {type: boolean, description: In the list, the device making the request.}
+    SignedIn:
+      type: object
+      properties:
+        token: {type: string, description: Shown once. Send it as Authorization Bearer.}
+        device: {$ref: "#/components/schemas/Device"}
+        username: {type: string}
+    Task:
+      type: object
+      properties:
+        id: {type: string}
+        title: {type: string}
+        kind: {type: string}
+        playlist_id: {type: [string, "null"]}
+        created_at: {type: number}
+        updated_at: {type: number}
+        finished_at: {type: [number, "null"]}
+        done: {type: boolean}
+        error: {type: boolean}
+        stage: {type: [string, "null"]}
+        message: {type: [string, "null"]}
+        progress: {type: [number, "null"]}
+        cancellable: {type: boolean}
+        cancel_requested: {type: boolean}
+        cancelled: {type: boolean}
+        events: {type: integer, description: How many events the task has sent so far.}
+    TaskEvent:
+      type: object
+      description: One event of a task; `index` is its position, to resume after it.
+      properties:
+        index: {type: integer}
+        type: {type: string, examples: [status, row_update]}
+        message: {type: [string, "null"]}
+        progress: {type: [number, "null"]}
+        stage: {type: [string, "null"]}
+        done: {type: boolean}
+        error: {type: boolean}
+        timestamp: {type: integer}
+  responses:
+    Error:
+      description: A failure.
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/Error"}
+    NotModified:
+      description: The ETag sent in If-None-Match still matches.
+paths:
+  /api/v1/auth/status:
+    get:
+      summary: That this is the app, and how to get in
+      security: []
+      responses:
+        "200":
+          description: "auth: required, setup (no account yet) or disabled (DISABLE_AUTH)."
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  service: {type: string, const: deezer-to-navidrome}
+                  api: {type: integer, const: 1}
+                  auth: {type: string, enum: [required, setup, disabled]}
+  /api/v1/auth/login:
+    post:
+      summary: Sign this device in
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password]
+              properties:
+                username: {type: string}
+                password: {type: string}
+                device: {type: string, description: "A name for this device, shown in Settings."}
+      responses:
+        "201":
+          description: Signed in.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/SignedIn"}
+        "401": {$ref: "#/components/responses/Error"}
+        "409": {$ref: "#/components/responses/Error"}
+        "429":
+          description: Too many failed attempts; Retry-After says when to try again.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Error"}
+  /api/v1/auth/setup:
+    post:
+      summary: Create the account from the app, on a server that has none yet
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password]
+              properties:
+                username: {type: string}
+                password: {type: string, minLength: 8}
+                device: {type: string}
+      responses:
+        "201":
+          description: The account exists, and this device is signed in.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/SignedIn"}
+        "400": {$ref: "#/components/responses/Error"}
+        "409": {$ref: "#/components/responses/Error"}
+  /api/v1/auth/logout:
+    post:
+      summary: Sign this device out; its token stops working
+      responses:
+        "200":
+          description: Signed out.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  signed_out: {type: boolean}
+        "401": {$ref: "#/components/responses/Error"}
+  /api/v1/devices:
+    get:
+      summary: The devices signed in
+      responses:
+        "200":
+          description: The last used first.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  devices:
+                    type: array
+                    items: {$ref: "#/components/schemas/Device"}
+        "401": {$ref: "#/components/responses/Error"}
+  /api/v1/devices/{device_id}:
+    delete:
+      summary: Sign a device out
+      parameters:
+        - {name: device_id, in: path, required: true, schema: {type: string}}
+      responses:
+        "200":
+          description: Its token stopped working.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  revoked: {type: string}
+        "404": {$ref: "#/components/responses/Error"}
+  /api/v1/info:
+    get:
+      summary: The server, the profiles, the Deezer accounts and what this install can do
+      parameters:
+        - {$ref: "#/components/parameters/Profile"}
+      responses:
+        "200":
+          description: Carries an ETag.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  service: {type: string}
+                  api: {type: integer}
+                  version: {type: string}
+                  username: {type: string}
+                  auth_disabled: {type: boolean}
+                  device:
+                    oneOf:
+                      - {$ref: "#/components/schemas/Device"}
+                      - {type: "null"}
+                  profile: {type: string, description: The profile this request is for.}
+                  profiles: {type: array, items: {type: object}}
+                  deezer:
+                    type: object
+                    properties:
+                      accounts: {type: array, items: {type: object}}
+                      default: {type: [string, "null"]}
+                      download: {type: [string, "null"]}
+                      profile_account: {type: [string, "null"]}
+                  features:
+                    type: object
+                    properties:
+                      downloads: {type: boolean}
+                      navidrome_db: {type: boolean}
+        "304": {$ref: "#/components/responses/NotModified"}
+        "401": {$ref: "#/components/responses/Error"}
+  /api/v1/tasks:
+    get:
+      summary: The tasks listed in Activity
+      parameters:
+        - name: changed_since
+          in: query
+          required: false
+          description: Only those changed after this time (seconds since 1970).
+          schema: {type: number}
+      responses:
+        "200":
+          description: The newest first.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tasks:
+                    type: array
+                    items: {$ref: "#/components/schemas/Task"}
+  /api/v1/tasks/{task_id}:
+    get:
+      summary: One task
+      parameters:
+        - {$ref: "#/components/parameters/TaskId"}
+      responses:
+        "200":
+          description: Its state.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  task: {$ref: "#/components/schemas/Task"}
+        "404": {$ref: "#/components/responses/Error"}
+  /api/v1/tasks/{task_id}/events:
+    get:
+      summary: A task's events after a given one, waiting for the next if asked
+      parameters:
+        - {$ref: "#/components/parameters/TaskId"}
+        - name: after
+          in: query
+          required: false
+          description: The index of the last event the client has; every event without it.
+          schema: {type: integer}
+        - name: wait
+          in: query
+          required: false
+          description: Seconds to wait for the next event when there is none yet (at most 25).
+          schema: {type: integer, minimum: 0, maximum: 25}
+      responses:
+        "200":
+          description: "`after` is the index to send next time."
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  task: {$ref: "#/components/schemas/Task"}
+                  events:
+                    type: array
+                    items: {$ref: "#/components/schemas/TaskEvent"}
+                  after: {type: integer}
+        "404": {$ref: "#/components/responses/Error"}
+  /api/v1/tasks/{task_id}/stream:
+    get:
+      summary: The task's events as a server-sent event stream
+      description: |
+        The stream the web interface follows. Each event has an `id` (its index): reconnect with
+        `Last-Event-ID` or `?from=` to resume. A stream lasts 45 s at most and sends a keep-alive every 10 s.
+      parameters:
+        - {$ref: "#/components/parameters/TaskId"}
+        - {name: from, in: query, required: false, schema: {type: integer}}
+      responses:
+        "200":
+          description: text/event-stream
+          content:
+            text/event-stream:
+              schema: {type: string}
+  /api/v1/tasks/{task_id}/cancel:
+    post:
+      summary: Ask a task to stop
+      parameters:
+        - {$ref: "#/components/parameters/TaskId"}
+      responses:
+        "200":
+          description: It will stop at its next step.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  cancelling: {type: string}
+        "404": {$ref: "#/components/responses/Error"}
+        "409": {$ref: "#/components/responses/Error"}

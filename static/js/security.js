@@ -1,8 +1,11 @@
-// Settings: password, the API token other apps (CatBoard) use, and the
-// webhook URL CatBoard gives, called when the release feed or the library
-// index changed.
+// Settings: password, the devices signed in through the API (the Android app),
+// the API token other apps (CatBoard) use, and the webhook URL CatBoard gives,
+// called when the release feed or the library index changed.
 
 import { armed, escapeHtml, fetchJSON, on, toast } from './core.js';
+
+const dateFormat = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+const when = seconds => (seconds ? dateFormat.format(new Date(seconds * 1000)) : 'never');
 
 function passwordBlock(status) {
   if (status.account_from_env) {
@@ -11,7 +14,7 @@ function passwordBlock(status) {
   return `
     <form class="security-block" data-password-form>
       <h3>Account</h3>
-      <p class="muted">Signed in as <strong>${escapeHtml(status.username)}</strong>. A new password signs out your other browsers.</p>
+      <p class="muted">Signed in as <strong>${escapeHtml(status.username)}</strong>. A new password signs out your other browsers and your devices.</p>
       <label class="form-field">
         <span>Current password</span>
         <input type="password" name="current" autocomplete="current-password" required>
@@ -22,6 +25,24 @@ function passwordBlock(status) {
       </label>
       <div class="button-row"><button type="submit" class="btn btn--sm">Change the password</button></div>
     </form>
+  `;
+}
+
+function devicesBlock(devices) {
+  const rows = devices.map(device => `
+    <li class="device-row" data-device-id="${escapeHtml(device.id)}">
+      <span class="device-name">
+        <strong>${escapeHtml(device.name)}</strong>
+        <span class="muted">Signed in ${escapeHtml(when(device.created_at))} · last used ${escapeHtml(when(device.last_used_at))}${device.last_ip ? ` from ${escapeHtml(device.last_ip)}` : ''}</span>
+      </span>
+      <button type="button" class="btn btn--danger btn--sm" data-device-revoke>Sign out</button>
+    </li>`).join('');
+  return `
+    <div class="security-block">
+      <h3>Devices</h3>
+      <p class="muted">Phones and other apps signed in with your account, each with its own token. Sign one out here if you lose it; a new password signs them all out.</p>
+      ${devices.length ? `<ul class="device-list">${rows}</ul>` : '<p class="muted">No device signed in yet.</p>'}
+    </div>
   `;
 }
 
@@ -61,17 +82,17 @@ function webhookBlock(status) {
   `;
 }
 
-function render(host, status) {
+function render(host, status, devices) {
   if (status.disabled) {
     host.innerHTML = '<p class="muted">Sign-in is turned off (DISABLE_AUTH). Other apps can read the release feed without a token.</p>';
     return;
   }
-  host.innerHTML = passwordBlock(status) + tokenBlock(status) + webhookBlock(status);
+  host.innerHTML = passwordBlock(status) + devicesBlock(devices) + tokenBlock(status) + webhookBlock(status);
 }
 
 async function load(host) {
-  const { data } = await fetchJSON('/api/auth/status');
-  if (data?.ok) render(host, data);
+  const [{ data }, listed] = await Promise.all([fetchJSON('/api/auth/status'), fetchJSON('/api/v1/devices')]);
+  if (data?.ok) render(host, data, listed.ok ? listed.data.devices : []);
   else host.innerHTML = '<p class="muted">Could not load these settings.</p>';
 }
 
@@ -88,7 +109,8 @@ export async function initSecurity() {
       const { ok, data } = await fetchJSON('/api/auth/password', { json: fields });
       if (!ok) return toast(data?.error || 'The password was not changed', { tone: 'error' });
       form.reset();
-      toast('Password changed', { tone: 'ok' });
+      toast('Password changed: your devices must sign in again', { tone: 'ok' });
+      await load(host);
     } else if (form.matches('[data-webhook-form]')) {
       const url = new FormData(form).get('url');
       const { ok, data } = await fetchJSON('/api/webhook', { method: 'PUT', json: { url } });
@@ -121,6 +143,16 @@ export async function initSecurity() {
     const { ok, data } = await fetchJSON('/api/auth/token', { method: 'POST' });
     if (!ok) return toast(data?.error || 'No new token', { tone: 'error' });
     toast('New token created: update it in CatBoard', { tone: 'ok' });
+    await load(host);
+  });
+
+  on(host, 'click', '[data-device-revoke]', async (_, button) => {
+    const row = button.closest('[data-device-id]');
+    const name = row.querySelector('strong').textContent;
+    if (!armed(button, `Click again to sign out ${name}`)) return;
+    const { ok, data } = await fetchJSON(`/api/v1/devices/${encodeURIComponent(row.dataset.deviceId)}`, { method: 'DELETE' });
+    if (!ok) return toast(data?.error?.message || 'Not signed out', { tone: 'error' });
+    toast(`${name} signed out`, { tone: 'ok' });
     await load(host);
   });
 

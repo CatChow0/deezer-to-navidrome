@@ -2,7 +2,7 @@
 
 **A self-hosted web app that turns your Deezer playlists into Navidrome `.m3u8` playlists, matches them against your local library, and downloads what is missing straight from Deezer.**
 
-[![Docker Image Version](https://img.shields.io/badge/version-1.16.0-blue)](https://hub.docker.com/r/catchow/deezer-to-navidrome)
+[![Docker Image Version](https://img.shields.io/badge/version-1.17.0-blue)](https://hub.docker.com/r/catchow/deezer-to-navidrome)
 [![Python 3](https://img.shields.io/badge/python-3-blue)](https://www.python.org/)
 [![Flask](https://img.shields.io/badge/flask-web%20app-brightgreen)](https://flask.palletsprojects.com/)
 
@@ -106,6 +106,7 @@ Two buttons in the topbar explain the app. **New** keeps the notes of each versi
 ### Security and integrations
 - **Sign-in** - One account, created on the first visit or set from the environment
 - **API token** - Read-only access for other apps
+- **API v1** - A JSON API for the Android app: each device signs in with its own token, listed and revocable in Settings
 - **[CatBoard](https://github.com/CatChow0/catboard)** - Shows the release feed; a webhook tells it when the feed or the library changed
 - **Update badge** - The topbar shows when a newer version is on Docker Hub
 
@@ -388,6 +389,7 @@ Both back up the profile's history first (the last 3, as `stats.db.bak-*` in `DA
 | `config.json` | App configuration | Survives restarts |
 | `secrets.json` | Password hash, API token, webhook URL, session key, encrypted | Survives restarts |
 | `navidrome_accounts.json` | Navidrome accounts, their passwords encrypted | Survives restarts |
+| `devices.json` | The devices signed in through the API, a digest of each token | Survives restarts |
 | `deezer_accounts.json` | Deezer accounts, their ARLs encrypted | Survives restarts |
 | `releases.json`, `releases-dz2.json`… | Release feed of each Deezer account, with `release_prefs*.json` for the muted artists | Rebuilt by a refresh |
 | `encryption.key` | The encryption key, only when `D2N_ENCRYPTION_KEY` is not set | Keep it: without it, saved credentials must be entered again |
@@ -714,8 +716,9 @@ Both containers must see the same files under their mapped paths. The downloads 
 The web interface asks for a sign-in. On the first visit, the app asks you to create the account (password of 8 characters or more, stored hashed in `data/secrets.json`), unless `APP_USERNAME` and `APP_PASSWORD` are set.
 
 - After 5 failed sign-ins in 15 minutes, the username and the address wait 30 s, then twice as long after each new failure (up to 15 min). Behind a reverse proxy every request has the proxy's address, so a burst of failures briefly blocks everyone.
-- Changing the password (**Settings → Sign-in and other apps**) signs out your other browsers.
+- Changing the password (**Settings → Sign-in and other apps**) signs out your other browsers and your devices.
 - The API token is sent as `Authorization: Bearer <token>` and only opens `GET /api/releases`, `POST /search/library-check` and `GET /api/version`.
+- **Devices** (the Android app) sign in through the API and each get their own token. **Settings → Sign-in and other apps** lists them, with when they were last used, and signs one out. See [API v1](#api-v1).
 
 #### Navidrome accounts
 
@@ -843,7 +846,39 @@ The **Releases** view lists recent albums, EPs and singles of your favorite Deez
 <a id ="api-reference"></a>
 ## 🔌 API Reference
 
-All routes need a signed-in session, except `/health` and the three routes the API token opens.
+All routes need a signed-in session or a device's token, except `/health`, the three routes the API token opens, and the sign-in routes of API v1.
+
+### API v1
+
+The API the Android app uses, described in [`docs/api/openapi.yaml`](docs/api/openapi.yaml). Everything a phone needs lives under `/api/v1/`, media and task streams included.
+
+- **Sign-in.** `POST /api/v1/auth/login` with the account's username and password and a name for the device returns a token (`d2n_…`), shown once; send it as `Authorization: Bearer <token>`. Only a SHA-256 digest is kept, in `data/devices.json`. The token opens every route; it stops working when the device signs out (`POST /api/v1/auth/logout`), is signed out in Settings, or when the password changes. Failed attempts count as on the web sign-in page. `GET /api/v1/auth/status` (public) says whether the server needs a sign-in, has no account yet (`POST /api/v1/auth/setup` creates it), or has sign-in turned off.
+- **Answers.** A JSON object; a failure is `{"error": {"code", "message"}}` with the matching HTTP status. Reads carry an ETag: send it back in `If-None-Match` to get a 304 when nothing changed. The profile comes from the `X-Navidrome-Account` header, else the default account.
+- **Tasks.** `GET /api/v1/tasks/<id>/stream` is the event stream the web page follows (resume with `Last-Event-ID` or `?from=`). Without a stream, `GET /api/v1/tasks/<id>/events?after=N&wait=25` returns the events after index `N`, waiting up to 25 s for the next one, and `GET /api/v1/tasks?changed_since=<time>` lists the tasks that changed.
+- **Behind Authelia, or another login proxy.** The app cannot get through a login page. Let `/api/v1/` through without it: the device token protects it. For Authelia:
+
+  ```yaml
+  access_control:
+    rules:
+      - domain: music.example.com
+        resources: ["^/api/v1/"]
+        policy: bypass
+  ```
+
+  Keep the rest of the site behind the proxy's login. With `DISABLE_AUTH=true` the app needs no token, so only do this when the API is not reachable from the internet (Tailscale, local network).
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/api/v1/auth/status` | GET | Public: whether a sign-in is needed |
+| `/api/v1/auth/login`, `/api/v1/auth/setup` | POST | Sign a device in; create the account on a new server |
+| `/api/v1/auth/logout` | POST | Sign this device out |
+| `/api/v1/devices`, `/api/v1/devices/<id>` | GET/DELETE | The devices signed in; sign one out |
+| `/api/v1/info` | GET | Version, profiles, Deezer accounts, what this install can do |
+| `/api/v1/tasks`, `/api/v1/tasks/<id>` | GET | Tasks and one task's state |
+| `/api/v1/tasks/<id>/events`, `/stream` | GET | A task's events: waiting for the next, or as a stream |
+| `/api/v1/tasks/<id>/cancel` | POST | Ask a task to stop |
+
+### Web routes
 
 #### Playlists
 
