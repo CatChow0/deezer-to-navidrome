@@ -379,7 +379,7 @@ Both back up the profile's history first (the last 3, as `stats.db.bak-*` in `DA
 | `stats.db.bak-*`, `stats/*.db.bak-*` | Backups made before each rebuild (the last 3 of each history) | Replaced by newer ones |
 | `backups/removed-accounts/` | The history of each removed Navidrome account | Delete it when you no longer need it |
 | `mixes.db` | Made for you of every profile (quarantine, mix history, settings), tempo and genre results, and the playlists published in Navidrome | Survives **Reset data** and Start clean |
-| `backups/pre-1.16.0/` | The saved playlists and `secrets.json` as they were before 1.16 | Can be deleted once 1.16 works for you |
+| `backups/pre-1.16.0/` | The saved playlists, `secrets.json` and `mixes.db` as they were before 1.16 | Can be deleted once 1.16 works for you |
 | `metadata_journal/` | Saved FLAC headers while Fix missing metadata writes them | Emptied as each file is done, or at the next start |
 | `trial_trash/` | Tracks removed from quarantine | Deleted after the days chosen in Manage, 30 by default |
 | `stats_sources/` | Saved copy of Maloja's database | Until replaced by a larger one |

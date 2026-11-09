@@ -3,7 +3,7 @@ templates/notes/<version>.html; a test fails if VERSION has none, so a release
 cannot ship without one."""
 
 RELEASES = [
-    {"version": "1.16.0", "date": "2026-11-08", "title": "Several Navidrome users and Deezer accounts"},
+    {"version": "1.16.0", "date": "2026-11-09", "title": "Several Navidrome users and Deezer accounts"},
     {"version": "1.15.0", "date": "2026-11-08", "title": "A quarantine you can sort and set"},
     {"version": "1.14.0", "date": "2026-11-06", "title": "Playlists made from your listening"},
     {"version": "1.13.0", "date": "2026-11-05", "title": "Your listening stats are built in"},
