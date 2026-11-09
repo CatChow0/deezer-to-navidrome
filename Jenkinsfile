@@ -108,26 +108,34 @@ pipeline {
     }
 
     stage('Push') {
-      when { environment name: 'IS_MAIN', value: 'true' }
       steps {
         withCredentials([usernamePassword(credentialsId: 'registry-creds',
                          usernameVariable: 'REG_USER', passwordVariable: 'REG_PASS')]) {
           sh 'echo "$REG_PASS" | docker login -u "$REG_USER" --password-stdin'
           sh 'docker push $IMAGE:$SHA'
-          // The version and latest are copied on Docker Hub from the commit just
-          // pushed, so no local tag can slip in between.
-          sh 'docker buildx imagetools create -t $IMAGE:$VERSION -t $IMAGE:latest $IMAGE:$SHA'
-          sh '''
-            want=$(docker buildx imagetools inspect $IMAGE:$SHA --format '{{.Manifest.Digest}}')
-            for tag in $VERSION latest; do
-              got=$(docker buildx imagetools inspect $IMAGE:$tag --format '{{.Manifest.Digest}}')
-              echo "$tag -> $got"
-              if [ "$got" != "$want" ]; then
-                echo "$IMAGE:$tag is $got, expected $want (the image of $SHA)"
-                exit 1
-              fi
-            done
-          '''
+          script {
+            if (env.IS_MAIN == 'true') {
+              // Release : le tag version et latest sont liés au commit juste poussé.
+              sh 'docker buildx imagetools create -t $IMAGE:$VERSION -t $IMAGE:latest $IMAGE:$SHA'
+              sh '''
+                want=$(docker buildx imagetools inspect $IMAGE:$SHA --format '{{.Manifest.Digest}}')
+                for tag in $VERSION latest; do
+                  got=$(docker buildx imagetools inspect $IMAGE:$tag --format '{{.Manifest.Digest}}')
+                  echo "$tag -> $got"
+                  if [ "$got" != "$want" ]; then
+                    echo "$IMAGE:$tag is $got, expected $want (the image of $SHA)"
+                    exit 1
+                  fi
+                done
+              '''
+            } else {
+              // DEV : met à jour le tag flottant catchow/deezer-to-navidrome:DEV
+              // sans toucher latest/version (main). Pur builds par SHA restent disponibles.
+              sh 'docker tag $IMAGE:$SHA $IMAGE:DEV'
+              sh 'docker push $IMAGE:DEV'
+              echo "DEV image pushed as $IMAGE:DEV (from $IMAGE:$SHA)"
+            }
+          }
         }
       }
     }
