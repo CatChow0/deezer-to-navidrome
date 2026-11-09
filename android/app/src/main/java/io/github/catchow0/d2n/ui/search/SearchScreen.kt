@@ -25,6 +25,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import io.github.catchow0.d2n.data.SearchResult
+import io.github.catchow0.d2n.ui.components.AudioPreview
 
 @Composable
 fun SearchScreen(viewModel: SearchViewModel, queryState: SearchState? = null) {
@@ -54,6 +55,9 @@ fun SearchScreen(viewModel: SearchViewModel, queryState: SearchState? = null) {
         if (s.loading) {
             BoxCenterProgress()
         }
+        s.previewUrl?.let { url ->
+            AudioPreview(url) { viewModel.closePreview() }
+        }
         s.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             items(s.results, key = { "${it.type}:${it.id}" }) { item ->
@@ -72,7 +76,7 @@ private fun BoxCenterProgress() {
 }
 
 @Composable
-fun SearchResultRow(item: SearchResult, inLibrary: Boolean) {
+fun SearchResultRow(item: SearchResult, inLibrary: Boolean, onPreview: () -> Unit = {}) {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
         AsyncImage(
             model = item.cover,
@@ -84,6 +88,7 @@ fun SearchResultRow(item: SearchResult, inLibrary: Boolean) {
             Text(item.title, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(item.artist ?: item.subtitle ?: item.album ?: "", maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall)
             if (inLibrary) Text("In library", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelSmall)
+            if (item.type == "track") androidx.compose.material3.TextButton(onClick = onPreview) { Text("Preview") }
         }
     }
 }

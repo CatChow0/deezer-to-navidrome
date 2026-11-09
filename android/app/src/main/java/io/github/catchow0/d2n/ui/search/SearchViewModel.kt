@@ -20,6 +20,7 @@ data class SearchState(
     val results: List<SearchResult> = emptyList(),
     val inLibrary: Map<String, Boolean> = emptyMap(),
     val error: String? = null,
+    val previewUrl: String? = null,
 )
 
 class SearchViewModel(
@@ -31,6 +32,19 @@ class SearchViewModel(
 
     fun onQuery(value: String) { _state.value = _state.value.copy(query = value) }
     fun onType(type: String) { _state.value = _state.value.copy(type = type) }
+
+    fun preview(trackId: String) {
+        viewModelScope.launch {
+            try {
+                val preview = apiCall { api().preview(trackId) }
+                _state.value = _state.value.copy(previewUrl = preview.preview.ifBlank { preview.link })
+            } catch (e: Exception) {
+                _state.value = _state.value.copy(error = e.message ?: "Preview failed")
+            }
+        }
+    }
+
+    fun closePreview() { _state.value = _state.value.copy(previewUrl = null) }
 
     fun submit() {
         val q = state.value.query.trim()
