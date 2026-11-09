@@ -6,6 +6,7 @@ from flask import Flask, jsonify, redirect, request, session, url_for
 
 from core import auth
 from core.config import ensure_dirs
+from core import migrations
 from core import scheduler
 from routes.account import account_bp
 from routes.auth import auth_bp
@@ -13,12 +14,15 @@ from routes.cache import cache_bp
 from routes.dedup import dedup_bp
 from routes.listenbrainz import listenbrainz_bp
 from routes.mixes import mixes_bp
+from routes.navidrome_accounts import navidrome_accounts_bp
+from routes.navidrome_playlists import navidrome_playlists_bp
 from routes.playlists import playlists_bp
 from routes.search import search_bp
 from routes.stats import stats_bp
 from routes.system import system_bp
 
 ensure_dirs()
+migrations.run()
 scheduler.start()
 
 app = Flask(__name__)
@@ -38,6 +42,8 @@ app.register_blueprint(cache_bp)
 app.register_blueprint(dedup_bp)
 app.register_blueprint(listenbrainz_bp)
 app.register_blueprint(mixes_bp)
+app.register_blueprint(navidrome_accounts_bp)
+app.register_blueprint(navidrome_playlists_bp)
 app.register_blueprint(search_bp)
 app.register_blueprint(stats_bp)
 app.register_blueprint(system_bp)
@@ -47,6 +53,20 @@ PUBLIC_ENDPOINTS = {
     "auth.login", "auth.setup", "static", "system.favicon", "system.health",
     "listenbrainz.submit", "listenbrainz.submit_slash", "listenbrainz.validate", "listenbrainz.validate_slash",
 }
+
+
+@app.context_processor
+def navidrome_accounts_for_pages():
+    """The account picker in the top bar. Only for a signed-in page."""
+    from core import account_context, nd_accounts
+
+    if not (auth.auth_disabled() or session.get("user")):
+        return {}
+    try:
+        accounts = [nd_accounts.public(a) for a in nd_accounts.list_accounts()]
+        return {"nd_accounts": accounts, "nd_active": account_context.resolve(request, session)}
+    except Exception:
+        return {}
 
 
 @app.before_request

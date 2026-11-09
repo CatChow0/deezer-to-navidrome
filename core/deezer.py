@@ -23,18 +23,28 @@ from core.matching import build_title_index, find_best_match
 from core.utils import sanitize_filename
 
 
-# Mixes from the Deezer account are followed like playlists, under IDs such
-# as "mix-stl-inspired-by-1" (smart tracklist) or "mix-flow-chill" (Flow mood).
-MIX_ID = re.compile(r"^mix-(stl|flow)-([a-z0-9_-]+)$")
+# Mixes from a Deezer account are followed like playlists, under IDs such as
+# "mix-stl-inspired-by-1" (smart tracklist) or "mix-flow-chill" (Flow mood).
+# Those of another account than dz1 carry it ("mix-dz2-flow-chill"): two
+# accounts each have their own Flow.
+MIX_ID = re.compile(r"^mix-(?:(dz[1-9][0-9]*)-)?(stl|flow)-([a-z0-9_-]+)$")
+FIRST_DEEZER_ACCOUNT = "dz1"
 
 
-def mix_id(kind: str, source_id: str) -> str:
-    return f"mix-{kind}-{re.sub(r'[^a-z0-9_-]+', '-', str(source_id).lower())}"
+def mix_id(kind: str, source_id: str, deezer_account=None) -> str:
+    prefix = f"{deezer_account}-" if deezer_account and deezer_account != FIRST_DEEZER_ACCOUNT else ""
+    return f"mix-{prefix}{kind}-{re.sub(r'[^a-z0-9_-]+', '-', str(source_id).lower())}"
 
 
 def parse_mix_id(playlist_id: str):
     m = MIX_ID.match(str(playlist_id))
-    return (m.group(1), m.group(2)) if m else None
+    return (m.group(2), m.group(3)) if m else None
+
+
+def mix_deezer_account(playlist_id: str):
+    """The Deezer account whose mix it is."""
+    m = MIX_ID.match(str(playlist_id))
+    return (m.group(1) or FIRST_DEEZER_ACCOUNT) if m else None
 
 
 def parse_xp_id(playlist_id: str):
@@ -44,12 +54,30 @@ def parse_xp_id(playlist_id: str):
     return parse(playlist_id)
 
 
-# Playlists this app generates from your listening (core/mix_builder.py).
-AUTO_ID = re.compile(r"^auto-(daily|blend)-[1-9]$|^auto-(discover|trial)$")
+# Playlists this app generates from your listening (core/mix_builder.py), one set
+# per Navidrome account: "auto-daily-1" for the account made from the install,
+# as before profiles, and "auto-nd2-daily-1" for the others.
+AUTO_ID = re.compile(r"^auto-(?:(nd[1-9][0-9]*)-)?(?:(daily|blend)-([1-9])|(discover|trial))$")
+FIRST_NAVIDROME_ACCOUNT = "nd1"
+
+
+def auto_id(account, name, slot=None) -> str:
+    """The ID of a generated playlist ("daily", 2), or without a slot, the name
+    its history is kept under."""
+    prefix = f"{account}-" if account and account != FIRST_NAVIDROME_ACCOUNT else ""
+    return f"auto-{prefix}{name}" + (f"-{slot}" if slot else "")
+
+
+def parse_auto_id(playlist_id):
+    """(account, name, slot) of a generated playlist, or None."""
+    m = AUTO_ID.match(str(playlist_id))
+    if not m:
+        return None
+    return m.group(1) or FIRST_NAVIDROME_ACCOUNT, m.group(2) or m.group(4), int(m.group(3)) if m.group(3) else None
 
 
 def is_auto_id(playlist_id: str) -> bool:
-    return bool(AUTO_ID.match(str(playlist_id)))
+    return parse_auto_id(playlist_id) is not None
 
 
 def _valid_playlist_id(pid: str) -> bool:
@@ -115,10 +143,57 @@ def cache_cover(playlist):
         return None
 
 
+def stored_accounts() -> dict:
+    """playlist ID -> the Navidrome accounts saved for it, read straight from the
+    file (load_playlists may call Deezer for a missing title)."""
+    try:
+        data = json.loads(PLAYLIST_IDS_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    found = {}
+    for item in data.get("playlists") or []:
+        if isinstance(item, dict) and isinstance(item.get("accounts"), list) and item["accounts"]:
+            found[str(item.get("id", "")).strip()] = [str(a) for a in item["accounts"] if a]
+    return found
+
+
+def accounts_for(playlist_id) -> list:
+    """The Navidrome accounts a playlist is published for. Saved before 1.16, it
+    belongs to the account made from the install."""
+    from core import nd_accounts
+
+    saved = stored_accounts().get(str(playlist_id))
+    if saved:
+        return saved
+    fallback = nd_accounts.owner_fallback()
+    return [fallback] if fallback else []
+
+
+def set_accounts(playlist_id, accounts) -> list:
+    """The Navidrome accounts of a saved playlist, replaced. Returns them."""
+    accounts = list(dict.fromkeys(str(a) for a in accounts if a))
+    playlists = load_playlists()
+    for playlist in playlists:
+        if playlist["id"] == playlist_id:
+            playlist["accounts"] = accounts
+    save_playlists(playlists)
+    return accounts
+
+
+def give_to_account(playlist_id, account_id) -> bool:
+    """Adds an account to a saved playlist. True when it did not have it yet."""
+    members = accounts_for(playlist_id)
+    if account_id in members:
+        return False
+    set_accounts(playlist_id, [*members, account_id])
+    return True
+
+
 def save_playlists(playlists):
     ensure_dirs()
     cleaned = []
     seen = set()
+    previous = stored_accounts()
     for item in playlists:
         pid = str(item.get("id", "")).strip()
         if not _valid_playlist_id(pid) or pid in seen:
@@ -138,6 +213,11 @@ def save_playlists(playlists):
             entry["source"] = str(item["source"])
         if item.get("subtitle"):
             entry["subtitle"] = str(item["subtitle"])
+        # The Navidrome accounts it belongs to. An entry given without them keeps
+        # those already saved, so a refresh of its title cannot lose them.
+        accounts = item.get("accounts") if isinstance(item.get("accounts"), list) else previous.get(pid)
+        if accounts:
+            entry["accounts"] = list(dict.fromkeys(str(a) for a in accounts if a))
         cleaned.append(entry)
         seen.add(pid)
 
@@ -186,6 +266,7 @@ def load_playlists():
                 "auto_scan_enabled": bool(item.get("auto_scan_enabled", False)),
                 "auto_scan_interval_minutes": max(1, int(item.get("auto_scan_interval_minutes") or 60)),
                 "auto_download_after_scan": bool(item.get("auto_download_after_scan", False)),
+                "accounts": [str(a) for a in item.get("accounts") or [] if a],
             })
     elif isinstance(data.get("playlist_ids"), list):
         for raw in data["playlist_ids"]:
@@ -200,8 +281,15 @@ def load_playlists():
                 changed = True
 
     playlists = sorted({p["id"]: p for p in playlists}.values(), key=_playlist_sort_key)
+    fallback = None
     for p in playlists:
         p.setdefault("kind", "playlist")
+        if not p.get("accounts"):
+            if fallback is None:
+                from core import nd_accounts
+
+                fallback = nd_accounts.owner_fallback() or ""
+            p["accounts"] = [fallback] if fallback else []
 
     if changed:
         save_playlists(playlists)
@@ -241,7 +329,7 @@ def fetch_deezer_playlist_tracks(playlist_id: str, refresh=False, full=False, pr
     if mix:
         from core.deezer_account import mix_tracks
 
-        return playlist_title(playlist_id), mix_tracks(*mix)
+        return playlist_title(playlist_id), mix_tracks(*mix, account=mix_deezer_account(playlist_id))
 
     info = fetch_deezer_playlist_info(playlist_id)
     url = f"https://api.deezer.com/playlist/{playlist_id}"
@@ -275,16 +363,19 @@ def fetch_deezer_playlist_tracks(playlist_id: str, refresh=False, full=False, pr
     return info["title"], parsed
 
 
-def follow_mix(kind: str, source_id: str, title: str):
-    """Adds a Deezer mix to the followed playlists; its cover is the album art of its first track."""
+def follow_mix(kind: str, source_id: str, title: str, accounts=None, deezer_account=None):
+    """Adds a mix of a Deezer account to the followed playlists; its cover is the
+    album art of its first track."""
     from core.deezer_account import mix_tracks
 
-    pid = mix_id(kind, source_id)
+    pid = mix_id(kind, source_id, deezer_account)
     playlists = load_playlists()
     if any(p["id"] == pid for p in playlists):
         return pid, False
-    tracks = mix_tracks(kind, source_id)
+    tracks = mix_tracks(kind, source_id, account=deezer_account)
     entry = {"id": pid, "title": title, "picture": next((t["picture"] for t in tracks if t.get("picture")), "")}
+    if accounts:
+        entry["accounts"] = list(accounts)
     save_playlists([*playlists, entry])
     cache_cover(entry)
     return pid, True
@@ -434,6 +525,20 @@ def _row(track, entry=None, *, score=None, manual=False):
     return row
 
 
+def playlist_report(playlist_id: str, playlist_title: str, rows: list) -> dict:
+    """What a scan found, without writing anything: for accounts that get their
+    playlists through the Navidrome API rather than as files."""
+    report = {"playlist_id": playlist_id, "playlist_title": playlist_title, "generated_at": int(time.time()),
+              "matched_count": 0, "unmatched_count": 0, "tracks": []}
+    for row in sorted(rows, key=lambda r: int(r["number"])):
+        matched = row.get("matched") is True and bool(row.get("local_path"))
+        report["matched_count" if matched else "unmatched_count"] += 1
+        report["tracks"].append({"position": row["number"], "deezer_artist": row.get("deezer_artist", ""),
+                                 "deezer_title": row.get("deezer_title", row.get("deezer_name", "")),
+                                 "deezer_album": row.get("deezer_album", ""), "matched": matched})
+    return report
+
+
 def write_playlist_outputs(playlist_id: str, playlist_title: str, rows: list):
     """Writes the .m3u8, report.json and missing.txt of a playlist from its preview rows."""
     _, playlists_base_dir, _, mappings = get_paths_from_config()
@@ -523,7 +628,9 @@ def apply_manual_match(playlist_id: str, track_id: str, mode: str, path: str | N
         return state
 
     state = modify_preview_state(playlist_id, change)
-    write_playlist_outputs(playlist_id, state.get("playlist_title") or f"playlist_{playlist_id}", state["rows"])
+    from core import publish
+
+    publish.publish(playlist_id, state.get("playlist_title") or f"playlist_{playlist_id}", state["rows"])
     return updated
 
 
@@ -557,7 +664,9 @@ def rematch_track(playlist_id: str, track: dict):
         return state
 
     state = modify_preview_state(playlist_id, change)
-    write_playlist_outputs(playlist_id, state.get("playlist_title") or playlist_title(playlist_id), state["rows"])
+    from core import publish
+
+    publish.publish(playlist_id, state.get("playlist_title") or playlist_title(playlist_id), state["rows"])
     return updated
 
 
@@ -665,7 +774,9 @@ def convert_playlist(playlist_id: str, progress_cb=None, quick: bool = False):
 
     emit("Writing output files", stage="write", progress=100)
     ordered = [rows[t["position"]] for t in deezer_tracks]
-    m3u8_path, report = write_playlist_outputs(playlist_id, playlist_title, ordered)
+    from core import publish
+
+    m3u8_path, report = publish.publish(playlist_id, playlist_title, ordered)
 
     def merge(state):
         # Overrides may have changed while the scan ran: keep the latest ones.
@@ -683,7 +794,7 @@ def convert_playlist(playlist_id: str, progress_cb=None, quick: bool = False):
         "playlist_title": playlist_title,
         "matched": report["matched_count"],
         "unmatched": report["unmatched_count"],
-        "path": str(m3u8_path),
+        "path": str(m3u8_path) if m3u8_path else "",
     }
 
 

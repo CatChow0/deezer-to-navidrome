@@ -1,6 +1,6 @@
 import threading
 
-from flask import Blueprint, flash, jsonify, redirect, render_template, request, url_for
+from flask import Blueprint, flash, jsonify, redirect, render_template, request, session, url_for
 
 from core.patch_notes import RELEASES
 from core.config import (
@@ -27,7 +27,8 @@ from core.deezer import (
     rematch_track,
     save_playlists,
 )
-from core import crossplatform
+from core import account_context, crossplatform, nd_accounts, publish
+from core.deezer import accounts_for, give_to_account, is_auto_id, set_accounts
 from core.utils import extract_playlist_id
 from core.xp_sources import MAX_CSV_BYTES, SourceError, spotify_playlist_id
 from core import scheduler
@@ -41,11 +42,33 @@ def _log_dl(msg):
     print(f"[download-missing] {msg}", flush=True)
 
 
+def _active():
+    return account_context.resolve(request, session)
+
+
+def _label(account_id):
+    account = nd_accounts.get(account_id)
+    return account["label"] if account else account_id
+
+
 def render_app(view):
-    """Dashboard and settings live on the same page; `view` picks the one shown first."""
+    """Dashboard and settings live on the same page; `view` picks the one shown
+    first. The dashboard shows the playlists of this browser's account, with the
+    names its user gave them in Navidrome, and the ones the user made there."""
+    active = _active()
+    playlists = [p for p in load_playlists() if not active or not p.get("accounts") or active in p["accounts"]]
+    handmade = []
+    if active:
+        names = publish.custom_titles(active)
+        playlists = [{**p, "title": names[p["id"]], "deezer_title": p["title"]} if p["id"] in names else p
+                     for p in playlists]
+        handmade = publish.handmade(active)
+        publish.sync_soon(active)
     return render_template(
         "home.html",
-        playlists=load_playlists(),
+        playlists=playlists,
+        navidrome_playlists=handmade,
+        nd_profile=active,
         config=load_config(),
         view=view,
         download_dir=deezer_dl.download_dir_status(),
@@ -69,17 +92,30 @@ def _open_playlist(playlist_id):
     return redirect(url_for("playlists.home", playlist=playlist_id))
 
 
+def _share_existing(playlist_id, account_id):
+    """A playlist already saved for other accounts now also goes to this one,
+    from its last scan. Returns the message to show."""
+    if not give_to_account(playlist_id, account_id):
+        return "Playlist already saved"
+    state = get_preview_state(playlist_id) or {}
+    if isinstance(state.get("rows"), list):
+        publish.publish(playlist_id, state.get("playlist_title") or playlist_title(playlist_id), state["rows"],
+                        accounts=[account_id])
+    return f"Playlist added to {_label(account_id)}"
+
+
 @playlists_bp.post("/playlist/add")
 def add_playlist():
     value = request.form.get("playlist_input", "")
+    account = _active()
     if spotify_playlist_id(value):
         try:
-            pid, added = crossplatform.add_spotify(value)
+            pid, added = crossplatform.add_spotify(value, accounts=[account] if account else None)
         except SourceError as e:
             flash(str(e))
             return redirect(url_for("playlists.home"))
         if not added:
-            flash("Playlist already saved")
+            flash(_share_existing(pid, account) if account else "Playlist already saved")
             return _open_playlist(pid)
         _start_scan(pid, quick=True, title=f"Finding on Deezer: {playlist_title(pid)}")
         flash("Spotify playlist added: its tracks are being found on Deezer")
@@ -92,10 +128,12 @@ def add_playlist():
 
     playlists = load_playlists()
     if any(p["id"] == pid for p in playlists):
-        flash("Playlist already saved")
+        flash(_share_existing(pid, account) if account else "Playlist already saved")
         return redirect(url_for("playlists.home"))
 
     info = fetch_deezer_playlist_info(pid)
+    if account:
+        info["accounts"] = [account]
     playlists.append(info)
     save_playlists(playlists)
     cache_cover(info)
@@ -109,8 +147,9 @@ def import_csv_playlist():
     if upload is None or not upload.filename:
         flash("Choose a CSV file to import")
         return redirect(url_for("playlists.home"))
+    account = _active()
     try:
-        pid = crossplatform.add_csv(upload.filename, upload.read(MAX_CSV_BYTES + 1))
+        pid = crossplatform.add_csv(upload.filename, upload.read(MAX_CSV_BYTES + 1), accounts=[account] if account else None)
     except SourceError as e:
         flash(str(e))
         return redirect(url_for("playlists.home"))
@@ -143,11 +182,64 @@ def source_match_route(playlist_id):
 
 @playlists_bp.post("/playlist/<playlist_id>/delete")
 def delete_playlist(playlist_id):
+    """Removes the playlist from this browser's account. Saved for other
+    accounts too, it stays for them; otherwise it is deleted."""
+    account = _active()
+    members = accounts_for(playlist_id)
+    title = playlist_title(playlist_id)
+    left_in_navidrome = " Navidrome keeps the copy it imported from the .m3u8: delete it there."
+    if account in members and len(members) > 1:
+        set_accounts(playlist_id, [a for a in members if a != account])
+        complete = publish.remove_from(playlist_id, title, [account])
+        flash(f"Playlist removed from {_label(account)}." + ("" if complete else left_in_navidrome))
+        return redirect(url_for("playlists.home"))
+    complete = publish.remove_from(playlist_id, title, members)
     playlists = [p for p in load_playlists() if p["id"] != playlist_id]
     save_playlists(playlists)
     delete_playlist_cache(playlist_id)
-    flash("Playlist deleted")
+    flash("Playlist deleted." + ("" if complete else left_in_navidrome))
     return redirect(url_for("playlists.home"))
+
+
+@playlists_bp.post("/playlist/<playlist_id>/accounts")
+def playlist_accounts_route(playlist_id):
+    """The Navidrome accounts this playlist goes to."""
+    body = request.get_json(silent=True) or {}
+    wanted = body.get("accounts")
+    if is_auto_id(playlist_id):
+        return jsonify({"ok": False, "error": "A generated playlist belongs to its profile"}), 409
+    known = {a["id"] for a in nd_accounts.list_accounts()}
+    if not isinstance(wanted, list) or not wanted or any(a not in known for a in wanted):
+        return jsonify({"ok": False, "error": "Choose at least one Navidrome account"}), 400
+    if not any(p["id"] == playlist_id for p in load_playlists()):
+        return jsonify({"ok": False, "error": "Playlist not found"}), 404
+    members = accounts_for(playlist_id)
+    added = [a for a in wanted if a not in members]
+    removed = [a for a in members if a not in wanted]
+    set_accounts(playlist_id, wanted)
+    title = playlist_title(playlist_id)
+    if removed:
+        publish.remove_from(playlist_id, title, removed)
+    state = get_preview_state(playlist_id) or {}
+    if added and isinstance(state.get("rows"), list):
+        publish.publish(playlist_id, state.get("playlist_title") or title, state["rows"], accounts=added)
+    return jsonify({"ok": True, "navidrome": publish.status(playlist_id)})
+
+
+@playlists_bp.get("/playlist/<playlist_id>/navidrome")
+def playlist_navidrome_route(playlist_id):
+    """Where the playlist is in Navidrome, without reading it again from Deezer."""
+    return jsonify({"ok": True, "navidrome": publish.status(playlist_id)})
+
+
+@playlists_bp.post("/playlist/<playlist_id>/publish")
+def publish_now_route(playlist_id):
+    """Publishes again now, even unchanged: for a playlist edited in Navidrome."""
+    state = get_preview_state(playlist_id) or {}
+    if not isinstance(state.get("rows"), list):
+        return jsonify({"ok": False, "error": "Scan this playlist first"}), 400
+    publish.publish(playlist_id, state.get("playlist_title") or playlist_title(playlist_id), state["rows"], force=True)
+    return jsonify({"ok": True, "navidrome": publish.status(playlist_id)})
 
 
 @playlists_bp.post("/playlist/<playlist_id>/convert")
@@ -206,7 +298,7 @@ def _start_scan(playlist_id, quick, title=None):
 def playlist_preview_route(playlist_id):
     try:
         data = build_playlist_preview(playlist_id)
-        return jsonify({"ok": True, "playlist": data})
+        return jsonify({"ok": True, "playlist": data, "navidrome": publish.status(playlist_id)})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
 
@@ -266,7 +358,7 @@ def download_missing_start(playlist_id: str):
         return jsonify({"error": "No missing tracks to download"}), 400
 
     if not deezer_dl.download_arl():
-        return jsonify({"error": "No Deezer account connected. Add your ARL in Settings."}), 400
+        return jsonify({"error": "No Deezer account for the downloads: add one in Settings → Deezer accounts."}), 400
 
     task_id = create_task(f"Download missing: {playlist_title(playlist_id)}", kind="download-missing", playlist_id=playlist_id)
 

@@ -22,7 +22,7 @@ class Base(unittest.TestCase):
         self.playlists_dir = self.root / "playlists"
         self.library_dir = self.root / "library"
         self.library_dir.mkdir()
-        for db in (mixes_db.db_path(), stats_db.db_path()):
+        for db in (mixes_db.db_path(), stats_db.db_path("nd1")):
             for suffix in ("", "-wal", "-shm"):
                 Path(f"{db}{suffix}").unlink(missing_ok=True)
         save_playlists([])
@@ -47,7 +47,7 @@ class Base(unittest.TestCase):
             self.addCleanup(patch.stop)
         self.conn = mixes_db.connect()
         self.addCleanup(self.conn.close)
-        self.stats = stats_db.connect()
+        self.stats = stats_db.connect("nd1")
         self.addCleanup(self.stats.close)
 
     def own(self, artist, title, genre="Rock", bpm=120, plays=0, album=None):
@@ -83,7 +83,7 @@ class Plumbing(unittest.TestCase):
 class Daily(Base):
     def test_builds_four_named_mixes_and_their_files(self):
         self.rich_library()
-        result = mb.generate(["daily"], now=NOW)
+        result = mb.generate("nd1", ["daily"], now=NOW)
         self.assertEqual(result["built"]["daily"], [f"auto-daily-{i}" for i in range(1, 5)])
         titles = {p["id"]: p for p in load_playlists()}
         self.assertEqual(titles["auto-daily-1"]["title"], "Daily Mix 1")
@@ -96,19 +96,19 @@ class Daily(Base):
     def test_downloads_nothing(self):
         self.rich_library()
         with mock.patch("core.mix_builder.download_to_trial") as download:
-            mb.generate(["daily"], now=NOW)
+            mb.generate("nd1", ["daily"], now=NOW)
         download.assert_not_called()
 
     def test_works_without_a_deezer_account(self):
         self.rich_library()
         with mock.patch("core.deezer_dl.download_arl", return_value=""):
-            self.assertTrue(mb.generate(["daily"], now=NOW)["built"]["daily"])
+            self.assertTrue(mb.generate("nd1", ["daily"], now=NOW)["built"]["daily"])
 
     def test_seeds_change_the_next_day(self):
         self.rich_library()
-        mb.generate(["daily"], now=NOW)
+        mb.generate("nd1", ["daily"], now=NOW)
         first = set(mixes_db.get_meta(self.conn, "seeds_daily"))
-        mb.generate(["daily"], now=NOW + DAY)
+        mb.generate("nd1", ["daily"], now=NOW + DAY)
         self.assertEqual(first & set(mixes_db.get_meta(self.conn, "seeds_daily")), set())
 
     def test_a_mix_takes_the_picture_of_its_seed(self):
@@ -121,14 +121,14 @@ class Daily(Base):
         self.stats.execute("INSERT OR REPLACE INTO covers(kind, item_key, file, checked_at) SELECT 'album', key, 'seed.jpg', 1 FROM albums")
         self.stats.commit()
         self.addCleanup(lambda: [config.delete_playlist_cache(f"auto-daily-{i}") for i in range(1, 5)])
-        mb.generate(["daily"], now=NOW)
+        mb.generate("nd1", ["daily"], now=NOW)
         self.assertEqual((config.COVERS_DIR / "auto-daily-1.jpg").read_bytes(), b"picture")
 
     def test_a_file_that_vanished_is_not_proposed(self):
         self.rich_library()
         gone = Path(self.entries[0]["path"])
         gone.unlink()
-        mb.generate(["daily"], now=NOW)
+        mb.generate("nd1", ["daily"], now=NOW)
         rows = [r for p in load_playlists() for r in config.get_preview_state(p["id"])["rows"]]
         self.assertNotIn(str(gone), [r["local_path"] for r in rows])
 
@@ -138,15 +138,15 @@ class Daily(Base):
         path.parent.mkdir(parents=True)
         path.write_bytes(b"audio")
         self.entries.append({"path": str(path), "tag_artist": "Artist0", "tag_title": "New", "mtime_ns": 1})
-        mb.generate(["daily"], now=NOW)
+        mb.generate("nd1", ["daily"], now=NOW)
         rows = [r for i in range(1, 5) for r in config.get_preview_state(f"auto-daily-{i}")["rows"]]
         self.assertNotIn(str(path), [r["local_path"] for r in rows])
 
     def test_mix_no_longer_possible_leaves(self):
         self.rich_library()
-        mb.generate(["daily"], now=NOW)
+        mb.generate("nd1", ["daily"], now=NOW)
         self.entries.clear()
-        mb.generate(["daily"], now=NOW + DAY)
+        mb.generate("nd1", ["daily"], now=NOW + DAY)
         self.assertFalse([p for p in load_playlists() if p["id"].startswith("auto-daily")])
         self.assertFalse((self.playlists_dir / "Daily Mix 1" / "Daily Mix 1.m3u8").exists())
 
@@ -154,17 +154,17 @@ class Daily(Base):
         self.assertTrue(mb._run_lock.acquire(blocking=False))
         self.addCleanup(mb._run_lock.release)
         with self.assertRaises(RuntimeError):
-            mb.generate(["daily"], now=NOW)
+            mb.generate("nd1", ["daily"], now=NOW)
 
     def test_empty_install_does_not_fail(self):
-        self.assertEqual(mb.generate(["daily", ], now=NOW)["built"]["daily"], [])
+        self.assertEqual(mb.generate("nd1", ["daily", ], now=NOW)["built"]["daily"], [])
 
     def test_regular_playlists_are_left_alone(self):
         self.rich_library()
         save_playlists([{"id": "123", "title": "Mine", "picture": "x"}])
-        mb.generate(["daily"], now=NOW)
+        mb.generate("nd1", ["daily"], now=NOW)
         self.entries.clear()
-        mb.generate(["daily"], now=NOW + DAY)
+        mb.generate("nd1", ["daily"], now=NOW + DAY)
         self.assertIn("123", [p["id"] for p in load_playlists()])
 
 
@@ -175,7 +175,7 @@ class Unpublishing(Base):
 
     def test_only_its_own_files_leave(self):
         self.rich_library()
-        mb.generate(["daily"], now=NOW)
+        mb.generate("nd1", ["daily"], now=NOW)
         other = self.playlists_dir / "Daily Mix 1" / "my notes.txt"
         other.write_text("mine")
         mb.unpublish("auto-daily-1")
@@ -184,22 +184,22 @@ class Unpublishing(Base):
 
     def test_turning_off_removes_playlists_and_keeps_the_quarantine(self):
         self.rich_library()
-        mb.generate(["daily"], now=NOW)
+        mb.generate("nd1", ["daily"], now=NOW)
         path = trial.trial_dir() / "x.flac"
         path.parent.mkdir(parents=True)
         path.write_bytes(b"a")
-        trial.add_download(self.conn, "1", "A", "S", "", path, "auto-blend-1", NOW)
-        mb.set_mix_mode(self.conn, "off")
+        trial.add_download(self.conn, "nd1", "1", "A", "S", "", path, "auto-blend-1", NOW)
+        mb.set_mix_mode(self.conn, "nd1", "off")
         self.assertFalse([p for p in load_playlists() if p["id"].startswith("auto-daily")])
         self.assertTrue(path.exists())
-        self.assertEqual(trial.get(self.conn, "1")["state"], "on_trial")
+        self.assertEqual(trial.get(self.conn, "1", "nd1")["state"], "on_trial")
 
 
 class MixLength(Base):
     def test_the_chosen_length_is_used(self):
         self.rich_library()
-        mb.save_settings(self.conn, {"mix_size": 12})
-        mb.generate(["daily"], now=NOW)
+        mb.save_settings(self.conn, "nd1", {"mix_size": 12})
+        mb.generate("nd1", ["daily"], now=NOW)
         for playlist in load_playlists():
             self.assertEqual(len(config.get_preview_state(playlist["id"])["rows"]), 12, playlist["id"])
 
@@ -231,22 +231,22 @@ def cand(track_id, artist=None):
 class Downloading(Base):
     def test_saved_in_the_trial_folder_and_registered(self):
         queue = FakeQueue()
-        saved = mb.download_to_trial(self.conn, [cand(1), cand(2)], 2, "auto-discover", NOW, enqueue=queue)
+        saved = mb.download_to_trial(self.conn, "nd1", [cand(1), cand(2)], 2, "auto-discover", NOW, enqueue=queue)
         self.assertEqual(len(saved), 2)
         self.assertEqual({c[1] for c in queue.calls}, {str(trial.trial_dir())})
-        self.assertEqual(trial.get(self.conn, "1")["state"], "on_trial")
+        self.assertEqual(trial.get(self.conn, "1", "nd1")["state"], "on_trial")
 
     def test_a_failure_moves_on_to_the_spares(self):
-        saved = mb.download_to_trial(self.conn, [cand(1), cand(2), cand(3)], 2, "m", NOW, enqueue=FakeQueue(failing=[1]))
+        saved = mb.download_to_trial(self.conn, "nd1", [cand(1), cand(2), cand(3)], 2, "m", NOW, enqueue=FakeQueue(failing=[1]))
         self.assertEqual({t["deezer_id"] for t in saved}, {"2", "3"})
 
     def test_never_more_than_asked(self):
         queue = FakeQueue()
-        mb.download_to_trial(self.conn, [cand(i) for i in range(1, 9)], 3, "m", NOW, enqueue=queue)
+        mb.download_to_trial(self.conn, "nd1", [cand(i) for i in range(1, 9)], 3, "m", NOW, enqueue=queue)
         self.assertEqual(len(queue.calls), 3)
 
     def test_all_failed_gives_an_empty_list(self):
-        self.assertEqual(mb.download_to_trial(self.conn, [cand(1)], 1, "m", NOW, enqueue=FakeQueue(failing=[1])), [])
+        self.assertEqual(mb.download_to_trial(self.conn, "nd1", [cand(1)], 1, "m", NOW, enqueue=FakeQueue(failing=[1])), [])
 
 
 class WithDownloads(Base):
@@ -257,7 +257,7 @@ class WithDownloads(Base):
         queue = FakeQueue()
         real = mb.download_to_trial
         patcher = mock.patch("core.mix_builder.download_to_trial",
-                             side_effect=lambda conn, c, want, mix, now: real(conn, c, want, mix, now, enqueue=queue))
+                             side_effect=lambda conn, account, c, want, mix, now: real(conn, account, c, want, mix, now, enqueue=queue))
         patcher.start()
         self.addCleanup(patcher.stop)
         self.queue = queue
@@ -278,7 +278,7 @@ class WithDownloads(Base):
         return found
 
     def set(self, **changes):
-        mb.save_settings(self.conn, changes)
+        mb.save_settings(self.conn, "nd1", changes)
 
     def blend_rows(self):
         return {p["id"]: config.get_preview_state(p["id"])["rows"] for p in load_playlists() if p["id"].startswith("auto-blend")}
@@ -289,7 +289,7 @@ class WithDownloads(Base):
 
     def test_blend_keeps_the_chosen_share_of_new_tracks_in_every_mix(self):
         self.set(mix_size=20, blend_new_percent=25, max_unheard=1000)
-        mb.generate(["blend"], now=NOW)
+        mb.generate("nd1", ["blend"], now=NOW)
         mixes = self.blend_rows()
         self.assertEqual(len(mixes), 4)
         for rows in mixes.values():
@@ -298,16 +298,16 @@ class WithDownloads(Base):
 
     def test_blend_replays_unheard_tracks_before_fetching_more(self):
         self.set(mix_size=20, blend_new_percent=25, max_unheard=1000)
-        mb.generate(["blend"], now=NOW)
+        mb.generate("nd1", ["blend"], now=NOW)
         before = len(self.queue.calls)
-        mb.generate(["blend"], now=NOW + DAY)
+        mb.generate("nd1", ["blend"], now=NOW + DAY)
         self.assertEqual(len(self.queue.calls), before)
         for rows in self.blend_rows().values():
             self.assertEqual(len(self.on_trial(rows)), 5)
 
     def test_a_high_share_still_builds_mixes(self):
         self.set(mix_size=30, blend_new_percent=80, max_unheard=1000)
-        mb.generate(["blend"], now=NOW)
+        mb.generate("nd1", ["blend"], now=NOW)
         mixes = self.blend_rows()
         self.assertEqual(len(mixes), 4)
         for rows in mixes.values():
@@ -317,7 +317,7 @@ class WithDownloads(Base):
     def test_your_own_tracks_fill_the_places_nothing_new_could_take(self):
         self.set(mix_size=16, blend_new_percent=50, max_unheard=1000)
         with mock.patch("core.mix_candidates.seed_pool", return_value=[]):
-            mb.generate(["blend"], now=NOW)
+            mb.generate("nd1", ["blend"], now=NOW)
         for mix_id, rows in self.blend_rows().items():
             self.assertEqual(self.on_trial(rows), [])
             title = next(p["subtitle"] for p in load_playlists() if p["id"] == mix_id)
@@ -325,43 +325,43 @@ class WithDownloads(Base):
 
     def test_the_disk_limit_does_not_shorten_the_mixes(self):
         self.set(mix_size=16, blend_new_percent=50, max_unheard=2)
-        mb.generate(["blend"], now=NOW)
+        mb.generate("nd1", ["blend"], now=NOW)
         for mix_id, rows in self.blend_rows().items():
             title = next(p["subtitle"] for p in load_playlists() if p["id"] == mix_id)
             self.assertGreaterEqual(len(rows), 10 if title.startswith("All about") else 16, title)
 
     def test_the_disk_limit_still_stops_blend(self):
         self.set(mix_size=20, blend_new_percent=25, max_unheard=3)
-        result = mb.generate(["blend"], now=NOW)
+        result = mb.generate("nd1", ["blend"], now=NOW)
         self.assertEqual(len(self.queue.calls), 3)
         self.assertEqual(result["downloaded"], 3)
         self.assertEqual(len(self.blend_rows()), 4)
 
     def test_discover_only_has_new_tracks(self):
         self.set(discover_size=12)
-        mb.generate(["discover"], now=NOW)
+        mb.generate("nd1", ["discover"], now=NOW)
         rows = config.get_preview_state("auto-discover")["rows"]
         self.assertEqual(len(rows), 12)
         self.assertTrue(all("trial" in Path(r["local_path"]).parts for r in rows))
 
     def test_on_trial_playlist_lists_every_track_in_quarantine(self):
         self.set(discover_size=5)
-        mb.generate(["discover"], now=NOW)
+        mb.generate("nd1", ["discover"], now=NOW)
         self.assertEqual(len(config.get_preview_state("auto-trial")["rows"]), 5)
 
     def test_on_trial_playlist_leaves_when_empty(self):
         self.set(discover_size=2)
-        mb.generate(["discover"], now=NOW)
-        for row in trial.active(self.conn):
-            trial.remove(self.conn, row["deezer_id"], NOW)
-        mb.publish_trial_playlist(self.conn)
+        mb.generate("nd1", ["discover"], now=NOW)
+        for row in trial.active(self.conn, "nd1"):
+            trial.remove(self.conn, row["deezer_id"], "nd1", NOW)
+        mb.publish_trial_playlist(self.conn, "nd1")
         self.assertNotIn("auto-trial", [p["id"] for p in load_playlists()])
 
     def test_limit_of_unheard_tracks_stops_downloads_and_says_so(self):
         self.set(discover_size=5, max_unheard=3)
-        result = mb.generate(["discover"], now=NOW)
+        result = mb.generate("nd1", ["discover"], now=NOW)
         self.assertEqual(len(self.queue.calls), 3)
-        result = mb.generate(["discover"], now=NOW + 7 * DAY)
+        result = mb.generate("nd1", ["discover"], now=NOW + 7 * DAY)
         self.assertEqual(len(self.queue.calls), 3)
         self.assertIn("unheard", " ".join(result["notes"]))
 
@@ -370,66 +370,66 @@ class WithDownloads(Base):
         path = trial.trial_dir() / "big.flac"
         path.parent.mkdir(parents=True)
         path.write_bytes(b"a")
-        trial.add_download(self.conn, "1", "A", "Big", "", path, "m", NOW)
+        trial.add_download(self.conn, "nd1", "1", "A", "Big", "", path, "m", NOW)
         self.conn.execute("UPDATE trial_tracks SET size=?", (2 * 1024 ** 3,))
         self.conn.commit()
-        result = mb.generate(["discover"], now=NOW)
+        result = mb.generate("nd1", ["discover"], now=NOW)
         self.assertEqual(self.queue.calls, [])
         self.assertIn("GB", " ".join(result["notes"]))
 
     def test_refused_track_never_comes_back(self):
         self.set(discover_size=1)
-        mb.generate(["discover"], now=NOW)
-        refused = trial.active(self.conn)[0]["deezer_id"]
-        trial.remove(self.conn, refused, NOW)
+        mb.generate("nd1", ["discover"], now=NOW)
+        refused = trial.active(self.conn, "nd1")[0]["deezer_id"]
+        trial.remove(self.conn, refused, "nd1", NOW)
         self.new_id = int(refused) - 1
-        mb.generate(["discover"], now=NOW + 7 * DAY)
+        mb.generate("nd1", ["discover"], now=NOW + 7 * DAY)
         self.assertEqual([c[0] for c in self.queue.calls].count(refused), 1)
 
     def test_no_deezer_account_builds_nothing_and_says_so(self):
         with mock.patch("core.deezer_dl.download_arl", return_value=""):
-            result = mb.generate(["blend", "discover"], now=NOW)
+            result = mb.generate("nd1", ["blend", "discover"], now=NOW)
         self.assertEqual(result["built"], {})
         self.assertIn("Deezer account", " ".join(result["notes"]))
         self.assertEqual(self.queue.calls, [])
 
     def test_downloads_refresh_the_library(self):
         self.set(discover_size=2)
-        mb.generate(["discover"], now=NOW)
+        mb.generate("nd1", ["discover"], now=NOW)
         mb._refresh_library.assert_called_once()
 
     def test_empty_week_keeps_last_weeks_discover(self):
         self.set(discover_size=3)
-        mb.generate(["discover"], now=NOW)
+        mb.generate("nd1", ["discover"], now=NOW)
         self.set(max_unheard=1)
-        mb.generate(["discover"], now=NOW + 7 * DAY)
+        mb.generate("nd1", ["discover"], now=NOW + 7 * DAY)
         self.assertIn("auto-discover", [p["id"] for p in load_playlists()])
 
     def test_regular_daily_pass_runs_with_generation(self):
         self.set(discover_size=1)
-        mb.generate(["discover"], now=NOW)
-        row = trial.active(self.conn)[0]
+        mb.generate("nd1", ["discover"], now=NOW)
+        row = trial.active(self.conn, "nd1")[0]
         self.assertEqual(row["state"], "on_trial")
-        mb.generate([], now=NOW + 31 * DAY)
-        self.assertEqual(trial.get(self.conn, row["deezer_id"])["state"], "trash")
+        mb.generate("nd1", [], now=NOW + 31 * DAY)
+        self.assertEqual(trial.get(self.conn, row["deezer_id"], "nd1")["state"], "trash")
 
 
 class Timing(Base):
     def test_nothing_is_due_when_off(self):
-        self.assertEqual(mb.due_versions(self.conn, NOW), [])
+        self.assertEqual(mb.due_versions(self.conn, "nd1", NOW), [])
 
     def test_due_after_its_interval_only(self):
-        mb.save_settings(self.conn, {"mix_mode": "daily", "discover": True})
-        self.assertEqual(mb.due_versions(self.conn, NOW), ["daily", "discover"])
+        mb.save_settings(self.conn, "nd1", {"mix_mode": "daily", "discover": True})
+        self.assertEqual(mb.due_versions(self.conn, "nd1", NOW), ["daily", "discover"])
         mixes_db.set_meta(self.conn, "last_daily", NOW)
         mixes_db.set_meta(self.conn, "last_discover", NOW)
-        self.assertEqual(mb.due_versions(self.conn, NOW + DAY - 1), [])
-        self.assertEqual(mb.due_versions(self.conn, NOW + DAY), ["daily"])
-        self.assertEqual(mb.due_versions(self.conn, NOW + 7 * DAY), ["daily", "discover"])
+        self.assertEqual(mb.due_versions(self.conn, "nd1", NOW + DAY - 1), [])
+        self.assertEqual(mb.due_versions(self.conn, "nd1", NOW + DAY), ["daily"])
+        self.assertEqual(mb.due_versions(self.conn, "nd1", NOW + 7 * DAY), ["daily", "discover"])
 
     def test_tick_waits_for_the_tempo_analysis(self):
         self.entries.extend({"path": f"/x/{i}.flac", "mtime_ns": 1} for i in range(10))
-        mb.save_settings(self.conn, {"mix_mode": "daily"})
+        mb.save_settings(self.conn, "nd1", {"mix_mode": "daily"})
         with mock.patch("core.mix_builder.start_task") as start, \
                 mock.patch("core.metadata_fix.start_background") as analysis:
             mb.tick(NOW)
@@ -438,10 +438,10 @@ class Timing(Base):
 
     def test_tick_starts_once_analysed(self):
         self.rich_library()
-        mb.save_settings(self.conn, {"mix_mode": "daily"})
+        mb.save_settings(self.conn, "nd1", {"mix_mode": "daily"})
         with mock.patch("core.mix_builder.start_task") as start:
             mb.tick(NOW)
-        start.assert_called_once_with(["daily"])
+        start.assert_called_once_with("nd1", ["daily"])
 
     def test_after_the_button_new_files_are_handled_with_every_mix_off(self):
         self.entries.append({"path": "/x/1.flac", "mtime_ns": 1})
@@ -460,26 +460,26 @@ class Timing(Base):
 
 class Settings(Base):
     def test_values_are_cleaned(self):
-        saved = mb.save_settings(self.conn, {"discover": 1, "max_unheard": "5", "unknown": 3})
+        saved = mb.save_settings(self.conn, "nd1", {"discover": 1, "max_unheard": "5", "unknown": 3})
         self.assertIs(saved["discover"], True)
         self.assertEqual(saved["max_unheard"], 5)
         self.assertNotIn("unknown", saved)
 
     def test_values_stay_within_their_bounds(self):
-        low = mb.save_settings(self.conn, {"mix_size": 2, "blend_new_percent": 0, "max_trial_gb": -3})
+        low = mb.save_settings(self.conn, "nd1", {"mix_size": 2, "blend_new_percent": 0, "max_trial_gb": -3})
         self.assertEqual((low["mix_size"], low["blend_new_percent"], low["max_trial_gb"]), (12, 1, 1))
-        high = mb.save_settings(self.conn, {"mix_size": 900, "blend_new_percent": 100})
+        high = mb.save_settings(self.conn, "nd1", {"mix_size": 900, "blend_new_percent": 100})
         self.assertEqual((high["mix_size"], high["blend_new_percent"]), (100, 90))
 
     def test_an_unknown_mode_is_refused(self):
         with self.assertRaises(ValueError):
-            mb.save_settings(self.conn, {"mix_mode": "both"})
+            mb.save_settings(self.conn, "nd1", {"mix_mode": "both"})
 
     def test_the_old_switches_become_one_mode(self):
         for old, mode in (({}, "off"), ({"daily": True}, "daily"), ({"blend": True}, "blend"),
                           ({"daily": True, "blend": True}, "blend"), ({"daily": False, "blend": False}, "off")):
             mixes_db.set_meta(self.conn, "settings", {**old, "max_unheard": 7, "blend_new_per_run": 10})
-            settings = mb.load_settings(self.conn)
+            settings = mb.load_settings(self.conn, "nd1")
             self.assertEqual(settings["mix_mode"], mode, old)
             self.assertEqual(settings["max_unheard"], 7)
             for gone in ("daily", "blend", "blend_new_per_run"):
@@ -487,8 +487,8 @@ class Settings(Base):
 
     def test_a_saved_mode_wins_over_the_old_switches(self):
         mixes_db.set_meta(self.conn, "settings", {"blend": True})
-        mb.save_settings(self.conn, {"mix_mode": "daily"})
-        self.assertEqual(mb.load_settings(self.conn)["mix_mode"], "daily")
+        mb.save_settings(self.conn, "nd1", {"mix_mode": "daily"})
+        self.assertEqual(mb.load_settings(self.conn, "nd1")["mix_mode"], "daily")
 
     def test_what_is_enabled(self):
         self.assertEqual(mb.enabled_versions({"mix_mode": "off", "discover": False}), [])
@@ -502,67 +502,67 @@ class Switching(Base):
     def setUp(self):
         super().setUp()
         self.rich_library()
-        mb.set_mix_mode(self.conn, "daily")
-        mb.generate(["daily"], now=NOW)
+        mb.set_mix_mode(self.conn, "nd1", "daily")
+        mb.generate("nd1", ["daily"], now=NOW)
         self.daily = {i for i in self.ids() if i.startswith("auto-daily")}
         self.assertTrue(self.daily)
 
     def test_off_removes_the_mixes_at_once(self):
-        mb.set_mix_mode(self.conn, "off")
+        mb.set_mix_mode(self.conn, "nd1", "off")
         self.assertEqual(self.ids(), set())
 
     def test_the_old_mixes_stay_until_the_new_ones_are_ready(self):
-        mb.set_mix_mode(self.conn, "blend")
+        mb.set_mix_mode(self.conn, "nd1", "blend")
         self.assertEqual(self.ids(), self.daily)
         with mock.patch("core.mix_builder.build_blend", side_effect=lambda run: self.fake_blend()):
-            mb.generate(["blend"], now=NOW + 60)
+            mb.generate("nd1", ["blend"], now=NOW + 60)
         self.assertEqual(self.ids(), {"auto-blend-1"})
 
     def fake_blend(self):
-        mb.publish("auto-blend-1", "Daily Mix+ 1", "", [])
+        mb.publish("nd1", "auto-blend-1", "Daily Mix+ 1", "", [])
         return ["auto-blend-1"]
 
     def test_an_empty_build_keeps_the_old_mixes(self):
-        mb.set_mix_mode(self.conn, "blend")
+        mb.set_mix_mode(self.conn, "nd1", "blend")
         with mock.patch("core.mix_builder.build_blend", return_value=[]):
-            mb.generate(["blend"], now=NOW + 60)
+            mb.generate("nd1", ["blend"], now=NOW + 60)
         self.assertEqual(self.ids(), self.daily)
 
     def test_a_blocked_download_keeps_the_old_mixes(self):
-        mb.set_mix_mode(self.conn, "blend")
+        mb.set_mix_mode(self.conn, "nd1", "blend")
         with mock.patch("core.deezer_dl.download_arl", return_value=""):
-            mb.generate(["blend"], now=NOW + 60)
+            mb.generate("nd1", ["blend"], now=NOW + 60)
         self.assertEqual(self.ids(), self.daily)
 
     def test_a_new_mode_is_due_at_once(self):
         mixes_db.set_meta(self.conn, "last_blend", NOW)
-        mb.set_mix_mode(self.conn, "blend")
-        self.assertEqual(mb.due_versions(self.conn, NOW + 60), ["blend"])
+        mb.set_mix_mode(self.conn, "nd1", "blend")
+        self.assertEqual(mb.due_versions(self.conn, "nd1", NOW + 60), ["blend"])
 
     def test_off_then_on_is_due_at_once(self):
-        mb.set_mix_mode(self.conn, "off")
-        mb.set_mix_mode(self.conn, "daily")
-        self.assertEqual(mb.due_versions(self.conn, NOW + 60), ["daily"])
+        mb.set_mix_mode(self.conn, "nd1", "off")
+        mb.set_mix_mode(self.conn, "nd1", "daily")
+        self.assertEqual(mb.due_versions(self.conn, "nd1", NOW + 60), ["daily"])
 
     def test_choosing_the_same_mode_changes_nothing(self):
-        mb.set_mix_mode(self.conn, "daily")
-        self.assertEqual(mb.due_versions(self.conn, NOW + 60), [])
+        mb.set_mix_mode(self.conn, "nd1", "daily")
+        self.assertEqual(mb.due_versions(self.conn, "nd1", NOW + 60), [])
         self.assertEqual(self.ids(), self.daily)
 
     def test_discover_off_then_on_is_due_at_once_and_leaves_the_mixes(self):
-        mb.set_discover(self.conn, True)
+        mb.set_discover(self.conn, "nd1", True)
         mixes_db.set_meta(self.conn, "last_discover", NOW)
-        self.assertEqual(mb.due_versions(self.conn, NOW + 60), [])
-        mb.set_discover(self.conn, False)
+        self.assertEqual(mb.due_versions(self.conn, "nd1", NOW + 60), [])
+        mb.set_discover(self.conn, "nd1", False)
         self.assertEqual(self.ids(), self.daily)
-        mb.set_discover(self.conn, True)
-        self.assertEqual(mb.due_versions(self.conn, NOW + 60), ["discover"])
+        mb.set_discover(self.conn, "nd1", True)
+        self.assertEqual(mb.due_versions(self.conn, "nd1", NOW + 60), ["discover"])
 
     def test_turning_discover_on_again_while_on_keeps_its_date(self):
-        mb.set_discover(self.conn, True)
+        mb.set_discover(self.conn, "nd1", True)
         mixes_db.set_meta(self.conn, "last_discover", NOW)
-        mb.set_discover(self.conn, True)
-        self.assertEqual(mb.due_versions(self.conn, NOW + 60), [])
+        mb.set_discover(self.conn, "nd1", True)
+        self.assertEqual(mb.due_versions(self.conn, "nd1", NOW + 60), [])
 
 
 class QuarantineReview(Base):
@@ -570,58 +570,58 @@ class QuarantineReview(Base):
         path = trial.trial_dir() / f"{title}.flac"
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(b"a")
-        trial.add_download(self.conn, deezer_id, "Artist", title, "", path, "auto-discover", when)
+        trial.add_download(self.conn, "nd1", deezer_id, "Artist", title, "", path, "auto-discover", when)
         return path
 
     def test_trial_rules_have_defaults_and_bounds(self):
-        settings = mb.load_settings(self.conn)
+        settings = mb.load_settings(self.conn, "nd1")
         self.assertEqual((settings["trial_auto"], settings["trial_days"], settings["trash_days"], settings["trial_delete"],
                           settings["trial_bypass"], settings["trial_plays"], settings["trial_marks"]), (True, 30, 30, False, False, 2, True))
-        saved = mb.save_settings(self.conn, {"trial_days": 900, "trash_days": 0, "trial_plays": 99, "trial_bypass": 1})
+        saved = mb.save_settings(self.conn, "nd1", {"trial_days": 900, "trash_days": 0, "trial_plays": 99, "trial_bypass": 1})
         self.assertEqual((saved["trial_days"], saved["trash_days"], saved["trial_plays"], saved["trial_bypass"]), (365, 1, 50, True))
 
     def test_runs_with_every_mix_off(self):
         path = self.add_trial()
         mb.review_quarantine(NOW)
-        self.assertEqual(trial.get(self.conn, "1")["state"], "trash")
+        self.assertEqual(trial.get(self.conn, "1", "nd1")["state"], "trash")
         self.assertFalse(path.exists())
 
     def test_the_tick_runs_it_even_with_mixes_off(self):
         self.add_trial()
         mb.tick(NOW)
-        self.assertEqual(trial.get(self.conn, "1")["state"], "trash")
+        self.assertEqual(trial.get(self.conn, "1", "nd1")["state"], "trash")
 
     def test_follows_the_saved_rules(self):
         self.add_trial()
-        mb.save_settings(self.conn, {"trial_auto": False})
+        mb.save_settings(self.conn, "nd1", {"trial_auto": False})
         mb.review_quarantine(NOW)
-        self.assertEqual(trial.get(self.conn, "1")["state"], "on_trial")
-        mb.save_settings(self.conn, {"trial_auto": True, "trial_delete": True})
+        self.assertEqual(trial.get(self.conn, "1", "nd1")["state"], "on_trial")
+        mb.save_settings(self.conn, "nd1", {"trial_auto": True, "trial_delete": True})
         mb.review_quarantine(NOW)
-        self.assertEqual(trial.get(self.conn, "1")["state"], "deleted")
+        self.assertEqual(trial.get(self.conn, "1", "nd1")["state"], "deleted")
 
     def test_old_waiting_tracks_are_sorted_once(self):
         self.add_trial("1", "A", when=NOW)
         self.conn.execute("UPDATE trial_tracks SET state='pending', reason='Never played'")
         self.conn.commit()
-        mb.save_settings(self.conn, {"trial_auto": False})
+        mb.save_settings(self.conn, "nd1", {"trial_auto": False})
         mb.review_quarantine(NOW)
-        self.assertEqual(trial.get(self.conn, "1")["state"], "pending")
-        mb.save_settings(self.conn, {"trial_auto": True})
+        self.assertEqual(trial.get(self.conn, "1", "nd1")["state"], "pending")
+        mb.save_settings(self.conn, "nd1", {"trial_auto": True})
         mb.review_quarantine(NOW)
-        self.assertEqual(trial.get(self.conn, "1")["state"], "trash")
+        self.assertEqual(trial.get(self.conn, "1", "nd1")["state"], "trash")
         self.add_trial("2", "B", when=NOW)
         self.conn.execute("UPDATE trial_tracks SET state='pending', reason='Played 2 times' WHERE deezer_id='2'")
         self.conn.commit()
         mb.review_quarantine(NOW)
-        self.assertEqual(trial.get(self.conn, "2")["state"], "pending")
+        self.assertEqual(trial.get(self.conn, "2", "nd1")["state"], "pending")
 
     def test_the_trash_length_is_used(self):
         self.add_trial()
-        trial.remove(self.conn, "1", NOW - 8 * DAY)
-        mb.save_settings(self.conn, {"trash_days": 7})
+        trial.remove(self.conn, "1", "nd1", NOW - 8 * DAY)
+        mb.save_settings(self.conn, "nd1", {"trash_days": 7})
         mb.review_quarantine(NOW)
-        self.assertEqual(trial.get(self.conn, "1")["state"], "deleted")
+        self.assertEqual(trial.get(self.conn, "1", "nd1")["state"], "deleted")
 
     def test_new_plays_count_without_a_generation(self):
         self.add_trial("1", "Song", when=NOW - DAY)
@@ -630,7 +630,7 @@ class QuarantineReview(Base):
             stats_db.add_play(self.stats, track, None, 200, NOW - 60 * (i + 1), "navidrome")
         self.stats.commit()
         mb.review_quarantine(NOW)
-        self.assertEqual(trial.get(self.conn, "1")["state"], "pending")
+        self.assertEqual(trial.get(self.conn, "1", "nd1")["state"], "pending")
 
     def test_nothing_in_quarantine_costs_nothing(self):
         with mock.patch("core.mix_builder.review_trial") as review:
@@ -643,10 +643,10 @@ class SurvivesStartClean(Base):
         path = trial.trial_dir() / "x.flac"
         path.parent.mkdir(parents=True)
         path.write_bytes(b"a")
-        trial.add_download(self.conn, "1", "A", "S", "", path, "m", NOW)
+        trial.add_download(self.conn, "nd1", "1", "A", "S", "", path, "m", NOW)
         self.stats.execute("DELETE FROM plays")
         self.stats.commit()
-        self.assertEqual(trial.get(self.conn, "1")["state"], "on_trial")
+        self.assertEqual(trial.get(self.conn, "1", "nd1")["state"], "on_trial")
         self.assertNotIn("trial_tracks", [r[0] for r in self.stats.execute("SELECT name FROM sqlite_master")])
 
 

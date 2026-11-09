@@ -8,7 +8,7 @@
 
   <div class="doc-block">
     <h4>Mixes</h4>
-    <p>With a connected Deezer account, <b>Mixes → Choose mixes</b> lets you follow your Flow and the mixes Deezer makes for you. Their tracks change, and every scan picks up the current ones.</p>
+    <p><b>Mixes → Choose mixes</b> lists the Flow and the mixes Deezer makes for the Deezer account of this profile, the default one unless its Navidrome account chose another, and lets you follow them. Their tracks change, and every scan picks up the current ones, read with that account.</p>
   </div>
 
   <div class="doc-block">
@@ -44,6 +44,20 @@
     <h4>Getting playlists into Navidrome</h4>
     <p>The app and Navidrome usually see the same files under different paths. <b>Settings → Navidrome paths</b> translates them, so the <code>.m3u8</code> points where Navidrome looks. For example, the app sees <code>/music/deezer-dl/songs/Song.mp3</code> and Navidrome sees <code>/deezer-dl/songs/Song.mp3</code>.</p>
     <p>Both containers must see the same files, and the downloads folder needs a mapping too, or downloaded tracks are left out of the playlists.</p>
+    <p>A <code>.m3u8</code> imported by Navidrome always belongs to its first admin. To give each Navidrome user their own playlists, add their accounts in <b>Settings → Navidrome accounts</b>: see below.</p>
+  </div>
+
+  <div class="doc-block">
+    <h4>Playlists for several Navidrome users</h4>
+    <p>Each playlist goes to the Navidrome accounts ticked under <b>In Navidrome</b> in its drawer. For each one, the app makes a private playlist as that user through Navidrome's API and replaces its content at each update, in place, so it keeps its place in every app. A change made to it in Navidrome is lost at the next update.</p>
+    <ul>
+      <li><strong>Tracks are found</strong> by their path in Navidrome's database, mounted at <code>/import/navidrome</code>. Without it, by their tags, which misses some. A track Navidrome has not scanned yet is added once it has: the app tries again every 10 minutes.</li>
+      <li><strong>Per account.</strong> A playlist added goes to the account of this browser, and the dashboard shows that account's playlists. Adding one another account already has shares it. <b>Delete</b> takes a shared playlist away from this account only.</li>
+      <li><strong>Your install's account</strong> keeps its <code>.m3u8</code> files until <b>Publish as this user…</b> in Settings: the app publishes its playlists through the API, then removes its own files and the copies Navidrome had imported from them.</li>
+      <li><strong>Only the app's own playlists</strong> are ever changed or removed in Navidrome. An admin also sees the private playlists of the other users: those are never touched.</li>
+      <li><strong>In step with Navidrome.</strong> A playlist of the app that its user deletes in Navidrome leaves that profile, and the app when no other profile has it. One renamed there keeps its new name, here too. Its tracks still follow the app. This is checked every 10 minutes and when the dashboard opens.</li>
+      <li><strong>Made by hand.</strong> <b>Also in Navidrome</b>, under the playlists, shows those the user made in Navidrome, read-only: open one to see its tracks, change it in Navidrome.</li>
+    </ul>
   </div>
 
   <div class="doc-block">

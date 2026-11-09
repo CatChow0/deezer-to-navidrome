@@ -213,3 +213,42 @@
   }
 
 }
+
+/* The Navidrome account this browser works on */
+.nd-picker {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.nd-picker-label {
+  color: var(--muted);
+  font-size: var(--step--1);
+}
+
+.nd-picker select {
+  width: auto;
+  max-width: 220px;
+  padding: 6px 12px;
+  border-radius: var(--r-chip);
+  font-size: var(--step--1);
+}
+
+@media (max-width: 1279px) {
+  .nd-picker-label {
+    display: none;
+  }
+}
+
+/* With the picker, the buttons go under the name sooner than without it. */
+@media (min-width: 561px) and (max-width: 1100px) {
+  .topbar:has(.nd-picker) {
+    flex-wrap: wrap;
+    row-gap: 10px;
+  }
+
+  .topbar:has(.nd-picker) .topbar-right {
+    flex: 1 1 100%;
+    flex-wrap: wrap;
+  }
+}

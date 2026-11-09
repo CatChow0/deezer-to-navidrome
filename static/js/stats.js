@@ -324,6 +324,9 @@ async function loadPlays() {
 
 // ── Details ───────────────────────────────────────────────────────────────────
 
+const KIND_LABEL = { artist: 'Artist', album: 'Album', track: 'Track' };
+
+// The same layout as the other drawers: a cover beside the title, then sections.
 function detailHtml(data) {
   const max = Math.max(1, ...data.by_month.map(month => month.plays));
   const months = data.by_month.map(month => {
@@ -331,26 +334,35 @@ function detailHtml(data) {
     return `<li class="st-month"><span>${escapeHtml(monthFormat.format(new Date(Date.UTC(year, m - 1, 1))))}</span>
       <span class="st-bar" style="width:${Math.max(2, (month.plays / max) * 100)}%"></span><span>${count(month.plays)}</span></li>`;
   }).join('');
-  const tracks = data.top_tracks.length ? `<h3 class="st-detail-heading">Top tracks</h3>
-    <ol class="st-rank">${data.top_tracks.map((track, i) => `<li class="st-row" style="grid-template-columns:1.4em minmax(0,1fr) auto">
-      <span class="st-rank-n">${i + 1}</span>
-      <span class="st-row-main"><span class="st-row-name">${escapeHtml(track.title)}</span>${data.kind === 'artist' ? '' : `<span class="st-row-sub">${escapeHtml(track.artist)}</span>`}</span>
-      <span class="st-row-value">${count(track.plays)}</span>
-    </li>`).join('')}</ol>` : '';
+  const tracks = data.top_tracks.length ? `
+    <section class="detail-section">
+      <h3 class="section-title">Top tracks</h3>
+      <ol class="st-rank">${data.top_tracks.map((track, i) => `<li class="st-row st-detail-row">
+        <span class="st-rank-n">${i + 1}</span>
+        <span class="st-row-main"><span class="st-row-name">${escapeHtml(track.title)}</span>${data.kind === 'artist' ? '' : `<span class="st-row-sub">${escapeHtml(track.artist)}</span>`}</span>
+        <span class="st-row-value">${plural(track.plays, 'play')}</span>
+      </li>`).join('')}</ol>
+    </section>` : '';
   return `<header class="detail-head">
+      <span class="st-detail-cover${data.kind === 'artist' ? ' st-detail-cover--round' : ''}">${art(data.image, data.name)}</span>
       <div>
+        <p class="detail-kind">${KIND_LABEL[data.kind] || ''}</p>
         <h2 class="detail-title">${escapeHtml(data.name)}</h2>
         ${data.artist ? `<p class="detail-sub">${escapeHtml(data.artist)}</p>` : ''}
       </div>
     </header>
-    <dl class="st-detail-figures">
-      <div><dt>Plays</dt><dd>${count(data.plays)}</dd></div>
-      <div><dt>Estimated listening</dt><dd>${duration(data.seconds)}</dd></div>
-      <div><dt>First listen</dt><dd>${data.first_play ? escapeHtml(dateFormat.format(new Date(data.first_play * 1000))) : '-'}</dd></div>
-      <div><dt>Last listen</dt><dd>${data.last_play ? escapeHtml(dateFormat.format(new Date(data.last_play * 1000))) : '-'}</dd></div>
-    </dl>
-    <h3 class="st-detail-heading">Plays by month</h3>
-    <ol class="st-months">${months}</ol>
+    <section class="detail-section">
+      <dl class="st-detail-figures">
+        <div><dt>Plays</dt><dd>${count(data.plays)}</dd></div>
+        <div><dt>Estimated listening</dt><dd>${duration(data.seconds)}</dd></div>
+        <div><dt>First listen</dt><dd>${data.first_play ? escapeHtml(dateFormat.format(new Date(data.first_play * 1000))) : '-'}</dd></div>
+        <div><dt>Last listen</dt><dd>${data.last_play ? escapeHtml(dateFormat.format(new Date(data.last_play * 1000))) : '-'}</dd></div>
+      </dl>
+    </section>
+    <section class="detail-section">
+      <h3 class="section-title">Plays by month</h3>
+      <ol class="st-months">${months}</ol>
+    </section>
     ${tracks}`;
 }
 
@@ -385,10 +397,12 @@ export function initStats(drawer) {
   if (!root) return;
   state.key = keyOfDate(state.period, new Date());
 
-  // A cover that fails to load leaves the initials showing.
-  root.addEventListener('error', event => {
-    if (event.target.matches?.('[data-stats-img]')) event.target.remove();
-  }, true);
+  // A cover that fails to load leaves the initials showing, here and in the details.
+  for (const host of [root, drawer.el]) {
+    host.addEventListener('error', event => {
+      if (event.target.matches?.('[data-stats-img]')) event.target.remove();
+    }, true);
+  }
 
   on(root, 'click', '[data-stats-period]', (_, button) => setPeriod(button.dataset.statsPeriod));
   on(root, 'click', '[data-stats-step]', (_, button) => {

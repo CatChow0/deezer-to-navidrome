@@ -2,7 +2,7 @@
 
 **A self-hosted web app that turns your Deezer playlists into Navidrome `.m3u8` playlists, matches them against your local library, and downloads what is missing straight from Deezer.**
 
-[![Docker Image Version](https://img.shields.io/badge/version-1.15.0-blue)](https://hub.docker.com/r/catchow/deezer-to-navidrome)
+[![Docker Image Version](https://img.shields.io/badge/version-1.16.0-blue)](https://hub.docker.com/r/catchow/deezer-to-navidrome)
 [![Python 3](https://img.shields.io/badge/python-3-blue)](https://www.python.org/)
 [![Flask](https://img.shields.io/badge/flask-web%20app-brightgreen)](https://flask.palletsprojects.com/)
 
@@ -60,7 +60,7 @@ If you self-host your music with Navidrome but discover it on Deezer, this app k
 
 The interface has four views: **Dashboard**, **Stats**, **Releases** and **Settings**. Long tasks (scans, downloads, library refreshes) run in the background and show their progress in the **Activity** cell, so the rest of the page stays usable.
 
-**Made for you** builds playlists from what you listen to: Daily Mix from music you already have, Daily Mix+ with a share of tracks to download (a third by default), and Discover with only tracks you never heard. Mixes form around a track, an album or an artist that keeps coming back, using tempo and genre. One switch chooses Off, Daily Mix or Daily Mix+, Discover has its own, and **Manage** sets how often they refresh, their length, the share of new tracks and the disk limits. **Fix missing metadata** finds what your files lack (tempo measured from the audio, genre from Deezer) and adds it to their tags without replacing anything: in the free space of a FLAC header, saved first so a brutal stop can put it back, or on a copy checked against the original. What these playlists download stays on trial: played enough, or starred or well rated in Navidrome, it waits under To review for you to keep it; otherwise it goes to the trash at the end of its trial. Every rule can be changed in **Manage**, and the lists can be searched, sorted and filtered. Everything is off until you turn it on.
+**Made for you** builds playlists from what you listen to: Daily Mix from music you already have, Daily Mix+ with a share of tracks to download (a third by default), and Discover with only tracks you never heard. Mixes form around a track, an album or an artist that keeps coming back, using tempo and genre. One switch chooses Off, Daily Mix or Daily Mix+, Discover has its own, and **Manage** sets how often they refresh, their length, the share of new tracks and the disk limits. **Fix missing metadata** finds what your files lack (tempo measured from the audio, genre from Deezer) and adds it to their tags without replacing anything: in the free space of a FLAC header, saved first so a brutal stop can put it back, or on a copy checked against the original. What these playlists download stays on trial: played enough, or starred or well rated in Navidrome, it waits under To review for you to keep it; otherwise it goes to the trash at the end of its trial. Every rule can be changed in **Manage**, and the lists can be searched, sorted and filtered. Everything is off until you turn it on. Each Navidrome profile has its own mixes, settings and quarantine (see [Made for you per profile](#made-for-you-per-profile)).
 
 Two buttons in the topbar explain the app. **New** keeps the notes of each version, one tab each, and shows a dot after an upgrade until you open it. **Help** is a full guide with a search: how each part works, every setting, and what to do when something goes wrong, with live checks of your Deezer account and downloads folder.
 
@@ -90,7 +90,7 @@ Two buttons in the topbar explain the app. **New** keeps the notes of each versi
 - **Built-in Deezer downloader** - Tracks, albums and whole discographies, decrypted and tagged (cover included) by the app itself
 - **Progress on the button** - *Queued*, then `42%` or `3/14`, then *Downloaded*; details in Activity
 - **Retry** - A failed or partly failed download can be started again; files already saved are kept
-- **Two accounts** - A free account downloads MP3 128 kbps; add a premium account's ARL for FLAC, while your mixes keep using the first account
+- **Several Deezer accounts** - The one marked **Use for download** fetches the files for every profile: mark a premium one for FLAC
 
 ### Library
 - **Full rebuild / incremental refresh** of the library index
@@ -192,16 +192,15 @@ The app downloads from Deezer itself: it fetches the file, decrypts it and write
 
 ### Accounts and quality
 
-Downloads use the session cookie (`arl`) of a Deezer account, pasted in **Settings → Deezer account**.
+Downloads use the session cookie (`arl`) of a Deezer account, added in **Settings → Deezer accounts**. The account marked **Use for download** fetches the files for every profile; when none is marked, the default account does.
 
-| Account in Settings | Badge | Download format |
+| Account used for the downloads | Badge | Download format |
 |---|---|---|
 | Premium (HiFi) | `Premium` | FLAC |
 | Premium with high quality only | `Premium` | MP3 320 kbps |
 | Free | `Free` | MP3 128 kbps |
-| Free + a premium ARL for the downloads | `Free · downloads in Premium` | FLAC from the second account |
 
-When the first account is free, Settings shows a second field for the ARL of a **premium** account. That account is only used for downloads: your mixes and the release feed keep using the first one. A free ARL is refused in that field.
+A free account can stay the one your mixes and release feed come from, next to a premium one marked for the downloads. See [Deezer accounts](#deezer-accounts).
 
 To get the ARL: sign in on deezer.com, open the browser's developer tools, and copy the value of the `arl` cookie.
 
@@ -286,7 +285,7 @@ The **To review** filter lists the tracks to check. **Find on Deezer** on a row 
 
 The **Stats** tab shows what you listen to: a story recap of each month and year, top artists, albums and tracks for any week, month or year, genres, when you listen, and a searchable list of your plays. Open an artist, album or track for its plays over time.
 
-It keeps its own history in `stats.db`, so it needs neither Maloja nor lb-enricher, and no Navidrome password. Track lengths come from Navidrome and your library index; missing genres come from Deezer, a few tracks at a time in the background, most played first. Listening time is plays × track length, so it is an estimate.
+It keeps its own history in `stats.db`, so it needs neither Maloja nor lb-enricher, and no Navidrome password. Each Navidrome account has its own history: the Stats tab shows the one of the profile chosen at the top of the page (see [Histories per profile](#histories-per-profile)). Track lengths come from Navidrome and your library index; missing genres come from Deezer, a few tracks at a time in the background, most played first. Listening time is plays × track length, so it is an estimate.
 
 ### Recaps
 
@@ -302,12 +301,32 @@ Covers are cached in `stats_covers/` in `DATA_DIR`, at most 600 px. Tracks and a
 
 Navidrome sends plays over its ListenBrainz integration:
 
-1. Create a token in **Settings → Listening stats**, or set `SCROBBLE_TOKEN`.
-2. Set `ND_LISTENBRAINZ_BASEURL=http://deezer-to-navidrome:8080/apis/listenbrainz/1/` in Navidrome and restart it.
-3. In Navidrome's personal settings, link ListenBrainz using that token.
+1. Create a token in **Settings → Listening stats**, or set `SCROBBLE_TOKEN`. Each Navidrome account has its own: the page shows the one of the chosen profile.
+2. Set `ND_LISTENBRAINZ_BASEURL=http://deezer-to-navidrome:8080/apis/listenbrainz/1/` in Navidrome and restart it, once for all its users.
+3. Signed in to Navidrome as that profile's user, link ListenBrainz in the personal settings using its token.
 4. Play a track and find it under **Stats → Recent plays**.
 
-The route checks this token itself, even with `DISABLE_AUTH`.
+The route checks the tokens itself, even with `DISABLE_AUTH`: the token says whose play it is.
+
+### Histories per profile
+
+- **One history per Navidrome account.** The install's account keeps `stats.db` where it always was, untouched by the upgrade; the others have `stats/nd2.db`… The Stats tab, the recaps and **Your history** follow the profile chosen at the top of the page.
+- **One token per account.** The first account's is `SCROBBLE_TOKEN` (or the one made in Settings, as before); the others' are made in Settings or set with `SCROBBLE_TOKEN_ND2`… Two accounts cannot share a token.
+- **Imports read each user's plays.** Merge and Start clean only take the plays of the profile's Navidrome user in Navidrome's database: the user found by **Test** in Settings → Navidrome accounts, else the one with its user name. On a Navidrome where a single user ever played, the install's account keeps reading those plays as before.
+- **Maloja is the install's.** It kept one person's plays, so only the install's account reads it.
+- **Shared work.** Covers and what Deezer said about a track are found once and serve every history.
+- **A removed account** takes its history to `backups/removed-accounts/` and its token stops working.
+- Made for you reads each profile's own history: see below.
+
+### Made for you per profile
+
+- **Each profile its own mixes.** Daily Mix, Daily Mix+ and Discover are built from the profile's listening history, Discover from the releases of its Deezer account, and published for that Navidrome user only. The install's playlists keep their IDs (`auto-daily-1`); the other profiles' carry theirs (`auto-nd2-daily-1`).
+- **Its own settings and verdicts.** **Manage** shows those of the profile chosen at the top of the page: its versions, refresh rate, length and trial rules, and its tracks on trial. Each profile decides with its own plays and its own stars in Navidrome only.
+- **Shared disk limits.** The unheard tracks and the quarantine size count every profile together, since they share the disk.
+- **A shared quarantine.** A track has one file and a verdict from each profile that got it. A mix can take a track another profile has on trial without downloading it again; the list then says "Also on trial for…". **Keep** puts it in the library for everyone. A refusal only counts for the profile that made it: the file goes to the trash once no other profile has it on trial, and a profile that later wants it gets it back from there. A file another profile's own playlist uses never goes to the trash: it goes to the library instead.
+- **No duplicates.** A track someone kept is never downloaded again, and a track's file is never in two quarantines. A track on trial that is also downloaded by hand ends its trial kept: the library's copy replaces the trial copy in every playlist, and the trial copy goes.
+- **One profile at a time.** Mixes are built for one profile after the other, as they share the Deezer quota.
+- **A removed profile** takes its playlists out of Navidrome and of the app (a playlist shared with other profiles stays for them), and its tracks in quarantine go to the install's account.
 
 ### Importing your history
 
@@ -329,7 +348,7 @@ The app reads copies of these files and never writes to them. When the same play
 | Plays gone from the sources | Kept | Lost |
 | Needs Navidrome's database | No | Yes |
 
-Both back up `stats.db` first (the last 3, as `stats.db.bak-*` in `DATA_DIR`) and report what changed. To go back to a backup, stop the container, delete `stats.db` and its `-wal` and `-shm` files, rename the backup to `stats.db`, and start it again. Start clean shows how many plays it would lose before you confirm, and refuses to run if Navidrome's database has no plays. Merge can be run any time without counting anything twice. The first import saves a copy of Maloja's database in `stats_sources/`, so rebuilds keep working after you remove Maloja. **Reset data** in Settings does not touch your listening history.
+Both back up the profile's history first (the last 3, as `stats.db.bak-*` in `DATA_DIR`, or `stats/nd2.db.bak-*`…) and report what changed. To go back to a backup, stop the container, delete the history (`stats.db`, or `stats/nd2.db`…) and its `-wal` and `-shm` files, rename the backup to its name, and start it again. Start clean shows how many plays it would lose before you confirm, and refuses to run if Navidrome's database has no plays. Merge can be run any time without counting anything twice. The first import saves a copy of Maloja's database in `stats_sources/`, so rebuilds keep working after you remove Maloja. **Reset data** in Settings does not touch your listening history.
 
 ### Moving from Wrapped, Maloja and lb-enricher
 
@@ -355,18 +374,25 @@ Both back up `stats.db` first (the last 3, as `stats.db.bak-*` in `DATA_DIR`) an
 | `release_prefs.json` | Muted artists of the release feed | Survives restarts |
 | `dedup_report.json` | Latest duplicate analysis | Until a new scan |
 | `dedup_choices.json` | **Persistent** duplicate decisions | Survives restarts |
-| `stats.db` | Listening history | Survives **Reset data**; replaced only by Start clean |
-| `stats.db.bak-*` | Backups made before each rebuild (the last 3) | Replaced by newer ones |
-| `mixes.db` | Made for you: quarantine, mix history, settings, tempo and genre results | Survives **Reset data** and Start clean |
+| `stats.db` | Listening history of the install's Navidrome account | Survives **Reset data**; replaced only by Start clean |
+| `stats/nd2.db`… | Listening history of the other Navidrome accounts | As above |
+| `stats.db.bak-*`, `stats/*.db.bak-*` | Backups made before each rebuild (the last 3 of each history) | Replaced by newer ones |
+| `backups/removed-accounts/` | The history of each removed Navidrome account | Delete it when you no longer need it |
+| `mixes.db` | Made for you of every profile (quarantine, mix history, settings), tempo and genre results, and the playlists published in Navidrome | Survives **Reset data** and Start clean |
+| `backups/pre-1.16.0/` | The saved playlists, `secrets.json` and `mixes.db` as they were before 1.16 | Can be deleted once 1.16 works for you |
 | `metadata_journal/` | Saved FLAC headers while Fix missing metadata writes them | Emptied as each file is done, or at the next start |
 | `trial_trash/` | Tracks removed from quarantine | Deleted after the days chosen in Manage, 30 by default |
 | `stats_sources/` | Saved copy of Maloja's database | Until replaced by a larger one |
 | `stats_covers/` | Cached artist, album and track covers | Survives **Reset data**; can be deleted, it fills again |
 | `covers/` | Playlist artwork | Until cleaned up |
 | `config.json` | App configuration | Survives restarts |
-| `secrets.json` | Password hash, API token, Deezer ARLs, webhook URL, session key | Survives restarts |
+| `secrets.json` | Password hash, API token, webhook URL, session key, encrypted | Survives restarts |
+| `navidrome_accounts.json` | Navidrome accounts, their passwords encrypted | Survives restarts |
+| `deezer_accounts.json` | Deezer accounts, their ARLs encrypted | Survives restarts |
+| `releases.json`, `releases-dz2.json`… | Release feed of each Deezer account, with `release_prefs*.json` for the muted artists | Rebuilt by a refresh |
+| `encryption.key` | The encryption key, only when `D2N_ENCRYPTION_KEY` is not set | Keep it: without it, saved credentials must be entered again |
 
-> `secrets.json` holds your Deezer session cookies and other credentials. Keep `/data` private and out of any backup you share.
+> Credentials are encrypted, but with `encryption.key` in the same folder a copy of `/data` still reveals them. Set `D2N_ENCRYPTION_KEY`, and keep `/data` private and out of any backup you share.
 
 ### Library Cache Structure
 
@@ -572,10 +598,13 @@ services:
       MATCH_WORKERS: "4"             # your CPU count
       # DOWNLOAD_WORKERS: "4"        # parallel downloads from Deezer
 
-      # Optional: the Deezer account (you can paste it in Settings instead)
-      # DEEZER_ARL: ""
-      # DEEZER_ARL_PREMIUM: ""       # premium account used only for downloads
-      # SCROBBLE_TOKEN: ""           # token Navidrome sends new plays with
+      # Optional: Deezer accounts (you can add them in Settings instead)
+      # DEEZER_ARL: ""               # a Deezer account, the default one
+      # DEEZER_ARL_PREMIUM: ""       # a Deezer account marked for the downloads
+      # SCROBBLE_TOKEN: ""           # token Navidrome sends new plays with (first account)
+
+      # Optional: the key credentials are encrypted with (else one is kept in /data)
+      # D2N_ENCRYPTION_KEY: ""
 
       # Optional: the sign-in account (else the first visit asks for it)
       # APP_USERNAME: "admin"
@@ -601,7 +630,7 @@ docker compose up -d
 
 3. **Open the web UI** at `http://localhost:8080` and create your account.
 
-4. **Connect Deezer** in **Settings → Deezer account** (optional, but needed for downloads, mixes and the release feed).
+4. **Add your Deezer account** in **Settings → Deezer accounts** (optional, but needed for downloads, mixes and the release feed).
 
 ### Without Docker
 
@@ -634,12 +663,14 @@ The folder and performance variables are read **on first start** to create `conf
 | `MATCH_WORKERS` | `4` | Matching threads; set it to your CPU count |
 | `METADATA_WORKERS` | `4` | Files Fix missing metadata handles at once; up to your CPU count, about 80 MB of memory each, 2 on a spinning disk |
 | `DOWNLOAD_WORKERS` | `4` | Downloads running at the same time |
-| `DEEZER_ARL` | — | `arl` cookie of the Deezer account (mixes, release feed, downloads) |
-| `DEEZER_ARL_PREMIUM` | — | `arl` of a premium account, used only for downloads |
+| `DEEZER_ARL` | — | `arl` cookie of a Deezer account, the default one (mixes, release feed, downloads) |
+| `DEEZER_ARL_PREMIUM` | — | `arl` of a Deezer account marked for the downloads |
 | `SECRET_KEY` | random, kept in `secrets.json` | Session signing key |
+| `D2N_ENCRYPTION_KEY` | random, kept in `encryption.key` | Key the saved credentials are encrypted with: any long random string |
 | `APP_USERNAME` / `APP_PASSWORD` | — | The sign-in account; else the first visit asks you to create it |
 | `API_TOKEN` | — | Token for other apps; else create one in Settings |
-| `SCROBBLE_TOKEN` | — | Token Navidrome sends plays with; else create one in Settings |
+| `SCROBBLE_TOKEN` | — | Token Navidrome sends the first account's plays with; else create one in Settings |
+| `SCROBBLE_TOKEN_ND2`… | — | Token of the other Navidrome accounts, by their ID |
 | `STATS_NAVIDROME_DB` | `/import/navidrome/navidrome.db` | Navidrome's database, for importing your history |
 | `STATS_MALOJA_DB` | `/import/maloja/malojadb.sqlite` | Maloja's database, for importing your history |
 | `DISABLE_AUTH` | `false` | `true` turns sign-in off (a reverse proxy already asks for a login) |
@@ -686,7 +717,32 @@ The web interface asks for a sign-in. On the first visit, the app asks you to cr
 - Changing the password (**Settings → Sign-in and other apps**) signs out your other browsers.
 - The API token is sent as `Authorization: Bearer <token>` and only opens `GET /api/releases`, `POST /search/library-check` and `GET /api/version`.
 
-Generate a `SECRET_KEY` or a token with:
+#### Navidrome accounts
+
+**Settings → Navidrome accounts** lists the Navidrome users this app works for: the address of your Navidrome, a user name and its password (Navidrome does not accept API keys yet). **Test** signs in through the Subsonic API and says whether the user is an admin and which libraries it sees; with Navidrome's database mounted, it also finds the user there, so its plays and stars can be told apart.
+
+- Your install becomes the first account and keeps working as before.
+- **Profile**, at the top of the page, chooses the Navidrome user of this browser. Each browser, and the phone, keeps its own.
+- Passwords are encrypted with `D2N_ENCRYPTION_KEY`, else with a key generated in `data/encryption.key`. They are never shown again, never sent back by the API, and never written in a log. Requests to Navidrome carry them in a POST body, never in a URL.
+- **Playlists per user.** A playlist goes to the accounts ticked under **In Navidrome** in its drawer. For each, the app creates a private playlist as that user through the Subsonic API and replaces its content at each update, in place (the playlist keeps its ID in every app). Tracks are found by their path in Navidrome's database (mounted at `/import/navidrome`); without it, by their tags. Tracks Navidrome has not scanned yet are added later, and failures are tried again every 10 minutes. Only playlists the app made itself are ever touched.
+- **The install's account keeps its `.m3u8` files** (owned by Navidrome's first admin) until **Publish as this user…** in Settings: the app publishes its playlists through the API, then removes its own `.m3u8` files and the copies Navidrome imported from them. If Navidrome refuses one, what was made is undone and nothing changes.
+- Playlists added go to the account of the browser, the dashboard shows that account's playlists, and **Delete** takes a shared playlist away from this account only. A deleted playlist also leaves Navidrome: Navidrome keeps a playlist it imported from a `.m3u8` even once the file is gone, so the app removes that copy through the API when the account has its password.
+- **In step with Navidrome.** Every 10 minutes, and when the dashboard opens, the app reads each user's playlists: a playlist of the app deleted there leaves that profile (and the app when no other profile has it), and one renamed there keeps its new name. If every playlist of the app vanishes at once, the app takes it as a reset of Navidrome and publishes them again. **Also in Navidrome** shows, read-only, the playlists the user made by hand there.
+- Each account chooses its Deezer account under **Deezer account** in its form: see below.
+- Each profile has its own listening history and its own Made for you: see [Histories per profile](#histories-per-profile) and [Made for you per profile](#made-for-you-per-profile).
+
+#### Deezer accounts
+
+**Settings → Deezer accounts** lists the Deezer accounts the app reads. **Add an account** takes a name and an ARL, checked by signing in to Deezer, then kept encrypted and never shown again. Each account can be edited, checked again or removed (not the last one).
+
+- **Releases and mixes per profile.** Each Navidrome account follows the releases and the Deezer mixes (Flow, made for you) of the Deezer account chosen in its form, else of the default one (**Make default**). Two profiles on the same Deezer account share its feed and its muted artists.
+- **Use for download.** One account fetches the files for every profile, the default one when none is marked. Mark a premium account for FLAC.
+- **From an older version.** Your account becomes the first one, the default; the premium account used for downloads becomes a second one, marked for the downloads. `DEEZER_ARL` and `DEEZER_ARL_PREMIUM` keep working: such an account shows the variable, and its ARL is changed there.
+- The mixes followed before keep their ID. A mix of another account carries it in its ID (`mix-dz2-flow-chill`), so two Flows never mix up, and a scan reads it with that account.
+- A removed account takes its feed along, and the profiles that had chosen it go back to the default one.
+- The API token (CatBoard) reads the feed of the default profile.
+
+Generate a `SECRET_KEY`, a `D2N_ENCRYPTION_KEY` or a token with:
 ```bash
 python -c "import secrets; print(secrets.token_urlsafe(32))"
 ```
@@ -707,7 +763,8 @@ The app then calls the webhook when the release feed is refreshed (or an artist 
 - **Performance**: scan, download and matching threads
 - **Release feed**: refresh interval (6 h to weekly, or manual only)
 - **Data files**: where the app keeps its state
-- **Deezer account**: the ARL, its badge, and the premium ARL for downloads
+- **Navidrome accounts**: the users the app works for, and the Deezer account of each
+- **Deezer accounts**: their badges, the default one and the one used for downloads
 - **Sign-in and other apps**: password, API token, CatBoard webhook
 - **Library index**: refresh or rebuild
 - **Reset data**: clear the index, match results, playlists, duplicate report or decisions (two clicks each)
@@ -722,7 +779,7 @@ Changes are saved to `config.json` and apply at once.
 
 #### 1. Configure
 
-Open **Settings**, check the music folders and the Navidrome paths, make sure the downloads line under **Downloads** is green, and connect your Deezer account.
+Open **Settings**, check the music folders and the Navidrome paths, make sure the downloads line under **Downloads** is green, and add your Deezer account.
 
 #### 2. Build the library index
 
@@ -840,17 +897,19 @@ All routes need a signed-in session, except `/health` and the three routes the A
 | `/search/album/<id>`, `/search/artist/<id>` | GET | Album or artist details |
 | `/search/library-check` | POST | Which tracks, albums and artists you own (API token accepted) |
 | `/api/preview/<track_id>` | GET | 30-second preview URL |
-| `/api/deezer/account` | GET/POST/DELETE | Account status, connect, disconnect |
-| `/api/deezer/premium-account` | POST/DELETE | Set or remove the premium ARL for downloads |
-| `/api/deezer/mixes`, `/api/deezer/mixes/follow` | GET/POST | List and follow mixes |
-| `/api/releases` | GET | Release feed (API token accepted) |
-| `/api/releases/refresh`, `/api/releases/mute` | POST | Refresh the feed, mute an artist |
+| `/api/deezer/accounts` | GET/POST | The Deezer accounts and the downloads status; add one |
+| `/api/deezer/accounts/<id>` | PATCH/DELETE | Edit (name, ARL), remove |
+| `/api/deezer/accounts/<id>/default`, `…/download`, `…/check` | POST | Make default, use for download, check again |
+| `/api/deezer/account` | GET | The Deezer account of this browser's profile |
+| `/api/deezer/mixes`, `/api/deezer/mixes/follow` | GET/POST | List and follow the mixes of the profile's Deezer account |
+| `/api/releases` | GET | Release feed of the profile's Deezer account (API token accepted: the default profile's) |
+| `/api/releases/refresh`, `/api/releases/mute` | POST | Refresh that feed, mute an artist in it |
 
 #### Made for you
 
 | Endpoint | Method | Purpose |
 |----------|--------|---------|
-| `/api/mixes` | GET | Settings, metadata status and quarantine |
+| `/api/mixes` | GET | Settings, metadata status and quarantine of this browser's profile |
 | `/api/mixes/settings` | POST | Mode (`mix_mode`: `off`, `daily`, `blend`), `discover`, limits and trial rules (`trial_*`, `trash_days`) |
 | `/api/mixes/generate` | POST | Build what is turned on now |
 | `/api/mixes/trial/<id>/keep`, `/remove`, `/restore` | POST | Decide about one track |
@@ -888,11 +947,11 @@ New downloads also carry the Deezer id of the track in a `DEEZER_TRACK_ID` tag.
 ### Downloads fail
 
 **Check, in this order:**
-1. **Settings → Deezer account** shows a badge (`Premium`, `Free` or `Free · downloads in Premium`). Without an account, nothing can be downloaded.
+1. **Settings → Deezer accounts** has an account, and the line under the list names the one used for downloads and its format. Without an account, nothing can be downloaded.
 2. **Settings → Downloads** shows a green line. A red one means the folder does not exist or cannot be written to: mount it as a writable volume.
 3. The reason of each failure is shown in **Activity** and in the tooltip of the **Retry** button. "Deezer returned no download link for this track" usually means the track is not available for your account or your country.
 
-**Only MP3 128 kbps?** The account is free. Add the ARL of a premium account in the same panel to get FLAC.
+**Only MP3 128 kbps?** The account used for downloads is free. Add a premium account in **Settings → Deezer accounts** and mark it **Use for download** to get FLAC.
 
 **The ARL stopped working?** Deezer session cookies expire or get revoked when you sign out of deezer.com. Copy a fresh one.
 
@@ -1005,7 +1064,8 @@ core/
 ├── deezer.py           # Deezer public API, playlists, M3U8 generation
 ├── crossplatform.py    # Imported playlists: matching to Deezer, picks by hand
 ├── xp_sources.py       # Reading a Spotify link or a CSV export
-├── deezer_account.py   # Deezer session (ARL): mixes, favorites, account status
+├── deezer_accounts.py  # Deezer accounts: encrypted ARLs, default and download roles
+├── deezer_account.py   # Deezer sessions, one per account: mixes, favorites, status
 ├── deezer_dl.py        # Downloading: links, decryption, tags, file layout
 ├── download_queue.py   # Download queue and its worker threads
 ├── releases.py         # Release feed
@@ -1066,7 +1126,7 @@ static/
 - **Deezer's private gateway is undocumented** - downloads and mixes may break if Deezer changes it
 - **Folder settings come from the environment only on first start** - then from Settings
 - **Path mappings are critical** - they must match exactly how Navidrome sees the files
-- **Keep `/data` private** - `secrets.json` holds your Deezer cookies
+- **Keep `/data` private** - credentials are encrypted, but the key is in it unless you set `D2N_ENCRYPTION_KEY`
 - **Download only what you are allowed to** - respect Deezer's terms and the copyright of the music
 
 ---

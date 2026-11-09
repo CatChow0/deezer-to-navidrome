@@ -34,7 +34,7 @@ def owned(*items):
 class Base(unittest.TestCase):
     def setUp(self):
         reset()
-        self.conn = stats_db.connect()
+        self.conn = stats_db.connect("nd1")
         self.addCleanup(self.conn.close)
 
     def taste(self):
@@ -382,7 +382,7 @@ class Database(unittest.TestCase):
         self.assertEqual(mixes_db.get_meta(conn, "x"), {"a": 1})
 
     def test_is_not_the_history_database(self):
-        self.assertNotEqual(mixes_db.db_path(), stats_db.db_path())
+        self.assertNotEqual(mixes_db.db_path(), stats_db.db_path("nd1"))
 
 
 if __name__ == "__main__":

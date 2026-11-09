@@ -15,6 +15,12 @@
   </div>
 
   <div class="doc-block">
+    <h4>One Made for you per profile</h4>
+    <p>Each Navidrome profile has its own mixes, built from its own listening history (Discover from the releases of its Deezer account) and published for that user only, its own settings and its own quarantine. <b>Manage</b> shows those of the profile chosen at the top of the page. Mixes are built for one profile after the other.</p>
+    <p>The quarantine is shared: a track has one file and a verdict from each profile that got it, decided with that profile's own plays and stars. A mix can take a track another profile has on trial without downloading it again ("Also on trial for…"). <b>Keep</b> puts it in the library for everyone. A refusal only counts for the profile that made it: the file goes to the trash once no one has it on trial, and a profile that wants it later gets it back from there. A file another profile's own playlist uses goes to the library rather than the trash.</p>
+  </div>
+
+  <div class="doc-block">
     <h4>How a mix is built</h4>
     <p>At each refresh the app picks up to 4 seeds among what keeps coming back in your listening: at least a track, an album and an artist, never one artist twice, and not the same seed as the last time.</p>
     <table>
@@ -52,7 +58,7 @@
     <table>
       <tbody>
         <tr><td>On trial</td><td>Just downloaded. It stays playable for 30 days by default</td></tr>
-        <tr><td>To review</td><td>It earned its place: played twice, starred or rated 4-5 in Navidrome, added to one of your playlists, or also in your library. It waits for <b>Keep</b>, which moves it to <code>songs</code>, as long as needed</td></tr>
+        <tr><td>To review</td><td>It earned its place: played twice, starred or rated 4-5 in Navidrome, or added to one of your playlists. It waits for <b>Keep</b>, which moves it to <code>songs</code>, as long as needed. A track you also downloaded by hand is kept at once: the library's copy takes its place, and the trial copy goes, so there is never a second one</td></tr>
         <tr><td>Trash</td><td>Its trial ended without that, it was rated 1-2, or you chose <b>Remove</b>. Restorable for 30 days by default, then the file is deleted and the track is never proposed again</td></tr>
       </tbody>
     </table>
@@ -68,7 +74,7 @@
         <tr><td><b>Refresh Rate</b></td><td>Daily Mix or Daily Mix+ every 24 hours, Discover every 7 days</td></tr>
         <tr><td><b>Length</b></td><td>30 tracks in each mix, and 30 in Discover</td></tr>
         <tr><td><b>New tracks percent</b></td><td>33% of each Daily Mix+. Unheard tracks on trial take these places first, so at most 40 tracks are downloaded per refresh with 4 mixes of 30</td></tr>
-        <tr><td><b>Disk Limit</b></td><td>Downloads stop at 100 unheard tracks or 20 GB in quarantine, and Activity says so</td></tr>
+        <tr><td><b>Disk Limit</b></td><td>Downloads stop at 100 unheard tracks or 20 GB in quarantine, and Activity says so. These two count every profile together, as they share the disk</td></tr>
       </tbody>
     </table>
   </div>

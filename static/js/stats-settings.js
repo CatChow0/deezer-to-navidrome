@@ -25,21 +25,41 @@ function reportBlock(report) {
   return `<p class="muted">Last rebuild (${mode}), ${escapeHtml(when(report.finished_at))}: ${plural(report.after, 'play')} now, ${count(report.added)} added, ${count(report.updated)} updated, ${count(report.merged)} joined as the same play, ${count(report.removed)} removed. ${count(report.maloja_only)} exist only in Maloja's history.</p>${warnings}`;
 }
 
+// With several Navidrome accounts, each has its own history and token: say whose.
+function whose(status) {
+  return status.account?.several ? ` of ${status.account.label}` : '';
+}
+
+function navidromeExtra(sources) {
+  const { navidrome } = sources;
+  if (!navidrome.found) return '';
+  return navidrome.user ? `(the plays of ${navidrome.user})` : '';
+}
+
+function malojaLine(sources) {
+  const { maloja } = sources;
+  if (!maloja.used) {
+    return `<li><span class="dot"></span><span><strong>Maloja</strong>: its plays are ${escapeHtml(maloja.owner)}'s, the account made from this install, so this profile does not read them.</span></li>`;
+  }
+  const kept = maloja.kept_copy ? `A copy saved on ${when(maloja.kept_at)} is used when it is gone.` : '';
+  return sourceLine('Maloja', maloja, kept);
+}
+
 function renderHistory(host, status) {
   const { sources } = status;
-  const kept = sources.maloja.kept_copy ? `A copy saved on ${when(sources.maloja.kept_at)} is used when it is gone.` : '';
   const pendingNote = status.enrich.pending
     ? `Deezer is still being checked for ${plural(status.enrich.pending, 'track')}.`
     : 'Every track has been checked on Deezer.';
   host.innerHTML = `
     <div class="st-history-part">
-      <h3>History</h3>
+      <h3>History${escapeHtml(whose(status))}</h3>
       <p class="muted">${plural(status.plays, 'play')}, the last one on ${escapeHtml(when(status.last_play_at))}. ${escapeHtml(pendingNote)}</p>
       ${reportBlock(status.last_import)}
       <ul class="st-sources">
-        ${sourceLine('Navidrome', sources.navidrome)}
-        ${sourceLine('Maloja', sources.maloja, kept)}
+        ${sourceLine('Navidrome', sources.navidrome, navidromeExtra(sources))}
+        ${malojaLine(sources)}
       </ul>
+      ${sources.navidrome.found && !sources.navidrome.user ? '<p class="help-live help-live--warn">This profile has no Navidrome user name yet: add it in Settings → Navidrome accounts, so that its plays can be told from the others\'.</p>' : ''}
     </div>
     <div class="st-history-part">
       <h3>Rebuild the history</h3>
@@ -51,10 +71,19 @@ function renderHistory(host, status) {
         <button type="button" class="btn btn--danger btn--sm" data-stats-rebuild="clean" ${sources.can_clean && !status.import_running ? '' : 'disabled'}>Start clean</button>
       </div>
       <p class="help-live help-live--warn" data-stats-clean-note hidden></p>
-      ${sources.can_merge ? '' : '<p class="muted">Mount Navidrome\'s or Maloja\'s database to import your history.</p>'}
+      ${sources.can_merge ? '' : `<p class="muted">Mount Navidrome's${sources.maloja.used ? " or Maloja's" : ''} database to import this history.</p>`}
       ${sources.can_clean || !sources.can_merge ? '' : '<p class="muted">Start clean is off because Navidrome\'s database is not mounted: without it, most of your history could not be rebuilt.</p>'}
       ${status.import_running ? '<p class="muted">A rebuild is running: follow it in Settings → Activity.</p>' : ''}
     </div>`;
+}
+
+function linkSteps(status) {
+  const user = status.account?.username;
+  const who = user ? `signed in to Navidrome as <b>${escapeHtml(user)}</b>` : 'signed in to Navidrome as this profile\'s user';
+  const others = status.account?.several
+    ? ' Each Navidrome user has their own token: choose another profile at the top of the page for theirs.'
+    : '';
+  return `<p class="muted">Then, ${who}, open your personal settings, turn on ListenBrainz and paste this token.${others}</p>`;
 }
 
 function renderToken(host, status) {
@@ -62,7 +91,7 @@ function renderToken(host, status) {
   host.innerHTML = `
     <div class="security-block">
       <h3>Point Navidrome at this app</h3>
-      <p class="muted">Set this in Navidrome and restart it, then link ListenBrainz in your Navidrome personal settings using the token.</p>
+      <p class="muted">Set this in Navidrome and restart it, once for all its users. Each user then links ListenBrainz in their Navidrome personal settings with their own token.</p>
       <div class="secret-row">
         <input class="mono" type="text" readonly value="ND_LISTENBRAINZ_BASEURL=${escapeHtml(status.base_url_hint)}" aria-label="Navidrome setting" data-stats-setting>
         <button type="button" class="btn btn--ghost btn--sm" data-stats-copy="setting">Copy</button>
@@ -70,7 +99,8 @@ function renderToken(host, status) {
       <p class="muted">Change the host if Navidrome reaches this app under another name.</p>
     </div>
     <div class="security-block">
-      <h3>Token for Navidrome</h3>
+      <h3>Token for ${escapeHtml(status.account?.several ? status.account.label : 'Navidrome')}</h3>
+      ${linkSteps(status)}
       ${token ? `
         <div class="secret-row">
           <input type="password" class="mono" value="${escapeHtml(token)}" readonly data-stats-token aria-label="Token for Navidrome">
@@ -78,7 +108,7 @@ function renderToken(host, status) {
           <button type="button" class="btn btn--ghost btn--sm" data-stats-copy="token">Copy</button>
         </div>` : '<p class="muted">No token yet: Navidrome cannot send plays until you create one.</p>'}
       ${status.token_from_env
-        ? '<p class="muted">Set by the SCROBBLE_TOKEN environment variable.</p>'
+        ? `<p class="muted">Set by the ${escapeHtml(status.token_env)} environment variable.</p>`
         : `<div class="button-row">
             <button type="button" class="btn btn--ghost btn--sm" data-stats-token-new>${token ? 'Make a new token' : 'Create a token'}</button>
             ${token ? '<button type="button" class="btn btn--ghost btn--sm" data-stats-token-delete>Remove the token</button>' : ''}

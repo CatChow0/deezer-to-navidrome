@@ -292,15 +292,17 @@ def _create(playlist_id, source, source_id, source_url, info):
     modify_crossplatform_state(playlist_id, change)
 
 
-def _register(playlist_id, info, source):
+def _register(playlist_id, info, source, accounts=None):
     from core.deezer import cache_cover, load_playlists, save_playlists
 
     entry = {"id": playlist_id, "title": info["title"], "picture": info["picture"], "source": source}
+    if accounts:
+        entry["accounts"] = list(accounts)
     save_playlists([*load_playlists(), entry])
     cache_cover(entry)
 
 
-def add_spotify(text):
+def add_spotify(text, accounts=None):
     """Saves a Spotify playlist from its link. Returns (playlist_id, added)."""
     from core.deezer import load_playlists
 
@@ -314,16 +316,16 @@ def add_spotify(text):
     if not info["tracks"]:
         raise SourceError("This Spotify playlist has no track")
     _create(playlist_id, "spotify", source_id, f"https://open.spotify.com/playlist/{source_id}", info)
-    _register(playlist_id, info, "spotify")
+    _register(playlist_id, info, "spotify", accounts)
     return playlist_id, True
 
 
-def add_csv(filename, data):
+def add_csv(filename, data, accounts=None):
     """Saves a playlist from a CSV export. Returns its ID."""
     info = read_csv(data, filename)
     playlist_id = f"xp-csv-{uuid.uuid4().hex[:12]}"
     _create(playlist_id, "csv", "", "", info)
-    _register(playlist_id, info, "csv")
+    _register(playlist_id, info, "csv", accounts)
     return playlist_id
 
 

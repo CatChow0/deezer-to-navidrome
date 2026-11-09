@@ -1,5 +1,10 @@
 """Plays Navidrome sends as they happen, in the ListenBrainz format, and the
-token that lets it send them (separate from the read-only API token)."""
+tokens that let it send them (separate from the read-only API token).
+
+Each Navidrome account has its own token, which its Navidrome user links in
+Navidrome: the token says whose play it is. The first account's is kept as
+before (SCROBBLE_TOKEN, or "scrobble_token" in secrets.json); the others' are
+SCROBBLE_TOKEN_ND2… or "scrobble_token_nd2"…"""
 import hmac
 import math
 import secrets
@@ -16,30 +21,71 @@ LATEST_AHEAD = 86400
 LONGEST_TRACK = 7 * 86400
 
 
-def scrobble_token() -> str:
-    return load_secret("scrobble_token")
+class TokenTaken(ValueError):
+    """Shown to the user as it is."""
 
 
-def token_from_env() -> bool:
-    return secret_from_env("scrobble_token")
+def _secret(account) -> str:
+    account = stats_db.checked_account(account)
+    return "scrobble_token" if account == stats_db.FIRST_ACCOUNT else f"scrobble_token_{account}"
 
 
-def new_scrobble_token() -> str:
+def token_env_name(account) -> str:
+    """The environment variable that can set this account's token."""
+    return _secret(account).upper()
+
+
+def scrobble_token(account) -> str:
+    return load_secret(_secret(account))
+
+
+def token_from_env(account) -> bool:
+    return secret_from_env(_secret(account))
+
+
+def _accounts() -> list:
+    from core import nd_accounts
+
+    try:
+        return [a["id"] for a in nd_accounts.list_accounts()]
+    except Exception:
+        return [stats_db.FIRST_ACCOUNT]
+
+
+def _owner_of(token, ignore=None):
+    """The account this token belongs to, or None. Every token is compared, so
+    the time taken says nothing about which one matched."""
+    found = None
+    for account in _accounts():
+        expected = scrobble_token(account)
+        if expected and hmac.compare_digest(token.encode(), expected.encode()) and account != ignore and found is None:
+            found = account
+    return found
+
+
+def new_scrobble_token(account) -> str:
     token = secrets.token_urlsafe(32)
-    save_secret("scrobble_token", token)
+    save_secret(_secret(account), token)
     return token
 
 
-def set_scrobble_token(value: str) -> None:
-    save_secret("scrobble_token", (value or "").strip())
+def set_scrobble_token(account, value: str) -> None:
+    value = (value or "").strip()
+    if value and _owner_of(value, ignore=account):
+        raise TokenTaken("Another Navidrome account already uses this token.")
+    save_secret(_secret(account), value)
 
 
-def token_valid(header) -> bool:
-    expected = scrobble_token()
+def forget_token(account) -> None:
+    save_secret(_secret(account), "")
+
+
+def account_for(header):
+    """The account whose token Navidrome sent, or None."""
     scheme, _, sent = (header or "").strip().partition(" ")
-    if not expected or scheme.lower() != "token":
-        return False
-    return bool(sent.strip()) and hmac.compare_digest(sent.strip().encode(), expected.encode())
+    if scheme.lower() != "token" or not sent.strip():
+        return None
+    return _owner_of(sent.strip())
 
 
 def _seconds(value, unit=1):
@@ -105,9 +151,10 @@ def _album_id(conn, track_id, album, artists):
     return stats_db.upsert_album(conn, album, artists[0])
 
 
-def record_listens(payload: list) -> dict:
-    """Stores the usable entries of a batch. A database error leaves the whole
-    batch unsaved and goes up to the caller, so Navidrome can send it again."""
+def record_listens(account, payload: list) -> dict:
+    """Stores the usable entries of a batch in this account's history. A
+    database error leaves the whole batch unsaved and goes up to the caller,
+    so Navidrome can send it again."""
     result = {"added": 0, "duplicate": 0, "skipped": 0}
     parsed = []
     for item in payload:
@@ -120,7 +167,7 @@ def record_listens(payload: list) -> dict:
         return result
 
     durations = library_durations()
-    conn = stats_db.connect()
+    conn = stats_db.connect(account)
     try:
         conn.execute("BEGIN IMMEDIATE")
         try:

@@ -129,16 +129,18 @@ def _refresh_releases_if_stale():
     """Keeps the release feed fresh when a Deezer account is connected; after
     a failed attempt, waits an hour before trying again."""
     global _last_release_attempt
-    from core.config import load_secret
-    from core.releases import is_stale
-    from routes.account import start_release_refresh
+    from core import deezer_accounts
+    from routes.account import accounts_with_stale_feeds, start_release_refresh
 
     if time.time() - _last_release_attempt < RELEASE_RETRY_SECONDS:
         return
     try:
-        if load_secret("deezer_arl") and is_stale():
+        stale = accounts_with_stale_feeds()
+        if stale:
             _last_release_attempt = time.time()
-            start_release_refresh("Release feed refresh (automatic)")
+        for account_id in stale:
+            label = (deezer_accounts.get(account_id) or {}).get("label") or account_id
+            start_release_refresh(f"Release feed refresh (automatic): {label}", account=account_id)
     except Exception as e:
         logger.error(f"[releases] Automatic refresh failed to start: {e}")
 
@@ -172,6 +174,13 @@ def _scheduler_loop():
                 mix_builder.tick()
             except Exception as e:
                 logger.error(f"[mixes] Could not check the generated playlists: {e}")
+            try:
+                from core import publish
+
+                publish.sync_all()
+                publish.retry_pending()
+            except Exception as e:
+                logger.error(f"[navidrome] Could not sync the playlists with Navidrome: {e}")
 
         now = int(time.time())
         due = []

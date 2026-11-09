@@ -2,7 +2,7 @@
 
 **Turn your Deezer playlists into Navidrome `.m3u8` playlists, match them against your local library, and download what is missing straight from Deezer.**
 
-[![Version](https://img.shields.io/badge/version-1.15.0-blue)](https://hub.docker.com/r/catchow/deezer-to-navidrome)
+[![Version](https://img.shields.io/badge/version-1.16.0-blue)](https://hub.docker.com/r/catchow/deezer-to-navidrome)
 [![Python 3](https://img.shields.io/badge/python-3-blue)](https://www.python.org/)
 [![Flask](https://img.shields.io/badge/flask-web%20app-brightgreen)](https://flask.palletsprojects.com/)
 [![GitHub](https://img.shields.io/badge/GitHub-source%20%26%20full%20docs-black)](https://github.com/CatChow0/deezer-to-navidrome)
@@ -50,7 +50,7 @@ services:
       HOST_TO_NAVIDROME_ROOT: "/music/deezer-dl:/deezer-dl,/music/library:/music"
       LIBRARY_WORKERS_PER_DIR: "2"   # 2=HDD  4=RAID  8=SSD
       MATCH_WORKERS: "4"             # set to your Docker CPU count
-      # DEEZER_ARL: ""               # or paste it in Settings
+      # DEEZER_ARL: ""               # or add it in Settings
     volumes:
       - ./data:/data
       - /path/on/host/deezer-dl:/music/deezer-dl   # downloads land here (writable)
@@ -67,16 +67,13 @@ docker compose up -d
 
 ## Downloads
 
-Downloads use the `arl` cookie of a Deezer account (**Settings → Deezer account**, or `DEEZER_ARL`).
+Downloads use the `arl` cookie of a Deezer account (**Settings → Deezer accounts**, or `DEEZER_ARL`). Several accounts can be added: the one marked **Use for download** fetches the files for everyone, and each Navidrome profile follows the releases and mixes of its own Deezer account, the default one otherwise.
 
-| Account | Badge | Format |
+| Account used for downloads | Badge | Format |
 |---|---|---|
 | Premium (HiFi) | `Premium` | FLAC |
 | Premium, high quality only | `Premium` | MP3 320 kbps |
 | Free | `Free` | MP3 128 kbps |
-| Free + premium ARL for downloads | `Free · downloads in Premium` | FLAC |
-
-With a free account, Settings offers a second field for a **premium** ARL used only for downloads; your mixes and release feed keep the first account.
 
 Files go to the downloads folder: the music folder named `deezer-dl` by default, or `DEEZER_DL_DIR`. Albums go in `albums/Artist - Album/`, single tracks in `songs/`. **Settings → Downloads** shows the folder actually used and warns if it is missing or read-only.
 
@@ -103,9 +100,9 @@ Each download shows its progress on its button (*Queued* → `42%` or `3/14` →
 
 ## Listening stats
 
-The **Stats** tab keeps its own play history in `stats.db`. No Maloja, lb-enricher or Navidrome password needed. Recaps are stories built from what stood out in each period, playing your own files, with covers taken from your files and Deezer and cached locally.
+The **Stats** tab keeps its own play history in `stats.db`, one per Navidrome account (`stats/nd2.db`… for the others). No Maloja, lb-enricher or Navidrome password needed. Recaps are stories built from what stood out in each period, playing your own files, with covers taken from your files and Deezer and cached locally.
 
-- **New plays:** create a token in Settings → Listening stats, set `ND_LISTENBRAINZ_BASEURL=http://deezer-to-navidrome:8080/apis/listenbrainz/1/` in Navidrome, restart it, and link ListenBrainz in its personal settings with that token.
+- **New plays:** create a token in Settings → Listening stats, set `ND_LISTENBRAINZ_BASEURL=http://deezer-to-navidrome:8080/apis/listenbrainz/1/` in Navidrome, restart it, and link ListenBrainz in its personal settings with that token. Each Navidrome user has their own token: the token says whose play it is.
 - **Past plays:** mount Navidrome's and Maloja's data folders read-only at `/import/navidrome` and `/import/maloja`, then choose **Rebuild (merge)** under Stats → Your history. Merge never removes a play and can be run again at any time. **Start clean** wipes and rebuilds from the sources, and needs Navidrome's database.
 
 ---
@@ -125,12 +122,14 @@ The **Stats** tab keeps its own play history in `stats.db`. No Maloja, lb-enrich
 | `MATCH_WORKERS` | `4` | Matching threads. Set to your CPU count |
 | `METADATA_WORKERS` | `4` | Files Fix missing metadata handles at once. Up to your CPU count, 2 on a spinning disk |
 | `DOWNLOAD_WORKERS` | `4` | Downloads at the same time |
-| `DEEZER_ARL` | — | Deezer account cookie (downloads, mixes, release feed) |
-| `DEEZER_ARL_PREMIUM` | — | Premium account cookie, used only for downloads |
+| `DEEZER_ARL` | — | Cookie of a Deezer account, the default one (downloads, mixes, release feed) |
+| `DEEZER_ARL_PREMIUM` | — | Cookie of a Deezer account marked for the downloads |
 | `SECRET_KEY` | random, kept in `secrets.json` | Session key |
+| `D2N_ENCRYPTION_KEY` | random, kept in `encryption.key` | Key the saved credentials are encrypted with |
 | `APP_USERNAME` / `APP_PASSWORD` | — | The sign-in account; else the first visit asks you to create it |
 | `API_TOKEN` | — | Token for other apps (CatBoard); else create one in Settings |
-| `SCROBBLE_TOKEN` | — | Token Navidrome sends plays with; else create one in Settings |
+| `SCROBBLE_TOKEN` | — | Token Navidrome sends the first account's plays with; else create one in Settings |
+| `SCROBBLE_TOKEN_ND2`… | — | Token of the other Navidrome accounts |
 | `STATS_NAVIDROME_DB` | `/import/navidrome/navidrome.db` | Navidrome's database, for importing your history |
 | `STATS_MALOJA_DB` | `/import/maloja/malojadb.sqlite` | Maloja's database, for importing your history |
 | `DISABLE_AUTH` | `false` | `true` turns sign-in off (a reverse proxy already asks for a login) |
@@ -163,7 +162,7 @@ M3U8 contains:  /deezer-dl/songs/Artist - Song.mp3   ← what Navidrome sees
 
 ## Typical Workflow
 
-1. **Settings** → check music folders, Navidrome paths and the downloads folder; connect your Deezer account
+1. **Settings** → check music folders, Navidrome paths and the downloads folder; add your Deezer account
 2. **Rebuild from scratch** → build the library index
 3. **Add a playlist** (URL or ID) or **Choose mixes**
 4. **Full scan** → match tracks; writes `.m3u8` + `report.json` + `missing.txt`
@@ -210,7 +209,7 @@ Similarities use `rapidfuzz` (C++, GIL-releasing), so matching threads run in pa
 | `playlist_preview_state.json` | Per-playlist match results (enables Quick scan) |
 | `releases.json` / `release_prefs.json` | Release feed / muted artists |
 | `dedup_report.json` / `dedup_choices.json` | Latest duplicate analysis / persistent decisions |
-| `stats.db`, `stats.db.bak-*` | Listening history and the last 3 backups |
+| `stats.db`, `stats/*.db`, their `.bak-*` | Listening history of each Navidrome account and the last 3 backups |
 | `stats_sources/` | Saved copy of Maloja's database |
 | `stats_covers/` | Cached artist, album and track covers |
 | `covers/` | Playlist artwork |

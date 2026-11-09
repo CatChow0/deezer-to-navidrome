@@ -24,7 +24,7 @@ class Api(unittest.TestCase):
         folder = tempfile.TemporaryDirectory()
         self.addCleanup(folder.cleanup)
         self.root = Path(folder.name)
-        for db in (mixes_db.db_path(), stats_db.db_path()):
+        for db in (mixes_db.db_path(), stats_db.db_path("nd1")):
             for suffix in ("", "-wal", "-shm"):
                 Path(f"{db}{suffix}").unlink(missing_ok=True)
         save_playlists([])
@@ -47,7 +47,7 @@ class Api(unittest.TestCase):
         path = trial.trial_dir() / f"{deezer_id}.flac"
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(b"audio")
-        trial.add_download(conn, deezer_id, "Artist", f"Song {deezer_id}", "Album", path, "auto-discover", NOW)
+        trial.add_download(conn, "nd1", deezer_id, "Artist", f"Song {deezer_id}", "Album", path, "auto-discover", NOW)
         if state:
             conn.execute("UPDATE trial_tracks SET state=? WHERE deezer_id=?", (state, deezer_id))
             conn.commit()
@@ -155,13 +155,13 @@ class Api(unittest.TestCase):
         with mock.patch("core.mix_builder.start_task", return_value="t1") as start:
             response = self.post("/api/mixes/generate")
         self.assertEqual(response.get_json()["task_id"], "t1")
-        start.assert_called_once_with(["daily"])
+        start.assert_called_once_with("nd1", ["daily"])
 
     def test_generate_builds_the_chosen_mode_and_discover(self):
         self.post("/api/mixes/settings", {"mix_mode": "blend", "discover": True})
         with mock.patch("core.mix_builder.start_task", return_value="t1") as start:
             self.post("/api/mixes/generate")
-        start.assert_called_once_with(["blend", "discover"])
+        start.assert_called_once_with("nd1", ["blend", "discover"])
 
     def test_keep_and_remove_and_restore(self):
         path = self.add("1")
@@ -183,7 +183,8 @@ class Api(unittest.TestCase):
         self.assertFalse(path.exists())
 
     def test_unknown_track_is_an_error(self):
-        self.assertEqual(self.post("/api/mixes/trial/404/remove").status_code, 400)
+        # Unknown, or another profile's: not in this profile's quarantine.
+        self.assertEqual(self.post("/api/mixes/trial/404/remove").status_code, 404)
 
     def test_each_track_says_its_source_cover_and_days(self):
         self.add("1")

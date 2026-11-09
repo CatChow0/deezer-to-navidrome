@@ -13,7 +13,6 @@ import time
 
 import requests
 
-from core.config import load_secret
 from core.normalization import extract_version_flags, normalize_text
 
 GW_URL = "https://www.deezer.com/ajax/gw-light.php"
@@ -124,58 +123,88 @@ class DeezerSession:
         return self.gw(method, body, retry=False)
 
 
-_session = DeezerSession()
+# One session per Deezer account (core/deezer_accounts.py), kept between calls.
+_sessions = {}
+_sessions_lock = threading.Lock()
 
 
-def _ensure(arl=None):
-    arl = arl or load_secret("deezer_arl")
+def _account(account=None):
+    from core import deezer_accounts
+
+    account_id = account or deezer_accounts.default_id()
+    if not account_id:
+        raise DeezerAccountError("No Deezer account connected. Add one in Settings → Deezer accounts.")
+    return account_id
+
+
+def _session_for(account=None) -> DeezerSession:
+    from core import deezer_accounts
+
+    account_id = _account(account)
+    if deezer_accounts.get(account_id) is None:
+        raise DeezerAccountError("This Deezer account was removed from Settings → Deezer accounts.")
+    arl = deezer_accounts.arl(account_id)
     if not arl:
-        raise DeezerAccountError("No Deezer account connected. Add your ARL in Settings.")
-    if _session.arl != arl or _session.http is None:
-        _session.login(arl)
+        raise DeezerAccountError("This Deezer account has no ARL: add it in Settings → Deezer accounts.")
+    with _sessions_lock:
+        session = _sessions.setdefault(account_id, DeezerSession())
+    with session.lock:
+        if session.arl != arl or session.http is None:
+            session.login(arl)
+    return session
 
 
-def _gw(method, body=None, retry=True):
-    with _session.lock:
-        _ensure()
-        return _session.gw(method, body, retry)
+def _gw(method, body=None, retry=True, account=None):
+    session = _session_for(account)
+    with session.lock:
+        return session.gw(method, body, retry)
 
 
-def account_status(arl=None):
-    """{"connected": bool, "name": str, "error": str|None} without raising."""
+def _status_of(session) -> dict:
+    return {"connected": True, "name": session.user["name"], "user_id": session.user["id"],
+            "premium": session.is_premium(), "country": session.country, "format": session.sound_format(),
+            "error": None}
+
+
+def account_status(account=None):
+    """What a Deezer account is, without raising: {"connected", "name", "error"…}."""
     try:
-        with _session.lock:
-            if arl:
-                _session.reset()
-            _ensure(arl)
-            return {
-                "connected": True,
-                "name": _session.user["name"],
-                "user_id": _session.user["id"],
-                "premium": _session.is_premium(),
-                "country": _session.country,
-                "error": None,
-            }
+        return _status_of(_session_for(account))
     except DeezerAccountError as e:
         return {"connected": False, "name": "", "premium": False, "error": str(e)}
     except Exception as e:
         return {"connected": False, "name": "", "premium": False, "error": f"Could not reach Deezer: {e}"}
 
 
-def forget_session():
-    with _session.lock:
-        _session.reset()
+def check_arl(arl):
+    """Signs in with an ARL not saved yet, without keeping the session."""
+    try:
+        return _status_of(DeezerSession(arl))
+    except DeezerAccountError as e:
+        return {"connected": False, "name": "", "premium": False, "error": str(e)}
+    except Exception as e:
+        return {"connected": False, "name": "", "premium": False, "error": f"Could not reach Deezer: {e}"}
 
 
-def _user_id():
-    with _session.lock:
-        _ensure()
-        return _session.user["id"]
+def forget_session(account=None):
+    """Forgets the session of one account, or of all of them."""
+    with _sessions_lock:
+        sessions = [_sessions.pop(account, None)] if account else list(_sessions.values())
+        if not account:
+            _sessions.clear()
+    for session in sessions:
+        if session is not None:
+            with session.lock:
+                session.reset()
 
 
-def favorite_artists():
+def _user_id(account=None):
+    return _session_for(account).user["id"]
+
+
+def favorite_artists(account=None):
     """[{id, name, picture}] from the public API, paginated."""
-    uid = _user_id()
+    uid = _user_id(account)
     artists, index = [], 0
     while True:
         page = requests.get(f"{API_URL}/user/{uid}/artists", params={"limit": 100, "index": index}, timeout=30).json()
@@ -195,12 +224,12 @@ def _cover_url(md5, kind="cover", size=500):
     return f"https://e-cdns-images.dzcdn.net/images/{kind}/{md5}/{size}x{size}-000000-80-0-0.jpg" if md5 else ""
 
 
-def available_mixes():
+def available_mixes(account=None):
     """Mixes offered on the user's Deezer home: "made for you" smart tracklists
     and the Flow moods, plus the playlists Deezer recommends or the user follows."""
     support = {layout: _HOME_SUPPORT for layout in ("grid", "horizontal-grid", "slideshow", "long-card-horizontal-grid")}
     support["filterable-grid"] = ["flow"]
-    page = _gw("page.get", {"PAGE": "home", "VERSION": "2.5", "SUPPORT": support, "LANG": "en"})
+    page = _gw("page.get", {"PAGE": "home", "VERSION": "2.5", "SUPPORT": support, "LANG": "en"}, account=account)
 
     mixes, playlists = [], []
     for section in (page or {}).get("sections") or []:
@@ -258,17 +287,18 @@ def _song_to_track(song, position):
     }
 
 
-def mix_tracks(kind, source_id):
-    """Current tracks of a mix, in the same shape as playlist tracks."""
+def mix_tracks(kind, source_id, account=None):
+    """Current tracks of a mix, in the same shape as playlist tracks, read with
+    the Deezer account whose mix it is."""
     if kind == "stl":
-        results = _gw("smartTracklist.getSongs", {"SMARTTRACKLIST_ID": source_id}) or {}
+        results = _gw("smartTracklist.getSongs", {"SMARTTRACKLIST_ID": source_id}, account=account) or {}
         songs = results.get("data") or []
     elif kind == "flow":
-        uid = _user_id()
+        uid = _user_id(account)
         songs, seen = [], set()
         for _ in range(FLOW_BATCHES):
             body = {"USER_ID": uid} if source_id == "default" else {"USER_ID": uid, "CONFIG_ID": source_id}
-            batch = (_gw("radio.getUserRadio", body) or {}).get("data") or []
+            batch = (_gw("radio.getUserRadio", body, account=account) or {}).get("data") or []
             for song in batch:
                 if song.get("SNG_ID") not in seen:
                     seen.add(song.get("SNG_ID"))

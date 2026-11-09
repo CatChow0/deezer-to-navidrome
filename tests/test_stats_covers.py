@@ -54,7 +54,7 @@ class CoversCase(unittest.TestCase):
                                   return_value=([self.music], Path("/none"), cache, {self.music: Path("/music")}))
         paths.start()
         self.addCleanup(paths.stop)
-        self.conn = stats_db.connect()
+        self.conn = stats_db.connect("nd1")
         self.addCleanup(self.conn.close)
 
     def track(self, title="Song", artist="A", path=None, cover_url=None, album=None, album_path=None, album_cover=None, ts=1000):
@@ -68,7 +68,7 @@ class CoversCase(unittest.TestCase):
         return track, album_id
 
     def resolved(self, kind, item):
-        found = stats_covers.cover_for(kind, item)
+        found = stats_covers.cover_for("nd1", kind, item)
         return Image.open(found).convert("RGB").getpixel((5, 5)) if found else None
 
 
@@ -176,7 +176,7 @@ class CacheBehaviour(CoversCase):
         two = flac_file(self.music / "A" / "Album" / "02.flac", art)
         first, _ = self.track("One", path=one)
         second, _ = self.track("Two", path=two, ts=2000)
-        a, b = stats_covers.cover_for("track", first), stats_covers.cover_for("track", second)
+        a, b = stats_covers.cover_for("nd1", "track", first), stats_covers.cover_for("nd1", "track", second)
         self.assertEqual(a, b)
         self.assertLessEqual(max(Image.open(a).size), 600)
         color = self.conn.execute("SELECT color FROM covers WHERE kind='track'").fetchone()[0]
@@ -198,14 +198,14 @@ class CacheBehaviour(CoversCase):
 
     def test_no_art_waits_a_week(self):
         track, _ = self.track()
-        self.assertIsNone(stats_covers.cover_for("track", track))
+        self.assertIsNone(stats_covers.cover_for("nd1", "track", track))
         row = self.conn.execute("SELECT retry_at FROM covers").fetchone()
         self.assertGreater(row[0], time.time() + 6 * 86400)
 
     def test_network_error_waits_an_hour(self):
         track, _ = self.track(cover_url="http://deezer/x.jpg")
         with mock.patch("core.stats_covers.requests.get", side_effect=OSError("down")):
-            self.assertIsNone(stats_covers.cover_for("track", track))
+            self.assertIsNone(stats_covers.cover_for("nd1", "track", track))
         wait = self.conn.execute("SELECT retry_at FROM covers").fetchone()[0] - time.time()
         self.assertLess(wait, 2 * 3600)
         self.assertGreater(wait, 1800)
@@ -213,17 +213,17 @@ class CacheBehaviour(CoversCase):
     def test_deleted_cache_file_is_found_again(self):
         song = flac_file(self.music / "A" / "Album" / "01.flac", image_bytes())
         track, _ = self.track(path=song)
-        stats_covers.cover_for("track", track).unlink()
-        self.assertIsNotNone(stats_covers.cover_for("track", track))
+        stats_covers.cover_for("nd1", "track", track).unlink()
+        self.assertIsNotNone(stats_covers.cover_for("nd1", "track", track))
 
     def test_unknown_item_and_kind(self):
-        self.assertIsNone(stats_covers.cover_for("track", 99999))
-        self.assertIsNone(stats_covers.cover_for("label", 1))
+        self.assertIsNone(stats_covers.cover_for("nd1", "track", 99999))
+        self.assertIsNone(stats_covers.cover_for("nd1", "label", 1))
 
     def test_cache_survives_start_clean_renumbering(self):
         song = flac_file(self.music / "A" / "Album" / "01.flac", image_bytes())
         track, _ = self.track(path=song)
-        stats_covers.cover_for("track", track)
+        stats_covers.cover_for("nd1", "track", track)
         key = self.conn.execute("SELECT key FROM tracks WHERE id=?", (track,)).fetchone()[0]
         self.conn.execute("DELETE FROM plays")
         self.conn.execute("DELETE FROM track_artists")
@@ -231,7 +231,7 @@ class CacheBehaviour(CoversCase):
         self.conn.execute("INSERT INTO tracks(id, key, title) VALUES (77, ?, 'Song')", (key,))
         self.conn.commit()
         with mock.patch.object(stats_covers, "_embedded_art") as read:
-            self.assertIsNotNone(stats_covers.cover_for("track", 77))
+            self.assertIsNotNone(stats_covers.cover_for("nd1", "track", 77))
         read.assert_not_called()
 
     def test_batch_most_played_first(self):
@@ -239,30 +239,31 @@ class CacheBehaviour(CoversCase):
         popular = flac_file(self.music / "A" / "P" / "1.flac", image_bytes())
         for ts in (5000, 6000, 7000):
             self.track("Popular", path=popular, ts=ts)
-        self.assertEqual(stats_covers.resolve_batch(1), 1 + 1)  # one track, one artist
+        self.assertEqual(stats_covers.resolve_batch("nd1", 1), 1 + 1)  # one track, one artist
         keys = [r[0] for r in self.conn.execute("SELECT item_key FROM covers WHERE kind='track'")]
         self.assertEqual(keys, [stats_db.track_key(["A"], "Popular")])
 
     def test_batch_leaves_finished_items(self):
         self.track(path=flac_file(self.music / "A" / "R" / "1.flac", image_bytes()))
-        self.assertGreater(stats_covers.resolve_batch(10), 0)
-        self.assertEqual(stats_covers.resolve_batch(10), 0)
+        self.assertGreater(stats_covers.resolve_batch("nd1", 10), 0)
+        self.assertEqual(stats_covers.resolve_batch("nd1", 10), 0)
 
 
 class ApiRows(CoversCase):
     def test_rows_point_at_the_cover_route_with_a_color(self):
         song = flac_file(self.music / "A" / "Album" / "01.flac", image_bytes((200, 30, 60)))
         track, album = self.track(path=song, album="Album", album_path=song)
-        stats_covers.cover_for("track", track)
-        data = stats_queries.overview("all", "", "UTC")
+        stats_covers.cover_for("nd1", "track", track)
+        data = stats_queries.overview("nd1", "all", "", "UTC")
         self.assertTrue(data["top"]["tracks"][0]["image"].startswith(f"/stats/cover/track/{track}"))
         self.assertRegex(data["top"]["tracks"][0]["color"], "^#")
-        self.assertEqual(data["top"]["albums"][0]["image"], f"/stats/cover/album/{album}")
+        # The account is in the address: another account's history numbers its items its own way.
+        self.assertEqual(data["top"]["albums"][0]["image"], f"/stats/cover/album/{album}?a=nd1")
 
     def test_known_missing_art_gives_no_image(self):
         track, _ = self.track()
-        stats_covers.cover_for("track", track)
-        self.assertEqual(stats_queries.overview("all", "", "UTC")["top"]["tracks"][0]["image"], "")
+        stats_covers.cover_for("nd1", "track", track)
+        self.assertEqual(stats_queries.overview("nd1", "all", "", "UTC")["top"]["tracks"][0]["image"], "")
 
 
 class ArtistLookups(CoversCase):
@@ -277,7 +278,7 @@ class ArtistLookups(CoversCase):
         self.track()
         data = [{"id": 9, "name": "A", "picture_big": "http://img/a.jpg"}]
         with mock.patch("core.deezer._public_api", self.api(data)):
-            stats_enrich.enrich_batch(5)
+            stats_enrich.enrich_batch("nd1", 5)
         row = self.conn.execute("SELECT deezer_id, picture_url FROM artists WHERE name='A'").fetchone()
         self.assertEqual(tuple(row), ("9", "http://img/a.jpg"))
 
@@ -285,7 +286,7 @@ class ArtistLookups(CoversCase):
         self.track(artist="Ye")
         data = [{"id": 9, "name": "Yeat", "picture_big": "http://img/a.jpg"}]
         with mock.patch("core.deezer._public_api", self.api(data)):
-            stats_enrich.enrich_batch(5)
+            stats_enrich.enrich_batch("nd1", 5)
         self.assertIsNone(self.conn.execute("SELECT picture_url FROM artists").fetchone()[0])
 
     def test_looked_up_once(self):
@@ -293,9 +294,9 @@ class ArtistLookups(CoversCase):
         calls = []
         api = self.api([])
         with mock.patch("core.deezer._public_api", lambda p, params=None: (calls.append(p), api(p, params))[1]):
-            stats_enrich.enrich_batch(5)
+            stats_enrich.enrich_batch("nd1", 5)
             before = calls.count("/search/artist")
-            stats_enrich.enrich_batch(5)
+            stats_enrich.enrich_batch("nd1", 5)
         self.assertEqual(before, 1)
         self.assertEqual(calls.count("/search/artist"), 1)
 
@@ -303,17 +304,17 @@ class ArtistLookups(CoversCase):
         song = flac_file(self.music / "A" / "Album" / "01.flac", image_bytes((200, 30, 60)))
         self.track(path=song, album="Album", album_path=song)
         artist = self.conn.execute("SELECT id FROM artists WHERE name='A'").fetchone()[0]
-        self.assertIsNotNone(stats_covers.cover_for("artist", artist))
+        self.assertIsNotNone(stats_covers.cover_for("nd1", "artist", artist))
         data = [{"id": 9, "name": "A", "picture_big": "http://img/a.jpg"}]
         with mock.patch("core.deezer._public_api", self.api(data)):
-            stats_enrich.enrich_batch(5)
+            stats_enrich.enrich_batch("nd1", 5)
         response = mock.Mock(status_code=200, content=image_bytes((10, 10, 220)))
         with mock.patch("core.stats_covers.requests.get", return_value=response):
             self.assertGreater(self.resolved("artist", artist)[2], 150)
 
     def test_deezer_cover_retries_a_track_that_had_none(self):
         track, _ = self.track()
-        self.assertIsNone(stats_covers.cover_for("track", track))
+        self.assertIsNone(stats_covers.cover_for("nd1", "track", track))
         result = {"id": 11, "title": "Song", "duration": 100, "artist": {"id": 3, "name": "A"},
                   "album": {"id": 22, "title": "Album", "cover_big": "http://img/big.jpg", "cover_medium": "http://img/m.jpg"}}
 
@@ -321,11 +322,11 @@ class ArtistLookups(CoversCase):
             return {"data": [result]} if path == "/search/track" else {"data": [], "genres": {"data": []}}
 
         with mock.patch("core.deezer._public_api", api):
-            stats_enrich.enrich_batch(5)
+            stats_enrich.enrich_batch("nd1", 5)
         self.assertEqual(self.conn.execute("SELECT cover_url FROM tracks").fetchone()[0], "http://img/big.jpg")
         response = mock.Mock(status_code=200, content=image_bytes((10, 10, 220)))
         with mock.patch("core.stats_covers.requests.get", return_value=response):
-            self.assertIsNotNone(stats_covers.cover_for("track", track))
+            self.assertIsNotNone(stats_covers.cover_for("nd1", "track", track))
 
 
 class Route(CoversCase):

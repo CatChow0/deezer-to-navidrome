@@ -6,6 +6,7 @@ import base64
 import hashlib
 import io
 import logging
+import sqlite3
 import time
 from contextlib import closing
 from pathlib import Path
@@ -214,7 +215,7 @@ def _sources(conn, kind, row):
     return candidates
 
 
-def _artist_stand_in(conn, artist_id):
+def _artist_stand_in(account, conn, artist_id):
     """Their most-played album's cover, while there is no photo."""
     album = conn.execute(
         "SELECT p.album_id FROM plays p JOIN track_artists ta ON ta.track_id = p.track_id"
@@ -223,7 +224,7 @@ def _artist_stand_in(conn, artist_id):
     ).fetchone()
     if not album:
         return None
-    _cover_with(conn, "album", album[0])
+    _cover_with(account, conn, "album", album[0])
     key = conn.execute("SELECT key FROM albums WHERE id = ?", (album[0],)).fetchone()
     return conn.execute("SELECT file, color FROM covers WHERE kind = 'album' AND item_key = ?", (key[0],)).fetchone() if key else None
 
@@ -236,7 +237,24 @@ def _save(conn, kind, key, file, color, source, retry_at) -> None:
     conn.commit()
 
 
-def _cover_with(conn, kind, item_id):
+def _borrowed(account, kind, key):
+    """The cover another account's history already found for the same item:
+    the image files are shared, so there is no need to look again."""
+    for other in stats_db.accounts_with_history():
+        if other == account:
+            continue
+        try:
+            with closing(stats_db.connect(other)) as conn:
+                row = conn.execute("SELECT file, color, source FROM covers WHERE kind = ? AND item_key = ? AND file IS NOT NULL",
+                                   (kind, key)).fetchone()
+        except sqlite3.Error:
+            continue
+        if row and (covers_dir() / row["file"]).exists():
+            return row
+    return None
+
+
+def _cover_with(account, conn, kind, item_id):
     row = conn.execute(_ROW[kind], (item_id,)).fetchone()
     if row is None:
         return None
@@ -248,6 +266,11 @@ def _cover_with(conn, kind, item_id):
         if not cached["file"] and (cached["retry_at"] or 0) > now:
             return None
 
+    borrowed = _borrowed(account, kind, row["key"])
+    if borrowed:
+        _save(conn, kind, row["key"], borrowed["file"], borrowed["color"], borrowed["source"], None)
+        return covers_dir() / borrowed["file"]
+
     network_failed = False
     for source, read in _sources(conn, kind, row):
         data, failed = read()
@@ -258,7 +281,7 @@ def _cover_with(conn, kind, item_id):
             return covers_dir() / stored[0]
 
     if kind == "artist":
-        stand_in = _artist_stand_in(conn, item_id)
+        stand_in = _artist_stand_in(account, conn, item_id)
         if stand_in and stand_in["file"]:
             _save(conn, kind, row["key"], stand_in["file"], stand_in["color"], "album", None)
             return covers_dir() / stand_in["file"]
@@ -267,12 +290,13 @@ def _cover_with(conn, kind, item_id):
     return None
 
 
-def cover_for(kind, item_id):
-    """The cached file for this item, finding the art first if need be."""
+def cover_for(account, kind, item_id):
+    """The cached file for this item of this account's history, finding the art
+    first if need be."""
     if kind not in KINDS:
         return None
-    with closing(stats_db.connect()) as conn:
-        return _cover_with(conn, kind, item_id)
+    with closing(stats_db.connect(account)) as conn:
+        return _cover_with(account, conn, kind, item_id)
 
 
 def forget(conn, kind, key) -> None:
@@ -314,12 +338,12 @@ _BATCH = {
 }
 
 
-def resolve_batch(limit=40) -> int:
-    """Fills the cache ahead of time, most played first."""
+def resolve_batch(account, limit=40) -> int:
+    """Fills the cache of one account's history ahead of time, most played first."""
     done = 0
-    with closing(stats_db.connect()) as conn:
+    with closing(stats_db.connect(account)) as conn:
         for kind in KINDS:
             for (item_id,) in conn.execute(_BATCH[kind], (int(time.time()), limit)).fetchall():
-                _cover_with(conn, kind, item_id)
+                _cover_with(account, conn, kind, item_id)
                 done += 1
     return done

@@ -6,6 +6,7 @@ rule did: a wrong match would put a wrong cover and wrong numbers on screen,
 so a doubtful track is left unknown."""
 import logging
 import re
+import sqlite3
 import threading
 import time
 from contextlib import closing
@@ -72,11 +73,32 @@ def _lookup(track) -> tuple:
     return match, genre
 
 
-def _save(track_id, key, match, genre) -> None:
+def _borrowed(account, key):
+    """What another account's history already learned from Deezer about the
+    same track, as a match: the people of one house share much of their music.
+    Only what came from Deezer is taken."""
+    for other in stats_db.accounts_with_history():
+        if other == account:
+            continue
+        try:
+            with closing(stats_db.connect(other)) as conn:
+                row = conn.execute(
+                    "SELECT deezer_track_id, deezer_album_id, cover_url, duration_sec, duration_source, genre, genre_source"
+                    " FROM tracks WHERE key = ? AND deezer_track_id IS NOT NULL", (key,)).fetchone()
+        except sqlite3.Error:
+            continue
+        if row:
+            match = {"id": row["deezer_track_id"], "album": {"id": row["deezer_album_id"], "cover_big": row["cover_url"]},
+                     "duration": row["duration_sec"] if row["duration_source"] == "deezer" else None}
+            return match, row["genre"] if row["genre_source"] == "deezer" else None
+    return None
+
+
+def _save(account, track_id, key, match, genre) -> None:
     now = int(time.time())
     album = match.get("album") or {}
     artist = match.get("artist") or {}
-    with closing(stats_db.connect()) as conn:
+    with closing(stats_db.connect(account)) as conn:
         # A rebuild during the wait can give this id to another track: the key says.
         saved = conn.execute(
             "UPDATE tracks SET deezer_track_id = ?, deezer_album_id = ?, cover_url = COALESCE(cover_url, ?),"
@@ -98,34 +120,54 @@ def _save(track_id, key, match, genre) -> None:
         conn.commit()
 
 
-def _retry_later(track_id, key, delay) -> None:
-    with closing(stats_db.connect()) as conn:
+def _retry_later(account, track_id, key, delay) -> None:
+    with closing(stats_db.connect(account)) as conn:
         conn.execute("UPDATE tracks SET lookup_at = ? WHERE id = ? AND key = ?", (int(time.time()) + delay, track_id, key))
         conn.commit()
 
 
-def enrich_batch(limit=40) -> int:
-    """Looks up up to `limit` tracks; the network wait holds no database lock."""
-    with closing(stats_db.connect()) as conn:
+def enrich_batch(account, limit=40) -> int:
+    """Looks up up to `limit` tracks of one account's history; the network wait
+    holds no database lock."""
+    with closing(stats_db.connect(account)) as conn:
         tracks = _pending(conn, limit)
     for track in tracks:
+        borrowed = _borrowed(account, track["key"])
+        if borrowed:
+            _save(account, track["id"], track["key"], *borrowed)
+            continue
         try:
             match, genre = _lookup(track)
         except Exception as e:
             logger.info("Deezer lookup failed for %s: %s", track["title"], e)
-            _retry_later(track["id"], track["key"], RETRY_ERROR)
+            _retry_later(account, track["id"], track["key"], RETRY_ERROR)
             continue
         if match:
-            _save(track["id"], track["key"], match, genre)
+            _save(account, track["id"], track["key"], match, genre)
         else:
-            _retry_later(track["id"], track["key"], RETRY_NO_MATCH)
-    _look_up_artists(limit)
+            _retry_later(account, track["id"], track["key"], RETRY_NO_MATCH)
+    _look_up_artists(account, limit)
     return len(tracks)
 
 
-def _look_up_artists(limit) -> None:
+def _borrowed_artist(account, key):
+    for other in stats_db.accounts_with_history():
+        if other == account:
+            continue
+        try:
+            with closing(stats_db.connect(other)) as conn:
+                row = conn.execute("SELECT deezer_id, picture_url FROM artists WHERE key = ? AND picture_url IS NOT NULL",
+                                   (key,)).fetchone()
+        except sqlite3.Error:
+            continue
+        if row:
+            return {"id": row["deezer_id"], "picture_big": row["picture_url"]}
+    return None
+
+
+def _look_up_artists(account, limit) -> None:
     """Asks Deezer for each artist's photo by name, once; only the same name counts."""
-    with closing(stats_db.connect()) as conn:
+    with closing(stats_db.connect(account)) as conn:
         artists = conn.execute(
             "SELECT a.id, a.key, a.name FROM artists a JOIN track_artists ta ON ta.artist_id = a.id"
             " JOIN plays p ON p.track_id = ta.track_id WHERE a.lookup_at IS NULL OR a.lookup_at <= ?"
@@ -133,15 +175,16 @@ def _look_up_artists(limit) -> None:
             (int(time.time()), limit),
         ).fetchall()
     for artist in artists:
-        match, delay = None, RETRY_NO_MATCH
-        try:
-            found = deezer._public_api("/search/artist", {"q": artist["name"], "limit": 10})
-            match = next((i for i in (found or {}).get("data") or [] if name_key(i.get("name") or "") == artist["key"]), None)
-        except Exception as e:
-            logger.info("Deezer lookup failed for %s: %s", artist["name"], e)
-            delay = RETRY_ERROR
+        match, delay = _borrowed_artist(account, artist["key"]), RETRY_NO_MATCH
+        if match is None:
+            try:
+                found = deezer._public_api("/search/artist", {"q": artist["name"], "limit": 10})
+                match = next((i for i in (found or {}).get("data") or [] if name_key(i.get("name") or "") == artist["key"]), None)
+            except Exception as e:
+                logger.info("Deezer lookup failed for %s: %s", artist["name"], e)
+                delay = RETRY_ERROR
         picture = (match or {}).get("picture_big") or (match or {}).get("picture_medium")
-        with closing(stats_db.connect()) as conn:
+        with closing(stats_db.connect(account)) as conn:
             if picture:
                 conn.execute(
                     "UPDATE artists SET deezer_id = ?, picture_url = ?, lookup_at = ? WHERE id = ? AND key = ?",
@@ -172,8 +215,10 @@ def start_background_batch() -> bool:
 
     def work():
         try:
-            enrich_batch()
-            stats_covers.resolve_batch()
+            # Each history in turn: the Deezer quota is the same for all.
+            for account in stats_db.accounts_with_history():
+                enrich_batch(account)
+                stats_covers.resolve_batch(account)
         except Exception as e:
             logger.error("Stats lookups failed: %s", e)
         finally:

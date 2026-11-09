@@ -191,14 +191,30 @@
 
   <div class="span-12 set-rows">
     <div class="set-row">
-<section class="cell set-12" aria-labelledby="account-title">
+<section class="cell set-12" id="navidrome-accounts" aria-labelledby="nd-accounts-title">
       <div class="cell-head">
         <div>
-          <h2 class="cell-title" id="account-title">Deezer account</h2>
-          <p class="cell-sub">Used for your mixes and the release feed of your favorite artists, and for the downloads unless you add a premium account below.</p>
+          <h2 class="cell-title" id="nd-accounts-title">Navidrome accounts</h2>
+          <p class="cell-sub">One per Navidrome user this app works for. The library, the downloads and the folders stay shared; each browser or phone chooses its account at the top of the page.</p>
         </div>
+        <button type="button" class="btn btn--sm" data-nd-add>Add an account</button>
       </div>
-      <div class="cell-body set-security" data-account>
+      <div class="cell-body" data-nd-accounts>
+        <p class="muted">Loading…</p>
+      </div>
+    </section>
+    </div>
+
+    <div class="set-row">
+<section class="cell set-12" id="deezer-accounts" aria-labelledby="account-title">
+      <div class="cell-head">
+        <div>
+          <h2 class="cell-title" id="account-title">Deezer accounts</h2>
+          <p class="cell-sub">Each Navidrome profile follows the releases and mixes of one of them, the default one unless it chose another. The one marked for the downloads fetches the files for everyone.</p>
+        </div>
+        <button type="button" class="btn btn--sm" data-dz-add>Add an account</button>
+      </div>
+      <div class="cell-body" data-account>
         <p class="muted">Checking…</p>
       </div>
     </section>

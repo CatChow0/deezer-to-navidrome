@@ -5,7 +5,7 @@ import sqlite3
 
 def make_navidrome(path, plays):
     """plays: dicts with ts, title, and optional artist, artists, album,
-    album_artist, duration, genres, file."""
+    album_artist, duration, genres, file, user (the Navidrome user who played it, "u" by default)."""
     conn = sqlite3.connect(path)
     conn.executescript("""
         CREATE TABLE media_file (id TEXT PRIMARY KEY, title TEXT, artist TEXT, album TEXT, album_artist TEXT,
@@ -28,7 +28,8 @@ def make_navidrome(path, plays):
              play.get("album_artist", artists[0]), play.get("duration", 200),
              json.dumps(tags), json.dumps(participants), play.get("path", file_id)),
         )
-        conn.execute("INSERT INTO scrobbles(media_file_id, user_id, submission_time) VALUES (?, 'u', ?)", (file_id, play["ts"]))
+        conn.execute("INSERT INTO scrobbles(media_file_id, user_id, submission_time) VALUES (?, ?, ?)",
+                     (file_id, play.get("user", "u"), play["ts"]))
     conn.commit()
     conn.close()
 
@@ -60,5 +61,19 @@ def make_maloja(path, plays):
         for artist_id in artist_ids:
             conn.execute("INSERT INTO trackartists(artist_id, track_id) VALUES (?, ?)", (artist_id, track_id))
         conn.execute("INSERT INTO scrobbles(timestamp, origin, track_id) VALUES (?, 'client:test', ?)", (play["ts"], track_id))
+    conn.commit()
+    conn.close()
+
+
+def add_navidrome_users(path, users):
+    """users: (id, user_name, is_admin) tuples, in Navidrome's user table."""
+    conn = sqlite3.connect(path)
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS user (id TEXT PRIMARY KEY, user_name TEXT, name TEXT, email TEXT,
+                                         password TEXT, is_admin INTEGER DEFAULT 0);
+    """)
+    for user_id, name, admin in users:
+        conn.execute("INSERT INTO user(id, user_name, name, is_admin) VALUES (?, ?, ?, ?)",
+                     (user_id, name, name.title(), int(admin)))
     conn.commit()
     conn.close()

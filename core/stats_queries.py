@@ -265,15 +265,15 @@ def _overview(conn, period, key, tz) -> dict:
     }
 
 
-def overview(period, key, tz) -> dict:
-    with closing(stats_db.connect()) as conn:
-        return _overview(conn, period, key, tz)
+def overview(account, period, key, tz) -> dict:
+    with closing(stats_db.connect(account)) as conn:
+        return stats_db.with_account(_overview(conn, period, key, tz), account)
 
 
-def recap(kind, key, tz) -> dict:
+def recap(account, kind, key, tz) -> dict:
     if kind not in ("month", "year"):
         raise BadPeriod("Unknown recap")
-    with closing(stats_db.connect()) as conn:
+    with closing(stats_db.connect(account)) as conn:
         data = _overview(conn, kind, key, tz)
         start, end = period_bounds(kind, key, tz)
         zone = _zone(tz)
@@ -312,12 +312,12 @@ def recap(kind, key, tz) -> dict:
                 row["is_new"] = row["id"] in new_ids[kind_name]
         previous_bounds = period_bounds(kind, data["previous"]["key"], tz) if data["previous"] else (None, None)
         data["story"] = build_story(conn, data, start, end, previous_bounds[0], previous_bounds[1], zone)
-        return data
+        return stats_db.with_account(data, account)
 
 
-def recap_index(tz) -> dict:
+def recap_index(account, tz) -> dict:
     zone = _zone(tz)
-    with closing(stats_db.connect()) as conn:
+    with closing(stats_db.connect(account)) as conn:
         moments = [row[0] for row in conn.execute("SELECT listened_at FROM plays ORDER BY listened_at")]
     if not moments:
         return {"months": [], "years": [], "latest_complete": None}
@@ -350,11 +350,11 @@ _ENTITY_FILTERS = {
 }
 
 
-def entity(kind, entity_id, tz):
+def entity(account, kind, entity_id, tz):
     if kind not in _ENTITY_FILTERS:
         raise BadPeriod("Unknown kind")
     zone = _zone(tz)
-    with closing(stats_db.connect()) as conn:
+    with closing(stats_db.connect(account)) as conn:
         if kind == "artist":
             row = conn.execute("SELECT name, '' artist, '' deezer_track_id FROM artists WHERE id = ?", (entity_id,)).fetchone()
         elif kind == "album":
@@ -378,19 +378,19 @@ def entity(kind, entity_id, tz):
                 "SELECT t.id, t.title, t.artist_display artist, t.deezer_track_id, COUNT(*) plays FROM plays p JOIN tracks t ON t.id = p.track_id"
                 f" WHERE {where} GROUP BY t.id ORDER BY plays DESC, t.title LIMIT {TOP_SIZE}", (entity_id,),
             )]
-        return {
+        return stats_db.with_account({
             "kind": kind, "id": entity_id, "name": row["name"], "artist": row["artist"], "image": f"/stats/cover/{kind}/{entity_id}",
             "deezer_track_id": row["deezer_track_id"] or "", "plays": summary["plays"], "seconds": int(round(summary["seconds"])),
             "first_play": summary["first_play"], "last_play": summary["last_play"],
             "by_month": [{"key": key, "plays": months[key]} for key in sorted(months)],
             "top_tracks": top_tracks,
-        }
+        }, account)
 
 
-def search_plays(q, page, per_page=50) -> dict:
+def search_plays(account, q, page, per_page=50) -> dict:
     needle = stats_db.fold(q or "").strip()
     page = min(max(1, int(page or 1)), MAX_PAGE)
-    with closing(stats_db.connect()) as conn:
+    with closing(stats_db.connect(account)) as conn:
         conn.create_function("fold", 1, stats_db.fold, deterministic=True)
         where, args = "1=1", ()
         if needle:

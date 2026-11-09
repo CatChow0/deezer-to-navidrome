@@ -1,10 +1,14 @@
-"""Release feed: recent albums, EPs and singles from the user's favorite
-Deezer artists. Refreshing walks every artist's discography (one public API
-call each), so the result is cached in data/releases.json."""
+"""Release feed: recent albums, EPs and singles from the favorite artists of a
+Deezer account. Refreshing walks every artist's discography (one public API
+call each), so the result is cached: data/releases.json for the first account
+(dz1, the single account of older versions), releases-<id>.json for the others.
+The muted artists are kept per account the same way. Without an account given,
+the default one."""
 import json
 import threading
 import time
 from datetime import date, timedelta
+from pathlib import Path
 
 import requests
 
@@ -13,15 +17,44 @@ from core.deezer_account import API_URL, favorite_artists
 
 RELEASES_FILE = DATA_DIR / "releases.json"
 PREFS_FILE = DATA_DIR / "release_prefs.json"
-refresh_lock = threading.Lock()
 WINDOW_DAYS = 180
 # Deezer allows 50 requests per 5 seconds; stay well under it.
 REQUEST_GAP_SECONDS = 0.15
+_locks = {}
+_locks_guard = threading.Lock()
 
 
-def load_releases():
+def _account(account=None):
+    from core import deezer_accounts
+
+    return account or deezer_accounts.default_id() or "dz1"
+
+
+def _files(account=None):
+    account_id = _account(account)
+    if account_id == "dz1":
+        return RELEASES_FILE, PREFS_FILE
+    return Path(DATA_DIR) / f"releases-{account_id}.json", Path(DATA_DIR) / f"release_prefs-{account_id}.json"
+
+
+def forget_account(account_id) -> None:
+    """The feed and muted artists of a Deezer account that was removed."""
+    for path in _files(account_id):
+        try:
+            path.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
+def lock_for(account=None) -> threading.Lock:
+    """One refresh at a time for each account."""
+    with _locks_guard:
+        return _locks.setdefault(_account(account), threading.Lock())
+
+
+def load_releases(account=None):
     try:
-        return json.loads(RELEASES_FILE.read_text(encoding="utf-8"))
+        return json.loads(_files(account)[0].read_text(encoding="utf-8"))
     except Exception:
         return {"updated_at": None, "artists": 0, "window_days": WINDOW_DAYS, "releases": []}
 
@@ -34,11 +67,11 @@ def refresh_hours():
         return 24
 
 
-def is_stale():
+def is_stale(account=None):
     hours = refresh_hours()
     if hours == 0:
         return False
-    updated = load_releases().get("updated_at")
+    updated = load_releases(account).get("updated_at")
     return not updated or time.time() - updated > hours * 3600
 
 
@@ -69,35 +102,35 @@ def _artist_releases(artist, since):
         time.sleep(REQUEST_GAP_SECONDS)
 
 
-def load_prefs():
+def load_prefs(account=None):
     try:
-        prefs = json.loads(PREFS_FILE.read_text(encoding="utf-8"))
+        prefs = json.loads(_files(account)[1].read_text(encoding="utf-8"))
     except Exception:
         prefs = {}
     prefs.setdefault("muted", {})
     return prefs
 
 
-def set_muted(artist_id, name, muted):
+def set_muted(artist_id, name, muted, account=None):
     """Muted artists stay in the Deezer favorites but leave the feed."""
-    prefs = load_prefs()
+    prefs = load_prefs(account)
     if muted:
         prefs["muted"][str(artist_id)] = name
     else:
         prefs["muted"].pop(str(artist_id), None)
     ensure_dirs()
-    PREFS_FILE.write_text(json.dumps(prefs, ensure_ascii=False, indent=2), encoding="utf-8")
+    _files(account)[1].write_text(json.dumps(prefs, ensure_ascii=False, indent=2), encoding="utf-8")
     return prefs
 
 
-def refresh_releases(progress_cb=None):
+def refresh_releases(progress_cb=None, account=None):
     def emit(message=None, progress=None, stage=None):
         if progress_cb:
             progress_cb(message=message, progress=progress, stage=stage)
 
     emit("Reading your favorite artists", stage="artists", progress=0)
-    artists = favorite_artists()
-    muted = load_prefs()["muted"]
+    artists = favorite_artists(_account(account))
+    muted = load_prefs(account)["muted"]
     since = (date.today() - timedelta(days=WINDOW_DAYS)).isoformat()
 
     releases, failed = {}, 0
@@ -116,7 +149,7 @@ def refresh_releases(progress_cb=None):
         time.sleep(REQUEST_GAP_SECONDS)
 
     # Album details give the real main artist and the track count.
-    previous = {r["id"]: r for r in load_releases().get("releases", [])}
+    previous = {r["id"]: r for r in load_releases(account).get("releases", [])}
     for i, release in enumerate(releases.values(), start=1):
         known = previous.get(release["id"], {})
         if known.get("artist_id") and known.get("nb_tracks") and "featured" in known:
@@ -149,5 +182,5 @@ def refresh_releases(progress_cb=None):
         "releases": sorted(releases.values(), key=lambda r: (r["release_date"], r["artist"]), reverse=True),
     }
     ensure_dirs()
-    RELEASES_FILE.write_text(json.dumps(feed, ensure_ascii=False, indent=2), encoding="utf-8")
+    _files(account)[0].write_text(json.dumps(feed, ensure_ascii=False, indent=2), encoding="utf-8")
     return feed

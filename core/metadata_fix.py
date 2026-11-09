@@ -529,17 +529,21 @@ def _known_album(conn, key, now):
 
 
 def _genre_from_history(artist, title):
-    """What the listening history already learned about this track: no call needed."""
-    try:
-        stats = stats_db.connect()
+    """What a listening history already learned about this track, whoever
+    played it (the library is shared): no call needed."""
+    key = stats_db.track_key(stats_db.split_artists(artist), title)
+    for account in stats_db.accounts_with_history():
         try:
-            row = stats.execute("SELECT genre FROM tracks WHERE key=? AND genre IS NOT NULL",
-                                (stats_db.track_key(stats_db.split_artists(artist), title),)).fetchone()
-        finally:
-            stats.close()
-    except sqlite3.Error:
-        return None
-    return row[0] if row and stats_db.usable_genre(row[0]) else None
+            stats = stats_db.connect(account)
+            try:
+                row = stats.execute("SELECT genre FROM tracks WHERE key=? AND genre IS NOT NULL", (key,)).fetchone()
+            finally:
+                stats.close()
+        except sqlite3.Error:
+            continue
+        if row and stats_db.usable_genre(row[0]):
+            return row[0]
+    return None
 
 
 def lookup_genre(conn, artist, title, album, now, api=_api):

@@ -28,8 +28,13 @@ function versionsHtml(state) {
           <input type="radio" name="mfy-mode" value="${key}" data-mfy-mode ${key === mode ? 'checked' : ''} ${key === 'blend' && blendBlocked ? 'disabled' : ''}>
           <span>${label}</span>
         </label>`).join('');
+  // With several Navidrome profiles, each has its own mixes: say whose these are.
+  const profile = state.profile?.several
+    ? `<p class="muted mfy-profile">For <b>${escapeHtml(state.profile.label)}</b>: built from ${escapeHtml(state.profile.label)}'s listening history and published for this profile only. Each profile has its own settings and quarantine.</p>`
+    : '';
   return `
     <h3 class="doc-title">Versions</h3>
+    ${profile}
     <fieldset class="mfy-mode" data-mode="${mode}">
       <legend class="sr-only">Daily mixes</legend>
       <span class="mfy-mode-thumb" aria-hidden="true"></span>${positions}
@@ -80,7 +85,8 @@ function versionsHtml(state) {
         <h5>Disk Limit</h5>
         ${limitField(settings, 'max_unheard', 'Stop downloading at this many unheard tracks')}
         ${limitField(settings, 'max_trial_gb', 'Stop downloading at this quarantine size (GB)')}
-        <p class="muted">In quarantine now: ${(usage.bytes / 1024 ** 3).toFixed(1)} GB, ${plural(usage.unheard, 'unheard track')}.</p>
+        <p class="muted">In quarantine now${state.profile?.several ? ', every profile together' : ''}: ${(usage.bytes / 1024 ** 3).toFixed(1)} GB, ${plural(usage.unheard, 'unheard track')}.</p>
+        ${state.profile?.several ? '<p class="muted">The same for every profile: they share the disk.</p>' : ''}
       </div>
       <div class="mfy-limits-save">
         <p class="muted">New values apply from the next refresh.</p>
@@ -289,7 +295,7 @@ function trackRow(track, detail, actions) {
       <div class="mfy-track-name">
         <strong>${escapeHtml(track.title)}</strong>
         <span>${escapeHtml(track.artist)}${track.album ? ` · ${escapeHtml(track.album)}` : ''}</span>
-        <span class="muted">${escapeHtml(detail)} · <span class="mfy-source">${escapeHtml(track.source)}</span></span>
+        <span class="muted">${escapeHtml(detail)} · <span class="mfy-source">${escapeHtml(track.source)}</span>${track.shared_with?.length ? ` · <span class="mfy-shared" title="One file for both: each profile decides for itself">Also on trial for ${track.shared_with.map(escapeHtml).join(', ')}</span>` : ''}</span>
       </div>
       <div class="mfy-track-actions">${actions}</div>
     </div>`;

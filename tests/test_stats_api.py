@@ -115,7 +115,7 @@ class Api(unittest.TestCase):
         self.assertIn("/apis/listenbrainz/1/", status["base_url_hint"])
 
     def test_plays_route_pages(self):
-        conn = stats_db.connect()
+        conn = stats_db.connect("nd1")
         stats_db.add_play(conn, stats_db.upsert_track(conn, "Song", ["A"]), None, 100, 1000, "live")
         conn.commit()
         conn.close()
@@ -150,13 +150,13 @@ class Api(unittest.TestCase):
         self.assertIn("data-save-bar hidden", form)
 
     def test_reset_buttons_leave_history_alone(self):
-        conn = stats_db.connect()
+        conn = stats_db.connect("nd1")
         stats_db.add_play(conn, stats_db.upsert_track(conn, "Song", ["A"]), None, 100, 1000, "live")
         conn.commit()
         conn.close()
         response = self.client.post("/admin/clear/all")
         self.assertIn(response.status_code, (200, 302))
-        conn = stats_db.connect()
+        conn = stats_db.connect("nd1")
         self.assertEqual(stats_db.play_count(conn), 1)
         conn.close()
 
