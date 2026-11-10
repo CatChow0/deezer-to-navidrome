@@ -30,6 +30,36 @@ interface D2nApi {
     @GET("api/v1/info")
     suspend fun info(): ServerInfo
 
+    // Phase 8: New and Help.
+    @GET("api/v1/content/notes")
+    suspend fun contentNotes(): ContentNotesResponse
+
+    // Phase 8: Stats.
+    @GET("api/v1/stats/overview")
+    suspend fun statsOverview(@Query("period") period: String = "month", @Query("key") key: String = "", @Query("tz") tz: String): StatsOverviewResponse
+
+    @GET("api/v1/stats/plays")
+    suspend fun statsPlays(@Query("q") query: String? = null, @Query("page") page: Int = 1): StatsPlaysResponse
+
+    @GET("api/v1/stats/recaps")
+    suspend fun statsRecaps(@Query("tz") tz: String): StatsRecapsResponse
+
+    @GET("api/v1/content/help")
+    suspend fun contentHelp(): ContentHelpResponse
+
+    // Phase 8: settings.
+    @GET("api/v1/settings")
+    suspend fun settings(): SettingsResponse
+
+    @PUT("api/v1/settings")
+    suspend fun saveSettings(@Body body: Map<String, Any?>): SettingsResponse
+
+    @POST("api/v1/settings/clear/{what}")
+    suspend fun clearSettings(@Path("what") what: String): ClearSettingsResponse
+
+    @POST("api/v1/content/notes/seen")
+    suspend fun notesSeen(): TaskStartResponse
+
     @GET("api/v1/tasks")
     suspend fun tasks(@Query("changed_since") changedSince: Double? = null): TaskList
 
@@ -103,6 +133,23 @@ interface D2nApi {
     // Phase 7: Made for you.
     @GET("api/v1/mixes")
     suspend fun mixes(): MixesResponse
+
+    // Phase 8: Deezer mixes you can follow.
+    @GET("api/v1/deezer/mixes")
+    suspend fun deezerMixes(): DeezerMixesResponse
+
+    @POST("api/v1/deezer/mixes/follow")
+    suspend fun followDeezerMix(@Body body: Map<String, Any?>): DeezerMixFollowResponse
+
+    // Phase 8: Releases.
+    @GET("api/v1/releases")
+    suspend fun releases(): ReleasesResponse
+
+    @POST("api/v1/releases/refresh")
+    suspend fun refreshReleases(): TaskStartResponse
+
+    @POST("api/v1/releases/mute")
+    suspend fun muteReleaseArtist(@Body body: Map<String, Any?>): MuteReleaseResponse
 
     @POST("api/v1/mixes/trial/{deezer_id}/keep")
     suspend fun mixKeep(@Path("deezer_id") deezerId: String): MixesResponse

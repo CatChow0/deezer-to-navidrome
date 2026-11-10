@@ -31,10 +31,11 @@ import androidx.compose.ui.layout.ContentScale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun MixesScreen(viewModel: MixesViewModel) {
+fun MixesScreen(viewModel: MixesViewModel, onFindDeezerMixes: (() -> Unit)? = null) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     LaunchedEffect(Unit) { viewModel.load() }
     Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (onFindDeezerMixes != null) Button(onClick = onFindDeezerMixes) { Text("Follow Deezer mixes") }
         if (state.loading) { androidx.compose.foundation.layout.Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() } }
         state.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         Text("On trial (${state.onTrial.size})", style = MaterialTheme.typography.titleSmall)

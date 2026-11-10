@@ -31,6 +31,20 @@ class FakeD2nApi : D2nApi {
     var onMixKeep: suspend (String) -> io.github.catchow0.d2n.data.MixesResponse = { error("mixKeep was not expected") }
     var onMixRemove: suspend (String) -> io.github.catchow0.d2n.data.MixesResponse = { error("mixRemove was not expected") }
     var onMixRestore: suspend (String) -> io.github.catchow0.d2n.data.MixesResponse = { error("mixRestore was not expected") }
+    var onContentNotes: suspend () -> io.github.catchow0.d2n.data.ContentNotesResponse = { error("contentNotes was not expected") }
+    var onStatsOverview: suspend (String, String, String) -> io.github.catchow0.d2n.data.StatsOverviewResponse = { _, _, _ -> error("statsOverview was not expected") }
+    var onStatsPlays: suspend (String?, Int) -> io.github.catchow0.d2n.data.StatsPlaysResponse = { _, _ -> error("statsPlays was not expected") }
+    var onStatsRecaps: suspend (String) -> io.github.catchow0.d2n.data.StatsRecapsResponse = { error("statsRecaps was not expected") }
+    var onContentHelp: suspend () -> io.github.catchow0.d2n.data.ContentHelpResponse = { error("contentHelp was not expected") }
+    var onSettings: suspend () -> io.github.catchow0.d2n.data.SettingsResponse = { error("settings was not expected") }
+    var onSaveSettings: suspend (Map<String, Any?>) -> io.github.catchow0.d2n.data.SettingsResponse = { error("saveSettings was not expected") }
+    var onClearSettings: suspend (String) -> io.github.catchow0.d2n.data.ClearSettingsResponse = { error("clearSettings was not expected") }
+    var onNotesSeen: suspend () -> io.github.catchow0.d2n.data.TaskStartResponse = { error("notesSeen was not expected") }
+    var onDeezerMixes: suspend () -> io.github.catchow0.d2n.data.DeezerMixesResponse = { error("deezerMixes was not expected") }
+    var onFollowDeezerMix: suspend (Map<String, Any?>) -> io.github.catchow0.d2n.data.DeezerMixFollowResponse = { error("followDeezerMix was not expected") }
+    var onReleases: suspend () -> io.github.catchow0.d2n.data.ReleasesResponse = { error("releases was not expected") }
+    var onRefreshReleases: suspend () -> io.github.catchow0.d2n.data.TaskStartResponse = { error("refreshReleases was not expected") }
+    var onMuteReleaseArtist: suspend (Map<String, Any?>) -> io.github.catchow0.d2n.data.MuteReleaseResponse = { error("muteReleaseArtist was not expected") }
     var onTask: suspend (String) -> TaskEnvelope = { error("task was not expected") }
     val sent = mutableListOf<Credentials>()
 
@@ -39,6 +53,15 @@ class FakeD2nApi : D2nApi {
     override suspend fun setup(body: Credentials): SignedIn = onSetup(body.also(sent::add))
     override suspend fun logout(): SignedOut = onLogout()
     override suspend fun info(): ServerInfo = onInfo()
+    override suspend fun contentNotes(): io.github.catchow0.d2n.data.ContentNotesResponse = onContentNotes()
+    override suspend fun statsOverview(period: String, key: String, tz: String): io.github.catchow0.d2n.data.StatsOverviewResponse = onStatsOverview(period, key, tz)
+    override suspend fun statsPlays(query: String?, page: Int): io.github.catchow0.d2n.data.StatsPlaysResponse = onStatsPlays(query, page)
+    override suspend fun statsRecaps(tz: String): io.github.catchow0.d2n.data.StatsRecapsResponse = onStatsRecaps(tz)
+    override suspend fun contentHelp(): io.github.catchow0.d2n.data.ContentHelpResponse = onContentHelp()
+    override suspend fun settings(): io.github.catchow0.d2n.data.SettingsResponse = onSettings()
+    override suspend fun saveSettings(body: Map<String, Any?>): io.github.catchow0.d2n.data.SettingsResponse = onSaveSettings(body)
+    override suspend fun clearSettings(what: String): io.github.catchow0.d2n.data.ClearSettingsResponse = onClearSettings(what)
+    override suspend fun notesSeen(): io.github.catchow0.d2n.data.TaskStartResponse = onNotesSeen()
     override suspend fun tasks(changedSince: Double?): TaskList = onTasks()
     override suspend fun task(id: String): TaskEnvelope = onTask(id)
     override suspend fun taskEvents(id: String, after: Int, wait: Int): TaskEvents = error("taskEvents was not expected")
@@ -64,5 +87,10 @@ class FakeD2nApi : D2nApi {
     override suspend fun mixKeep(deezerId: String): io.github.catchow0.d2n.data.MixesResponse = onMixKeep(deezerId)
     override suspend fun mixRemove(deezerId: String): io.github.catchow0.d2n.data.MixesResponse = onMixRemove(deezerId)
     override suspend fun mixRestore(deezerId: String): io.github.catchow0.d2n.data.MixesResponse = onMixRestore(deezerId)
+    override suspend fun deezerMixes(): io.github.catchow0.d2n.data.DeezerMixesResponse = onDeezerMixes()
+    override suspend fun followDeezerMix(body: Map<String, Any?>): io.github.catchow0.d2n.data.DeezerMixFollowResponse = onFollowDeezerMix(body)
+    override suspend fun releases(): io.github.catchow0.d2n.data.ReleasesResponse = onReleases()
+    override suspend fun refreshReleases(): io.github.catchow0.d2n.data.TaskStartResponse = onRefreshReleases()
+    override suspend fun muteReleaseArtist(body: Map<String, Any?>): io.github.catchow0.d2n.data.MuteReleaseResponse = onMuteReleaseArtist(body)
     override suspend fun navidromeAccounts(): io.github.catchow0.d2n.data.NavidromeAccountsResponse = onNavidromeAccounts()
 }
