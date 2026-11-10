@@ -12,3 +12,5 @@ DOCKERHUB_README.md
 tests
 docs
 .superpowers
+# The Android sources: only the APK they produce (dist/) goes in the image
+android

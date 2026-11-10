@@ -91,7 +91,7 @@
           <label class="form-field">
             <span>Library scan threads per folder</span>
             <select name="library_workers_per_dir">
-              {% for n in [1, 2, 4, 6, 8, 12, 16] %}
+              {% for n in setting_choices.library_workers_per_dir %}
               <option value="{{ n }}" {% if (config.library_workers_per_dir | int) == n %}selected{% endif %}>
                 {{ n }}{% if n == 2 %}, spinning disk (recommended){% elif n == 4 %}, fast disk or RAID{% elif n == 8 %}, SSD or NVMe{% endif %}
               </option>
@@ -102,7 +102,7 @@
           <label class="form-field">
             <span>Download threads</span>
             <select name="download_workers">
-              {% for n in [1, 2, 4, 6, 8] %}
+              {% for n in setting_choices.download_workers %}
               <option value="{{ n }}" {% if (config.download_workers | default(4) | int) == n %}selected{% endif %}>{{ n }}</option>
               {% endfor %}
             </select>
@@ -111,7 +111,7 @@
           <label class="form-field">
             <span>Fix missing metadata threads</span>
             <select name="metadata_workers">
-              {% for n in [1, 2, 4, 6, 8, 12, 16] %}
+              {% for n in setting_choices.metadata_workers %}
               <option value="{{ n }}" {% if (config.metadata_workers | default(4) | int) == n %}selected{% endif %}>{{ n }}{% if n == 4 %}, default{% endif %}</option>
               {% endfor %}
             </select>
@@ -120,7 +120,7 @@
           <label class="form-field">
             <span>Playlist matching threads</span>
             <select name="match_workers">
-              {% for n in [1, 2, 4, 6, 8, 12, 16] %}
+              {% for n in setting_choices.match_workers %}
               <option value="{{ n }}" {% if (config.match_workers | int) == n %}selected{% endif %}>
                 {{ n }}{% if n == 4 %}, default{% elif n == 1 %}, single thread{% endif %}
               </option>
@@ -144,8 +144,9 @@
         <label class="form-field">
           <span>Refresh automatically</span>
           <select name="release_refresh_hours">
-            {% for hours, label in [(6, 'Every 6 hours'), (12, 'Every 12 hours'), (24, 'Once a day'), (48, 'Every 2 days'), (168, 'Once a week'), (0, 'Never, only when I ask')] %}
-            <option value="{{ hours }}" {% if (config.release_refresh_hours | default(24) | int) == hours %}selected{% endif %}>{{ label }}</option>
+            {% set refresh_labels = {6: 'Every 6 hours', 12: 'Every 12 hours', 24: 'Once a day', 48: 'Every 2 days', 168: 'Once a week', 0: 'Never, only when I ask'} %}
+            {% for hours in setting_choices.release_refresh_hours %}
+            <option value="{{ hours }}" {% if (config.release_refresh_hours | default(24) | int) == hours %}selected{% endif %}>{{ refresh_labels[hours] }}</option>
             {% endfor %}
           </select>
           <small>Needs a connected Deezer account. "Refresh now" on the Releases page always works.</small>
@@ -242,6 +243,26 @@
       </div>
       <div class="cell-body set-security" data-security>
         <p class="muted">Loading…</p>
+      </div>
+    </section>
+    </div>
+
+    <div class="set-row">
+<section class="cell set-12" id="android-app" aria-labelledby="android-title">
+      <div class="cell-head">
+        <div>
+          <h2 class="cell-title" id="android-title">Android app</h2>
+          <p class="cell-sub">The app for your phone, built with this version of the server. It updates itself from here.</p>
+        </div>
+      </div>
+      <div class="cell-body android-app">
+        {% if android_app.available %}
+        <p>Version <b>{{ android_app.version }}</b> · {{ '%.1f' | format(android_app.size / 1048576) }} MB · build {{ android_app.build.commit }}</p>
+        <a class="btn" href="{{ url_for('android.apk') }}" download>Download the app</a>
+        <p class="muted">Open this page on your phone to install it. Android asks once to allow installs from your browser.</p>
+        {% else %}
+        <p class="muted">{{ android_app.reason }}</p>
+        {% endif %}
       </div>
     </section>
     </div>

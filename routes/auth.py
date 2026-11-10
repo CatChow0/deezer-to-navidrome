@@ -1,6 +1,6 @@
 from flask import Blueprint, jsonify, redirect, render_template, request, session, url_for
 
-from core import auth, webhook
+from core import auth, devices, webhook
 
 auth_bp = Blueprint("auth", __name__)
 
@@ -93,8 +93,9 @@ def password_route():
     if len(new) < auth.MIN_PASSWORD:
         return jsonify({"ok": False, "error": f"The new password needs at least {auth.MIN_PASSWORD} characters"}), 400
     auth.set_account(auth.username(), new)
-    # Other browsers are signed out; this one stays signed in.
+    # Other browsers and every device are signed out; this one stays signed in.
     session["stamp"] = auth.session_stamp()
+    devices.revoke_all()
     return jsonify({"ok": True})
 
 

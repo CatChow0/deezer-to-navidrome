@@ -6,7 +6,8 @@ import unittest
 from unittest import mock
 
 PUBLIC = {"auth.login", "auth.setup", "static", "system.favicon", "system.health",
-          "listenbrainz.submit", "listenbrainz.submit_slash", "listenbrainz.validate", "listenbrainz.validate_slash"}
+          "listenbrainz.submit", "listenbrainz.submit_slash", "listenbrainz.validate", "listenbrainz.validate_slash",
+          "api_v1.auth_status", "api_v1.auth_login", "api_v1.auth_setup"}
 
 
 def sample_url(rule):

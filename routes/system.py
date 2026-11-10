@@ -26,6 +26,7 @@ from core.config import (
     create_task,
     follow_task,
     kept_config_keys,
+    load_config,
     mark_whats_new_seen,
     cancel_requested,
     finish_cancelled,
@@ -127,56 +128,79 @@ def tasks_route():
     return jsonify({"ok": True, "tasks": list_tasks()})
 
 
+# What Settings edits, for the form and the API.
+SETTINGS_KEYS = ("scan_dirs", "playlists_base_dir", "playlist_ids_file", "library_cache_file", "preview_state_file",
+                 "host_to_navidrome_roots", "deezer_dl_dir", "library_workers_per_dir", "match_workers",
+                 "release_refresh_hours", "download_workers", "metadata_workers")
+# key: (default, lowest)
+_NUMBERS = {"library_workers_per_dir": (2, 1), "match_workers": (4, 1), "release_refresh_hours": (24, 0),
+            "download_workers": (4, 1), "metadata_workers": (4, 1)}
+# What the menus of Settings offer; the API takes the same values.
+SETTING_CHOICES = {
+    "library_workers_per_dir": (1, 2, 4, 6, 8, 12, 16),
+    "download_workers": (1, 2, 4, 6, 8),
+    "metadata_workers": (1, 2, 4, 6, 8, 12, 16),
+    "match_workers": (1, 2, 4, 6, 8, 12, 16),
+    "release_refresh_hours": (6, 12, 24, 48, 168, 0),
+}
+
+
+def settings_values() -> dict:
+    cfg = load_config()
+    return {key: cfg.get(key) for key in SETTINGS_KEYS}
+
+
+def save_settings_values(values: dict) -> dict:
+    """Saves the settings, from the form or the API, and returns them. A value
+    that should be a number and is not raises ValueError."""
+    deezer_dl_dir = str(values.get("deezer_dl_dir") or "").strip()
+    if "://" in deezer_dl_dir:
+        # The address of the old separate downloader: not a folder.
+        deezer_dl_dir = ""
+    mappings = []
+    for mapping in values.get("host_to_navidrome_roots") or []:
+        if isinstance(mapping, dict):
+            host, navidrome = str(mapping.get("host") or "").strip(), str(mapping.get("navidrome") or "").strip()
+            if host and navidrome:
+                mappings.append({"host": host, "navidrome": navidrome})
+    numbers = {}
+    for key, (default, lowest) in _NUMBERS.items():
+        raw = values.get(key)
+        try:
+            numbers[key] = max(lowest, int(raw if raw not in (None, "") else default))
+        except (TypeError, ValueError):
+            raise ValueError(f"{key} must be a number") from None
+    cfg = {
+        "scan_dirs": [str(x).strip() for x in values.get("scan_dirs") or [] if str(x).strip()],
+        "playlists_base_dir": str(values.get("playlists_base_dir") or "").strip(),
+        "playlist_ids_file": str(values.get("playlist_ids_file") or "").strip() or str(PLAYLIST_IDS_FILE),
+        "library_cache_file": str(values.get("library_cache_file") or "").strip() or str(LIBRARY_CACHE_FILE),
+        "preview_state_file": str(values.get("preview_state_file") or "").strip() or str(PREVIEW_STATE_FILE),
+        "host_to_navidrome_roots": mappings,
+        "deezer_dl_dir": deezer_dl_dir,
+        **numbers,
+        **kept_config_keys(),
+    }
+    save_config(cfg)
+    scheduler.restart()
+    return settings_values()
+
+
 @system_bp.route("/config", methods=["GET", "POST"])
 def config_view():
     if request.method == "POST":
-        scan_dirs = [
-            x.strip()
-            for x in request.form.get("scan_dirs", "").splitlines()
-            if x.strip()
-        ]
-        playlists_base_dir = request.form.get("playlists_base_dir", "").strip()
-        playlist_ids_file = request.form.get("playlist_ids_file", "").strip()
-        library_cache_file = request.form.get("library_cache_file", "").strip()
-        preview_state_file = request.form.get("preview_state_file", "").strip()
-        deezer_dl_dir = request.form.get("deezer_dl_dir", "").strip()
-        if "://" in deezer_dl_dir:
-            # The address of the old separate downloader: not a folder.
-            deezer_dl_dir = ""
-
-        mapping_hosts = request.form.getlist("mapping_host[]")
-        mapping_navs = request.form.getlist("mapping_navidrome[]")
-
-        mappings = []
-        for h, n in zip(mapping_hosts, mapping_navs):
-            h = h.strip()
-            n = n.strip()
-            if h and n:
-                mappings.append({"host": h, "navidrome": n})
-
-        library_workers_per_dir = max(1, int(request.form.get("library_workers_per_dir", "2") or "2"))
-        match_workers = max(1, int(request.form.get("match_workers", "4") or "4"))
-        release_refresh_hours = max(0, int(request.form.get("release_refresh_hours", "24") or "24"))
-        download_workers = max(1, int(request.form.get("download_workers", "4") or "4"))
-        metadata_workers = max(1, int(request.form.get("metadata_workers", "4") or "4"))
-
-        cfg = {
-            "scan_dirs": scan_dirs,
-            "playlists_base_dir": playlists_base_dir,
-            "playlist_ids_file": playlist_ids_file or str(PLAYLIST_IDS_FILE),
-            "library_cache_file": library_cache_file or str(LIBRARY_CACHE_FILE),
-            "preview_state_file": preview_state_file or str(PREVIEW_STATE_FILE),
-            "host_to_navidrome_roots": mappings,
-            "deezer_dl_dir": deezer_dl_dir,
-            "library_workers_per_dir": library_workers_per_dir,
-            "match_workers": match_workers,
-            "release_refresh_hours": release_refresh_hours,
-            "download_workers": download_workers,
-            "metadata_workers": metadata_workers,
-            **kept_config_keys(),
+        form = request.form
+        values = {
+            "scan_dirs": form.get("scan_dirs", "").splitlines(),
+            "host_to_navidrome_roots": [{"host": h, "navidrome": n} for h, n in
+                                        zip(form.getlist("mapping_host[]"), form.getlist("mapping_navidrome[]"))],
+            **{key: form.get(key, "") for key in SETTINGS_KEYS if key not in ("scan_dirs", "host_to_navidrome_roots")},
         }
-        save_config(cfg)
-        scheduler.restart()
+        try:
+            save_settings_values(values)
+        except ValueError as e:
+            # Settings saves with fetch: a redirect would read as saved.
+            return jsonify({"ok": False, "error": str(e)}), 400
         flash("Configuration saved")
         return redirect(url_for("system.config_view"))
 
@@ -213,47 +237,61 @@ def scheduler_status():
     return jsonify({"playlists": result, "enabled_count": enabled_count})
 
 
+def _clear_all():
+    clear_playlists_and_covers()
+    clear_library_cache_file()
+
+
+# Reset data, in Settings and the API: what each one clears, and what it says.
+CLEARS = {
+    "library-cache": (clear_library_cache_file, "music_library_cache cleared"),
+    "preview-state": (clear_preview_state_file, "playlist_preview_state cleared"),
+    "playlists": (clear_playlists_and_covers, "Playlists, covers and playlist_preview_state cleared"),
+    "all": (_clear_all, "All cleared: playlists, covers, playlist_preview_state and music_library_cache"),
+    "dedup-report": (clear_dedup_report_file, "dedup_report cleared"),
+    "dedup-choices": (clear_dedup_choices_file, "dedup_choices cleared"),
+}
+
+
+def clear(what) -> str:
+    action, message = CLEARS[what]
+    action()
+    return message
+
+
+def _clear_route(what):
+    flash(clear(what))
+    return redirect(url_for("system.config_view"))
+
+
 @system_bp.post("/admin/clear/library-cache")
 def clear_library_cache_route():
-    clear_library_cache_file()
-    flash("music_library_cache cleared")
-    return redirect(url_for("system.config_view"))
+    return _clear_route("library-cache")
 
 
 @system_bp.post("/admin/clear/preview-state")
 def clear_preview_state_route():
-    clear_preview_state_file()
-    flash("playlist_preview_state cleared")
-    return redirect(url_for("system.config_view"))
+    return _clear_route("preview-state")
 
 
 @system_bp.post("/admin/clear/playlists")
 def clear_playlists_route():
-    clear_playlists_and_covers()
-    flash("Playlists, covers and playlist_preview_state cleared")
-    return redirect(url_for("system.config_view"))
+    return _clear_route("playlists")
 
 
 @system_bp.post("/admin/clear/all")
 def clear_all_route():
-    clear_playlists_and_covers()
-    clear_library_cache_file()
-    flash("All cleared: playlists, covers, playlist_preview_state and music_library_cache")
-    return redirect(url_for("system.config_view"))
+    return _clear_route("all")
 
 
 @system_bp.post("/admin/clear/dedup-report")
 def clear_dedup_report_route():
-    clear_dedup_report_file()
-    flash("dedup_report cleared")
-    return redirect(url_for("system.config_view"))
+    return _clear_route("dedup-report")
 
 
 @system_bp.post("/admin/clear/dedup-choices")
 def clear_dedup_choices_route():
-    clear_dedup_choices_file()
-    flash("dedup_choices cleared")
-    return redirect(url_for("system.config_view"))
+    return _clear_route("dedup-choices")
 
 
 KIND_NAMES = {"track": "track", "album": "album", "artist": "discography"}

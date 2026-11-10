@@ -36,7 +36,10 @@ export function initSettings() {
 
     try {
       const resp = await fetch(form.action, { method: 'POST', body: new FormData(form) });
-      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      if (!resp.ok) {
+        const data = await resp.json().catch(() => null);
+        throw new Error(data?.error || `HTTP ${resp.status}`);
+      }
       toast('Settings saved', { tone: 'ok' });
       saveBar.hidden = true;
     } catch (err) {

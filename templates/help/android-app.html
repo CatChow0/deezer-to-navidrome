@@ -1,0 +1,43 @@
+<section data-doc-section="android-app" hidden>
+  <h3 class="doc-title">Android app</h3>
+
+  <div class="doc-block">
+    <h4>Installing it</h4>
+    <p>Each version of this server carries its Android app. On your phone, open this page signed in, then <b>Settings → Android app → Download the app</b>, and open the file. Android asks once to allow installs from your browser: allow it, then install.</p>
+    <p>Settings says so when an image was built without the app, for a fork built without the signing key, say.</p>
+  </div>
+
+  <div class="doc-block">
+    <h4>Signing in</h4>
+    <ol>
+      <li>Enter this server's address, as you open it in a browser.</li>
+      <li>Sign in with your account. The phone's name, its model by default, is how it appears in <b>Settings → Sign-in and other apps</b>, where you can sign it out.</li>
+      <li>Pick the profile at the top: the Navidrome account the app shows, as the selector at the top of this page does.</li>
+    </ol>
+    <p>An <code>http://</code> address works, with a warning: use it only on your local network or Tailscale, since your password and data then travel in clear.</p>
+  </div>
+
+  <div class="doc-block">
+    <h4>Behind Authelia, or another login proxy</h4>
+    <p>The app cannot get through a login page. Let <code>^/api/v1/</code> through without it, as the README shows for Authelia: the phone's token protects those routes. Otherwise the app says the address does not answer as Deezer → Navidrome.</p>
+  </div>
+
+  <div class="doc-block">
+    <h4>What it does</h4>
+    <p>Everything this page does, for the profile picked at the top: <b>Dashboard</b> (your playlists, adding one, the search), <b>Made for you</b>, <b>Stats</b>, <b>Releases</b>, and under <b>More</b> the Settings, Activity, What's new and this help. Sharing a Deezer or Spotify link to the app from another app opens <b>Add a playlist</b> with it.</p>
+    <ul>
+      <li>A scan, a download or any other task shows a message with <b>View</b>, which opens it in Activity. The pulse icon at the top counts what is running.</li>
+      <li>In Made for you, swipe a track right to keep it, left to remove it. With TalkBack, the same choices are in the track's actions.</li>
+    </ul>
+  </div>
+
+  <div class="doc-block">
+    <h4>Without the server</h4>
+    <p>When the server cannot be reached, a banner says so and the app shows the pages you opened before, as they were then, for the same profile only. Nothing is changed meanwhile: the buttons wait for the server. <b>Retry</b> in the banner checks again.</p>
+  </div>
+
+  <div class="doc-block">
+    <h4>Updates</h4>
+    <p>When this server has a newer app, after an update of the server, the app shows a banner: <b>Update</b> downloads it, checks it, and opens Android's installer. The first time, Android asks to allow installs from D2N. The app keeps its sign-in and its profile. <b>More → Check for updates</b> asks at once.</p>
+  </div>
+</section>

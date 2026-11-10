@@ -124,6 +124,7 @@ def create_task(title="Task", kind="task", playlist_id=None, visible=True, cance
             "cancel_requested": False,
             "cancelled": False,
             "created_at": time.time(),
+            "updated_at": time.time(),
             "finished_at": None,
             "done": False,
             "error": False,
@@ -160,6 +161,7 @@ def push_task_payload(task_id, payload):
                 task["error"] = bool(payload.get("error"))
                 task["finished_at"] = time.time()
         task["events"].append(payload)
+        task["updated_at"] = time.time()
         task["cond"].notify_all()
 
 
@@ -208,8 +210,8 @@ def push_task_row_update(task_id, row):
 
 
 def task_summary(task):
-    return {k: task[k] for k in (
-        "id", "title", "kind", "playlist_id", "created_at", "finished_at",
+    return {k: task.get(k) for k in (
+        "id", "title", "kind", "playlist_id", "created_at", "updated_at", "finished_at",
         "done", "error", "stage", "message", "progress", "cancellable", "cancel_requested", "cancelled",
     )}
 

@@ -1,19 +1,6 @@
 {# Help: the documentation of the app, with a search across all of it. The notes
    of each version are behind the New button (_new.html). #}
-{% set doc_sections = [
-  ('getting-started', 'Getting started'),
-  ('playlists', 'Playlists and mixes'),
-  ('other-platforms', 'Spotify and CSV'),
-  ('search-player', 'Search and player'),
-  ('downloads', 'Downloads'),
-  ('library', 'Library and duplicates'),
-  ('releases', 'Releases'),
-  ('stats', 'Stats and recaps'),
-  ('made-for-you', 'Made for you'),
-  ('settings', 'Settings'),
-  ('sign-in', 'Sign-in and other apps'),
-  ('troubleshooting', 'Troubleshooting'),
-] %}
+{# doc_sections: core/content.HELP_SECTIONS, which the API serves too. #}
 <div id="help-modal" class="overlay modal help-modal" aria-hidden="true">
   <div class="overlay-backdrop" data-overlay-close></div>
   <section class="overlay-panel cell" role="dialog" aria-modal="true" aria-labelledby="help-title" tabindex="-1">

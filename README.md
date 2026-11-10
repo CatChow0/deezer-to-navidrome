@@ -2,7 +2,7 @@
 
 **A self-hosted web app that turns your Deezer playlists into Navidrome `.m3u8` playlists, matches them against your local library, and downloads what is missing straight from Deezer.**
 
-[![Docker Image Version](https://img.shields.io/badge/version-1.16.0-blue)](https://hub.docker.com/r/catchow/deezer-to-navidrome)
+[![Docker Image Version](https://img.shields.io/badge/version-1.18.1-blue)](https://hub.docker.com/r/catchow/deezer-to-navidrome)
 [![Python 3](https://img.shields.io/badge/python-3-blue)](https://www.python.org/)
 [![Flask](https://img.shields.io/badge/flask-web%20app-brightgreen)](https://flask.palletsprojects.com/)
 
@@ -20,6 +20,7 @@
 - [Configuration](#configuration)
 - [Usage](#usage)
 - [API Reference](#api-reference)
+- [Android app](#android-app)
 - [Troubleshooting](#troubleshooting)
 - [Development](#development)
 - [Notes](#notes)
@@ -106,6 +107,8 @@ Two buttons in the topbar explain the app. **New** keeps the notes of each versi
 ### Security and integrations
 - **Sign-in** - One account, created on the first visit or set from the environment
 - **API token** - Read-only access for other apps
+- **API v1** - A JSON API for the Android app: each device signs in with its own token, listed and revocable in Settings
+- **Android app** - Shipped inside the image: download it from Settings, and it updates itself from your server
 - **[CatBoard](https://github.com/CatChow0/catboard)** - Shows the release feed; a webhook tells it when the feed or the library changed
 - **Update badge** - The topbar shows when a newer version is on Docker Hub
 
@@ -388,6 +391,7 @@ Both back up the profile's history first (the last 3, as `stats.db.bak-*` in `DA
 | `config.json` | App configuration | Survives restarts |
 | `secrets.json` | Password hash, API token, webhook URL, session key, encrypted | Survives restarts |
 | `navidrome_accounts.json` | Navidrome accounts, their passwords encrypted | Survives restarts |
+| `devices.json` | The devices signed in through the API, a digest of each token | Survives restarts |
 | `deezer_accounts.json` | Deezer accounts, their ARLs encrypted | Survives restarts |
 | `releases.json`, `releases-dz2.json`… | Release feed of each Deezer account, with `release_prefs*.json` for the muted artists | Rebuilt by a refresh |
 | `encryption.key` | The encryption key, only when `D2N_ENCRYPTION_KEY` is not set | Keep it: without it, saved credentials must be entered again |
@@ -714,8 +718,9 @@ Both containers must see the same files under their mapped paths. The downloads 
 The web interface asks for a sign-in. On the first visit, the app asks you to create the account (password of 8 characters or more, stored hashed in `data/secrets.json`), unless `APP_USERNAME` and `APP_PASSWORD` are set.
 
 - After 5 failed sign-ins in 15 minutes, the username and the address wait 30 s, then twice as long after each new failure (up to 15 min). Behind a reverse proxy every request has the proxy's address, so a burst of failures briefly blocks everyone.
-- Changing the password (**Settings → Sign-in and other apps**) signs out your other browsers.
+- Changing the password (**Settings → Sign-in and other apps**) signs out your other browsers and your devices.
 - The API token is sent as `Authorization: Bearer <token>` and only opens `GET /api/releases`, `POST /search/library-check` and `GET /api/version`.
+- **Devices** (the Android app) sign in through the API and each get their own token. **Settings → Sign-in and other apps** lists them, with when they were last used, and signs one out. See [API v1](#api-v1).
 
 #### Navidrome accounts
 
@@ -843,7 +848,63 @@ The **Releases** view lists recent albums, EPs and singles of your favorite Deez
 <a id ="api-reference"></a>
 ## 🔌 API Reference
 
-All routes need a signed-in session, except `/health` and the three routes the API token opens.
+All routes need a signed-in session or a device's token, except `/health`, the three routes the API token opens, and the sign-in routes of API v1.
+
+### API v1
+
+The API the Android app uses, described in [`docs/api/openapi.yaml`](docs/api/openapi.yaml). Everything a phone needs lives under `/api/v1/`, media and task streams included.
+
+- **Sign-in.** `POST /api/v1/auth/login` with the account's username and password and a name for the device returns a token (`d2n_…`), shown once; send it as `Authorization: Bearer <token>`. Only a SHA-256 digest is kept, in `data/devices.json`. The token opens every route; it stops working when the device signs out (`POST /api/v1/auth/logout`), is signed out in Settings, or when the password changes. Failed attempts count as on the web sign-in page. `GET /api/v1/auth/status` (public) says whether the server needs a sign-in, has no account yet (`POST /api/v1/auth/setup` creates it), or has sign-in turned off.
+- **Answers.** A JSON object; a failure is `{"error": {"code", "message"}}` with the matching HTTP status. Reads carry an ETag: send it back in `If-None-Match` to get a 304 when nothing changed. The profile comes from the `X-Navidrome-Account` header, else the default account.
+- **The whole web interface.** Each of its functions has its counterpart here, and a test checks that none is missing. Most are the web's own functions answering in this format, so the two cannot drift apart. The covers and the audio the answers link to are under `/api/v1/` too.
+- **Tasks.** `GET /api/v1/tasks/<id>/stream` is the event stream the web page follows (resume with `Last-Event-ID` or `?from=`). Without a stream, `GET /api/v1/tasks/<id>/events?after=N&wait=25` returns the events after index `N`, waiting up to 25 s for the next one, and `GET /api/v1/tasks?changed_since=<time>` lists the tasks that changed.
+- **Behind Authelia, or another login proxy.** The app cannot get through a login page. Let `/api/v1/` through without it: the device token protects it. For Authelia:
+
+  ```yaml
+  access_control:
+    rules:
+      - domain: music.example.com
+        resources: ["^/api/v1/"]
+        policy: bypass
+  ```
+
+  Keep the rest of the site behind the proxy's login. With `DISABLE_AUTH=true` the app needs no token, so only do this when the API is not reachable from the internet (Tailscale, local network).
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/api/v1/auth/status` | GET | Public: whether a sign-in is needed |
+| `/api/v1/auth/login`, `/api/v1/auth/setup` | POST | Sign a device in; create the account on a new server |
+| `/api/v1/auth/logout` | POST | Sign this device out |
+| `/api/v1/devices`, `/api/v1/devices/<id>` | GET/DELETE | The devices signed in; sign one out |
+| `/api/v1/info` | GET | Version, profiles, Deezer accounts, what this install can do |
+| `/api/v1/tasks`, `/api/v1/tasks/<id>` | GET | Tasks and one task's state |
+| `/api/v1/tasks/<id>/events`, `/stream` | GET | A task's events: waiting for the next, or as a stream |
+| `/api/v1/tasks/<id>/cancel` | POST | Ask a task to stop |
+| `/api/v1/playlists` | GET/POST | The profile's playlists, and those its user made in Navidrome; add one by its link (`{"link"}`) |
+| `/api/v1/playlists/import` | POST | Import a CSV export (multipart `csv_file`) |
+| `/api/v1/playlists/<id>` | DELETE | Take a playlist off the profile; deleted when no other profile has it |
+| `/api/v1/playlists/<id>/tracks`, `/navidrome` | GET | Its tracks and their matches; where it is in Navidrome |
+| `/api/v1/playlists/<id>/scan`, `/download-missing`, `/publish` | POST | Scan it, download what it misses (tasks); publish it again |
+| `/api/v1/playlists/<id>/match`, `/source-match` | POST | Fix a match by hand; pick the Deezer track of an imported one |
+| `/api/v1/playlists/<id>/accounts`, `/automation` | PUT | The accounts it goes to; its schedule |
+| `/api/v1/navidrome/playlists/<account>/<id>` | GET | A playlist made in Navidrome, read-only |
+| `/api/v1/releases`, `/releases/refresh`, `/releases/mute` | GET/POST | The profile's release feed |
+| `/api/v1/deezer/mixes`, `/deezer/mixes/follow` | GET/POST | Deezer's mixes for the profile; follow one |
+| `/api/v1/search`, `/search/album/<id>`, `/search/artist/<id>`, `/preview/<id>` | GET | Deezer search, details and 30-second previews |
+| `/api/v1/library/stats`, `/search`, `/check`, `/refresh`, `/rebuild`, `/metadata/fix`, `/metadata/undo` | GET/POST | The library: figures, search, what it has, its index, its metadata |
+| `/api/v1/downloads`, `/downloads/track/<id>`, `/downloads/repair` | GET/POST | The queue; download a track, an album or an artist; repair |
+| `/api/v1/dedup/start`, `/dedup/report`, `/dedup/apply` | POST/GET | Duplicates |
+| `/api/v1/stats/…` | GET/POST/DELETE | Overview, recaps, an artist, album or track, plays, status, rebuild, ListenBrainz token, covers and audio |
+| `/api/v1/mixes`, `/mixes/settings`, `/mixes/generate`, `/mixes/trial/…` | GET/POST | The profile's Made for you and its quarantine |
+| `/api/v1/navidrome/accounts…`, `/api/v1/deezer/accounts…` | GET/POST/PATCH/DELETE | The accounts, as in Settings |
+| `/api/v1/settings` | GET/PUT | Folders, mappings and limits; a PUT changes only what it sends |
+| `/api/v1/settings/clear/<what>` | POST | Reset data: `library-cache`, `preview-state`, `playlists`, `all`, `dedup-report`, `dedup-choices` |
+| `/api/v1/settings/security`, `/password`, `/api-token`, `/webhook`, `/webhook/test` | GET/POST/PUT/DELETE | Sign-in and other apps |
+| `/api/v1/scheduler`, `/api/v1/version` | GET | The scheduled scans; this version and the newest one |
+| `/api/v1/content/help`, `/content/notes`, `/content/notes/seen` | GET/POST | The help and the notes of each version, in HTML |
+| `/api/v1/app`, `/api/v1/app/apk` | GET | The Android app in this image (version, size, SHA-256), and its APK |
+
+### Web routes
 
 #### Playlists
 
@@ -933,6 +994,67 @@ All routes need a signed-in session, except `/health` and the three routes the A
 | `/login`, `/logout`, `/setup` | GET/POST | Sign-in |
 | `/api/auth/password`, `/api/auth/token` | POST | Change the password, create the API token |
 | `/api/webhook`, `/api/webhook/test` | PUT/DELETE/POST | CatBoard webhook |
+| `/app/android.apk` | GET | The Android app's APK, for a signed-in browser |
+
+---
+<a id ="android-app"></a>
+## 📱 Android app
+
+The app for your phone, in Kotlin and Jetpack Compose (Android 8 or later). It does what the web interface does, for the Navidrome profile picked at the top:
+
+- **Dashboard** and **Search**: the profile's playlists, adding one by link, ID or CSV (or by sharing a Deezer or Spotify link to the app), and Deezer search with previews and downloads.
+- **Playlists**: scans, downloading what is missing, choosing a file or a Deezer match per track, automation.
+- **Made for you**: the mixes, their limits and trial rules, and the quarantine (swipe to keep or remove).
+- **Stats**: tops, charts, artist, album and track pages, and the recaps as stories.
+- **Releases**, and every section of **Settings**, **Activity**, **What's new** and **Help** under More.
+
+When the server cannot be reached, the app says so and shows the pages it saved, for the same profile only; nothing is changed until the server answers again.
+
+### Installing
+
+Each image built by Jenkins carries the app built with the same version.
+
+1. On your phone, open the web interface signed in, then **Settings → Android app → Download the app**. Android asks once to allow installs from your browser.
+2. Open the app, enter the server's address as you open it in a browser, and sign in with your account. The phone appears in **Settings → Sign-in and other apps**, where you can sign it out.
+3. Pick the profile at the top: the Navidrome account the app shows.
+
+An `http://` address works, with a warning: only on your local network or Tailscale. Behind Authelia, or another login proxy, let `^/api/v1/` through as shown under [API v1](#api-reference): the app cannot pass a login page, and says so.
+
+### Updates
+
+The app shares the server's version. When the server is newer, the app shows a banner: **Update** downloads the APK from your server, checks its SHA-256 and opens Android's installer; Android asks once to allow installs from D2N. **More → Check for updates** asks at once.
+
+- `versionCode` is `MAJOR×10000 + MINOR×100 + PATCH` (1.18.0 gives 11800).
+- A rebuild of the same version (another commit, or the same one built again) is offered too; a lower version never is.
+- An image built without the signing key (a fork, say) carries no app, and Settings says so.
+
+### The signing key
+
+Every build is signed with one key, so each version installs over the previous one. **Back it up with its password: without them, phones must uninstall the app to update it.**
+
+- **Create it once,** in a PowerShell window of your own: `powershell -File android\scripts\new-keystore.ps1`. It writes `%USERPROFILE%\.d2n-android\release.jks`, and saves the password encrypted for your Windows account (`keystore-password.dpapi`). On Linux or macOS: `android/scripts/new-keystore.sh`.
+- **Restore it** on a new PC: put `release.jks` back in `%USERPROFILE%\.d2n-android\`, then save its password again:
+
+  ```powershell
+  Read-Host "Password" -AsSecureString | ConvertFrom-SecureString | Set-Content -Encoding ascii "$env:USERPROFILE\.d2n-android\keystore-password.dpapi"
+  ```
+
+### Building
+
+The build runs in Docker (`android/Dockerfile`), the same in Jenkins and on a PC, and writes `dist/android/deezer-to-navidrome.apk` with `app.json`. `docker build .` then puts them in the image.
+
+- **On Windows:** `powershell -File android\scripts\build-apk.ps1`, with the saved key.
+- **Elsewhere:** `D2N_KEYSTORE_FILE=… D2N_KEYSTORE_PASSWORD=… android/scripts/build-apk.sh`.
+
+`android/README.md` covers working on the app itself: the local SDK, the tests and the emulator.
+
+### Jenkins
+
+The `Android` stage builds the app before the image, keeps the APK as a build artifact, and the smoke test checks the image carries it.
+
+- **Credentials:** `android-keystore`, a secret file holding `release.jks`, and `android-keystore-password`, a secret text.
+- **Without them,** `main` fails, since an image on Docker Hub without its app would break updates; other branches build without the app, with a warning.
+- **The agent** needs Docker with buildx (build secrets and `--output`), access to `dl.google.com`, `maven.google.com`, Maven Central and `services.gradle.org`, and about 6 GB free. The first build downloads the SDK and takes several minutes; the pipeline's timeout is 45 minutes.
 
 ---
 <a id ="troubleshooting"></a>
