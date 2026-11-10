@@ -28,7 +28,11 @@ import io.github.catchow0.d2n.ui.components.Banner
 import io.github.catchow0.d2n.ui.components.BannerTone
 import io.github.catchow0.d2n.ui.components.Chip
 import io.github.catchow0.d2n.ui.components.ChipTone
+import io.github.catchow0.d2n.R
 import io.github.catchow0.d2n.ui.components.GlassCard
+import io.github.catchow0.d2n.ui.components.IconAction
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import io.github.catchow0.d2n.ui.components.Skeleton
 import io.github.catchow0.d2n.ui.theme.D2nColors
 import io.github.catchow0.d2n.ui.theme.D2nShapes
@@ -44,7 +48,7 @@ fun stateOf(task: TaskSummary): Pair<String, ChipTone> = when {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ActivityScreen(vm: ActivityViewModel, onOpen: (String) -> Unit) {
+fun ActivityScreen(vm: ActivityViewModel, onBack: (() -> Unit)? = null, onOpen: (String) -> Unit) {
     val state by vm.state.collectAsStateWithLifecycle()
     // The list follows the server while it is on screen, not in the background.
     LifecycleStartEffect(vm) {
@@ -57,7 +61,12 @@ fun ActivityScreen(vm: ActivityViewModel, onOpen: (String) -> Unit) {
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            item { Text("Activity", style = MaterialTheme.typography.headlineSmall) }
+            item {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (onBack != null) IconAction(R.drawable.ic_back, "Back", onBack)
+                    Text("Activity", Modifier.semantics { heading() }, style = MaterialTheme.typography.headlineSmall)
+                }
+            }
             state.error?.let { error -> item { Banner(error, BannerTone.Error) } }
             when {
                 state.loading -> items(4) { Skeleton(Modifier.fillMaxWidth().height(88.dp)) }

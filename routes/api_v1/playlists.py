@@ -36,9 +36,12 @@ def _tile(playlist) -> dict:
             "interval_minutes": playlist.get("auto_scan_interval_minutes") or 60,
             "download": bool(playlist.get("auto_download_after_scan")),
         },
+        # Counted from the rows: a scan saves its rows, not their counts.
         "tracks": None if rows is None else {
-            "total": len(rows), "matched": state.get("matched_count"),
-            "unmatched": state.get("unmatched_count"), "unchecked": state.get("unchecked_count"),
+            "total": len(rows),
+            "matched": sum(1 for r in rows if r.get("matched") is True),
+            "unmatched": sum(1 for r in rows if r.get("matched") is False),
+            "unchecked": sum(1 for r in rows if r.get("matched") is None),
         },
     }
 

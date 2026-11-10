@@ -14,6 +14,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
+import io.github.catchow0.d2n.R
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.catchow0.d2n.ui.components.ButtonKind
@@ -39,6 +42,7 @@ fun AboutScreen(
     session: SessionViewModel.UiState,
     onSignedOut: () -> Unit,
     onOtherServer: () -> Unit,
+    onActivity: () -> Unit = {},
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
     val update by updates.state.collectAsStateWithLifecycle()
@@ -47,7 +51,8 @@ fun AboutScreen(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Text("More", style = MaterialTheme.typography.headlineSmall)
+        Text("More", Modifier.semantics { heading() }, style = MaterialTheme.typography.headlineSmall)
+        D2nButton("Activity", onActivity, Modifier.fillMaxWidth(), kind = ButtonKind.Ghost, icon = R.drawable.ic_activity)
         GlassCard(Modifier.fillMaxWidth()) {
             Text("This app", style = MaterialTheme.typography.titleSmall)
             InfoRow("Version", "${state.appVersion} (${state.commit})")

@@ -16,7 +16,10 @@ import io.github.catchow0.d2n.data.SettingsStore
 import io.github.catchow0.d2n.data.TinkSecretBox
 import io.github.catchow0.d2n.data.apiCall
 import io.github.catchow0.d2n.data.buildHttpClient
+import io.github.catchow0.d2n.audio.PreviewPlayer
 import io.github.catchow0.d2n.tasks.TaskFollower
+import io.github.catchow0.d2n.ui.common.AppEvents
+import io.github.catchow0.d2n.ui.common.ScreenDeps
 import io.github.catchow0.d2n.ui.main.Reachability
 import io.github.catchow0.d2n.update.ApkDownloader
 import io.github.catchow0.d2n.update.ApkInstaller
@@ -29,7 +32,14 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.OkHttpClient
@@ -59,7 +69,7 @@ class AppGraph(context: Context) {
     /** Every call to the server: the token and the profile ride along. */
     val client: OkHttpClient = buildHttpClient(
         File(context.cacheDir, "net"),
-        { store.state.value.let { RequestHeaders(it.token, it.profile) } },
+        { store.state.value.let { RequestHeaders(it.token, it.profile, it.serverUrl?.toHttpUrlOrNull()) } },
         userAgent,
     ) { _unauthorized.tryEmit(Unit) }
 
@@ -94,6 +104,28 @@ class AppGraph(context: Context) {
     )
 
     val taskFollower = TaskFollower(client, apis::forServer)
+
+    /** The profile this phone shows. A change makes every screen read again. */
+    val profile: StateFlow<String?> = store.state
+        .filter { it.ready }
+        .map { it.profile }
+        .distinctUntilChanged()
+        .stateIn(scope, SharingStarted.Eagerly, store.state.value.profile)
+
+    /** Messages and started tasks, for the snackbar. */
+    val events = AppEvents()
+
+    val screens = ScreenDeps(::requireApi, profile, reachability, events)
+
+    /** Covers and sounds: the same headers as the API, without its HTTP
+     * cache (Coil keeps the pictures itself, a preview is played once). */
+    val mediaClient: OkHttpClient = client.newBuilder().cache(null).build()
+
+    val player = PreviewPlayer(context.applicationContext, mediaClient, ::requireApi, events)
+
+    /** A link another app shared to this one (Deezer, Spotify): the dashboard
+     * offers to add it once the app is signed in. */
+    val sharedLink = MutableStateFlow<String?>(null)
 
     // The app's updates come from the server it talks to.
     val updateChecker = UpdateChecker(::api, store, own, System::currentTimeMillis)

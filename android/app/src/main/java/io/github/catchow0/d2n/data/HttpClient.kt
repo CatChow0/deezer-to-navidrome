@@ -3,10 +3,17 @@ package io.github.catchow0.d2n.data
 import java.io.File
 import java.util.concurrent.TimeUnit
 import okhttp3.Cache
+import okhttp3.HttpUrl
 import okhttp3.OkHttpClient
 
-/** What every request carries: the device's token and the chosen profile. */
-data class RequestHeaders(val token: String?, val profile: String?)
+/** What every request to the server carries: the device's token and the
+ * chosen profile. [server] is where they go: a cover or a preview from Deezer's
+ * CDN never gets them. Null sends them everywhere (the tests' one server). */
+data class RequestHeaders(val token: String?, val profile: String?, val server: HttpUrl? = null)
+
+/** Whether [url] is on the app's server: same scheme, host and port. */
+internal fun RequestHeaders.isForServer(url: HttpUrl): Boolean =
+    server == null || (url.scheme == server.scheme && url.host == server.host && url.port == server.port)
 
 private const val CACHE_BYTES = 20L * 1024 * 1024
 
@@ -36,17 +43,20 @@ fun buildHttpClient(
     .readTimeout(35, TimeUnit.SECONDS)
     .addInterceptor { chain ->
         val current = headers()
+        val ours = current.isForServer(chain.request().url)
         val noStore = cacheFreePath(chain.request().url.encodedPath)
         val request = chain.request().newBuilder()
             .header("User-Agent", userAgent)
             .apply {
-                current.token?.let { header("Authorization", "Bearer $it") }
-                current.profile?.let { header("X-Navidrome-Account", it) }
+                if (ours) {
+                    current.token?.let { header("Authorization", "Bearer $it") }
+                    current.profile?.let { header("X-Navidrome-Account", it) }
+                }
                 if (noStore) header("Cache-Control", "no-store")
             }
             .build()
         val response = chain.proceed(request)
-        if (response.code == 401 && SIGN_IN_PATHS.none { request.url.encodedPath.endsWith(it) }) onUnauthorized()
+        if (ours && response.code == 401 && SIGN_IN_PATHS.none { request.url.encodedPath.endsWith(it) }) onUnauthorized()
         response
     }
     .build()

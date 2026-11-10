@@ -176,10 +176,10 @@ class Playlists(Profiles):
 
     def test_a_tile_says_how_far_matching_got(self):
         save_playlists([{"id": "9102", "title": "Matched", "picture": "", "cover_cached": "9102.jpg"}])
-        config.save_preview_state({"9102": {"rows": [{}, {}, {}], "matched_count": 2, "unmatched_count": 1,
-                                            "unchecked_count": 0}})
+        # As a scan saves it: the rows, without their counts.
+        config.save_preview_state({"9102": {"rows": [{"matched": True}, {"matched": True}, {"matched": False}, {"matched": None}]}})
         tile = self.client.get("/api/v1/playlists", headers=self.auth).get_json()["playlists"][0]
-        self.assertEqual(tile["tracks"], {"total": 3, "matched": 2, "unmatched": 1, "unchecked": 0})
+        self.assertEqual(tile["tracks"], {"total": 4, "matched": 2, "unmatched": 1, "unchecked": 1})
         self.assertEqual(tile["cover"], "/api/v1/covers/9102.jpg")
 
     def test_a_bad_link_and_deezer_not_answering(self):

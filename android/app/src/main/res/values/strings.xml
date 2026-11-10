@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">D2N</string>
+    <!-- In the share sheet of Deezer or Spotify. -->
+    <string name="share_label">Add to D2N</string>
 </resources>
