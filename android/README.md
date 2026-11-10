@@ -30,18 +30,6 @@ A release build needs the signing key; without it, Gradle stops with "No signing
 
 `D2N_VERSION=1.18.1 scripts/build-apk.sh` builds another version than `VERSION`: only for testing updates.
 
-## Release procedure
-
-1. Keep a secure backup of `release.jks` and its password; restore both to `%USERPROFILE%\.d2n-android\` before any update.
-2. Build from a clean checkout of the intended commit: `scripts/build-apk.ps1` on Windows, or the `.sh` equivalent.
-3. Check the APK with `apksigner verify`, extract its version/build, then let the server image copy `dist/android/` through the ordinary `COPY . /app` step.
-4. On the phone, the app installs over a previous build of the same version only if the certificate matches.
-
-## Offline, accessibility and build
-
-- GET reads are answered from the HTTP cache when the server does not answer, and screens show the "Can't reach the server" banner with Retry.
-- Compose uses `sp` text and follows the system font scale; TalkBack labels are carried on navigation icons and covers.
-- Release builds use R8 (`proguard-rules.pro`). Debug builds stay unminified for fast iteration.
 ## Versions
 
 - `versionName` is the server's `VERSION`; `versionCode` is `MAJOR×10000 + MINOR×100 + PATCH`.
@@ -54,6 +42,6 @@ A release build needs the signing key; without it, Gradle stops with "No signing
 | `data` | The API client (Retrofit, OkHttp with the token and profile headers, an HTTP cache for ETags), its errors, server addresses, and the session stored in DataStore with the token sealed by Tink and the Android Keystore |
 | `tasks` | Following a task: the event stream resumed with `Last-Event-ID`, then waiting for events when the stream does not get through |
 | `update` | The update rule, the checked download, and Android's `PackageInstaller` |
-| `ui` | The theme from the web's `tokens.css`, the components, sign-in, Deezer search, playlists, Made for you, releases, Deezer mixes, stats, settings and the app's inside: profile, Activity, More |
+| `ui` | The theme from the web's `tokens.css`, the components, sign-in, and the app's inside: profile, Activity, More |
 
 The fonts are Unbounded and Instrument Sans, under the SIL Open Font License (`app/src/main/assets/licenses/`).

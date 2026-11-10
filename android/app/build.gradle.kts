@@ -77,14 +77,8 @@ android {
 
     buildTypes {
         getByName("release") {
-            // R8 trims dead code and shrinks the APK. The rules keep the bits that
-            // use reflection, so Retrofit and kotlinx.serialization still work.
-            isMinifyEnabled = true
-            isShrinkResources = true
-            proguardFiles(
-                getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro",
-            )
+            // R8 comes in phase 9.
+            isMinifyEnabled = false
             if (keystoreFile != null) signingConfig = signingConfigs.getByName("release")
         }
         getByName("debug") {
@@ -116,11 +110,6 @@ dependencies {
     implementation(libs.compose.ui)
     implementation(libs.compose.foundation)
     implementation(libs.compose.material3)
-
-    implementation(libs.coil.compose)
-    implementation(libs.media3.exoplayer)
-    implementation(libs.media3.ui)
-    implementation(libs.media3.common)
 
     implementation(libs.okhttp)
     implementation(libs.retrofit)

@@ -39,9 +39,6 @@ fun AboutScreen(
     session: SessionViewModel.UiState,
     onSignedOut: () -> Unit,
     onOtherServer: () -> Unit,
-    onOpenNotes: () -> Unit = {},
-    onOpenHelp: () -> Unit = {},
-    onOpenSettings: () -> Unit = {},
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
     val update by updates.state.collectAsStateWithLifecycle()
@@ -68,9 +65,6 @@ fun AboutScreen(
             D2nButton(if (update.checking) "Checking…" else "Check for updates", { updates.check(force = true) }, kind = ButtonKind.Ghost, enabled = !update.checking)
             update.checked?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
         }
-        D2nButton("Settings", onOpenSettings, Modifier.fillMaxWidth(), kind = ButtonKind.Ghost)
-        D2nButton("What's new", onOpenNotes, Modifier.fillMaxWidth(), kind = ButtonKind.Ghost)
-        D2nButton("Help", onOpenHelp, Modifier.fillMaxWidth(), kind = ButtonKind.Ghost)
         if (state.signedIn) {
             D2nButton("Sign out", vm::signOut, Modifier.fillMaxWidth(), kind = ButtonKind.Danger)
         } else {

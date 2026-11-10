@@ -37,27 +37,8 @@ import io.github.catchow0.d2n.ui.about.AboutViewModel
 import io.github.catchow0.d2n.ui.activity.ActivityScreen
 import io.github.catchow0.d2n.ui.activity.ActivityViewModel
 import io.github.catchow0.d2n.ui.activity.TaskScreen
-import io.github.catchow0.d2n.ui.playlists.PlaylistTracksScreen
-import io.github.catchow0.d2n.ui.playlists.PlaylistTracksViewModel
-import io.github.catchow0.d2n.ui.playlists.PlaylistsScreen
-import io.github.catchow0.d2n.ui.playlists.PlaylistsViewModel
-import io.github.catchow0.d2n.ui.search.SearchScreen
-import io.github.catchow0.d2n.ui.search.SearchViewModel
-import io.github.catchow0.d2n.ui.stats.StatsScreen
-import io.github.catchow0.d2n.ui.stats.StatsViewModel
-import io.github.catchow0.d2n.ui.deezerMixes.DeezerMixesScreen
-import io.github.catchow0.d2n.ui.deezerMixes.DeezerMixesViewModel
-import io.github.catchow0.d2n.ui.content.ContentViewModel
-import io.github.catchow0.d2n.ui.content.HelpScreen
-import io.github.catchow0.d2n.ui.content.NotesScreen
-import io.github.catchow0.d2n.ui.releases.ReleasesScreen
-import io.github.catchow0.d2n.ui.releases.ReleasesViewModel
-import io.github.catchow0.d2n.ui.settings.SettingsScreen
-import io.github.catchow0.d2n.ui.settings.SettingsViewModel
 import io.github.catchow0.d2n.ui.activity.TaskViewModel
 import io.github.catchow0.d2n.ui.components.Aurora
-import io.github.catchow0.d2n.ui.madeforyou.MixesScreen
-import io.github.catchow0.d2n.ui.madeforyou.MixesViewModel
 import io.github.catchow0.d2n.ui.components.Banner
 import io.github.catchow0.d2n.ui.components.BannerTone
 import io.github.catchow0.d2n.ui.components.Brand
@@ -71,36 +52,6 @@ object ActivityRoute
 
 @Serializable
 data class TaskRoute(val id: String)
-
-@Serializable
-object SearchRoute
-
-@Serializable
-object PlaylistsRoute
-
-@Serializable
-data class PlaylistTracksRoute(val id: String)
-
-@Serializable
-object MadeForYouRoute
-
-@Serializable
-object ReleasesRoute
-
-@Serializable
-object StatsRoute
-
-@Serializable
-object DeezerMixesRoute
-
-@Serializable
-object NotesRoute
-
-@Serializable
-object HelpRoute
-
-@Serializable
-object SettingsRoute
 
 @Serializable
 object AboutRoute
@@ -178,40 +129,6 @@ fun MainScaffold(graph: AppGraph, onSignedOut: (notice: String?) -> Unit, onOthe
                             onBack = { inner.popBackStack() },
                         )
                     }
-                    composable<SearchRoute> {
-                        SearchScreen(viewModel { SearchViewModel(graph::requireApi) })
-                    }
-                    composable<PlaylistsRoute> {
-                        PlaylistsScreen(
-                            viewModel { PlaylistsViewModel(graph::requireApi) },
-                            onOpenPlaylist = { id -> inner.navigate(PlaylistTracksRoute(id)) },
-                        )
-                    }
-                    composable<PlaylistTracksRoute> { back ->
-                        val id = back.toRoute<PlaylistTracksRoute>().id
-                        PlaylistTracksScreen(viewModel(key = "tracks-$id") { PlaylistTracksViewModel(graph::requireApi, id) })
-                    }
-                    composable<MadeForYouRoute> {
-                        MixesScreen(viewModel { MixesViewModel(graph::requireApi) }, onFindDeezerMixes = { inner.navigate(DeezerMixesRoute) })
-                    }
-                    composable<ReleasesRoute> {
-                        ReleasesScreen(viewModel { ReleasesViewModel(graph::requireApi) })
-                    }
-                    composable<DeezerMixesRoute> {
-                        DeezerMixesScreen(viewModel { DeezerMixesViewModel(graph::requireApi) })
-                    }
-                    composable<NotesRoute> {
-                        NotesScreen(viewModel { ContentViewModel(graph::requireApi) })
-                    }
-                    composable<HelpRoute> {
-                        HelpScreen(viewModel { ContentViewModel(graph::requireApi) })
-                    }
-                    composable<SettingsRoute> {
-                        SettingsScreen(viewModel { SettingsViewModel(graph::requireApi) })
-                    }
-                    composable<StatsRoute> {
-                        StatsScreen(viewModel { StatsViewModel(graph::requireApi) })
-                    }
                     composable<AboutRoute> {
                         AboutScreen(
                             viewModel { AboutViewModel(graph::requireApi, graph.store, graph.own) },
@@ -219,9 +136,6 @@ fun MainScaffold(graph: AppGraph, onSignedOut: (notice: String?) -> Unit, onOthe
                             sessionState,
                             onSignedOut = { onSignedOut(null) },
                             onOtherServer = onOtherServer,
-                            onOpenNotes = { inner.navigate(NotesRoute) },
-                            onOpenHelp = { inner.navigate(HelpRoute) },
-                            onOpenSettings = { inner.navigate(SettingsRoute) },
                         )
                     }
                 }
@@ -237,49 +151,14 @@ fun MainScaffold(graph: AppGraph, onSignedOut: (notice: String?) -> Unit, onOthe
                 NavigationBarItem(
                     selected = !onMore,
                     onClick = { inner.navigate(ActivityRoute) { popUpTo(inner.graph.id) { inclusive = true } } },
-                    icon = { Icon(painterResource(R.drawable.ic_activity), contentDescription = "Activity") },
+                    icon = { Icon(painterResource(R.drawable.ic_activity), contentDescription = null) },
                     label = { Text("Activity") },
-                    colors = colors,
-                )
-                NavigationBarItem(
-                    selected = false,
-                    onClick = { inner.navigate(SearchRoute) { launchSingleTop = true } },
-                    icon = { Icon(painterResource(R.drawable.ic_search), contentDescription = "Search") },
-                    label = { Text("Search") },
-                    colors = colors,
-                )
-                NavigationBarItem(
-                    selected = entry?.destination?.hasRoute<PlaylistsRoute>() == true,
-                    onClick = { inner.navigate(PlaylistsRoute) { launchSingleTop = true } },
-                    icon = { Icon(painterResource(R.drawable.ic_playlist), contentDescription = "Playlists") },
-                    label = { Text("Playlists") },
-                    colors = colors,
-                )
-                NavigationBarItem(
-                    selected = entry?.destination?.hasRoute<MadeForYouRoute>() == true,
-                    onClick = { inner.navigate(MadeForYouRoute) { launchSingleTop = true } },
-                    icon = { Icon(painterResource(R.drawable.ic_activity), contentDescription = "Made for you") },
-                    label = { Text("Made for you") },
-                    colors = colors,
-                )
-                NavigationBarItem(
-                    selected = entry?.destination?.hasRoute<StatsRoute>() == true,
-                    onClick = { inner.navigate(StatsRoute) { launchSingleTop = true } },
-                    icon = { Icon(painterResource(R.drawable.ic_activity), contentDescription = "Stats") },
-                    label = { Text("Stats") },
-                    colors = colors,
-                )
-                NavigationBarItem(
-                    selected = entry?.destination?.hasRoute<ReleasesRoute>() == true,
-                    onClick = { inner.navigate(ReleasesRoute) { launchSingleTop = true } },
-                    icon = { Icon(painterResource(R.drawable.ic_more), contentDescription = "Releases") },
-                    label = { Text("Releases") },
                     colors = colors,
                 )
                 NavigationBarItem(
                     selected = onMore,
                     onClick = { inner.navigate(AboutRoute) { launchSingleTop = true } },
-                    icon = { Icon(painterResource(R.drawable.ic_more), contentDescription = "More") },
+                    icon = { Icon(painterResource(R.drawable.ic_more), contentDescription = null) },
                     label = { Text("More") },
                     colors = colors,
                 )
