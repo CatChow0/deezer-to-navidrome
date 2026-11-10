@@ -203,8 +203,21 @@ def _user_id(account=None):
 
 
 def favorite_artists(account=None):
-    """[{id, name, picture}] from the public API, paginated."""
+    """[{id, name, picture}]. The public API answers for a public profile; a
+    private one ("This user's profile is private") is read through the
+    gateway, with the account's own session."""
     uid = _user_id(account)
+    try:
+        return _public_favorite_artists(uid)
+    except DeezerAccountError as public_error:
+        try:
+            return _gateway_favorite_artists(uid, account)
+        except DeezerAccountError as e:
+            raise DeezerAccountError(f"{public_error}; through the account's own session: {e}") from e
+
+
+def _public_favorite_artists(uid):
+    """The public API, paginated: only for a profile that is not private."""
     artists, index = [], 0
     while True:
         page = requests.get(f"{API_URL}/user/{uid}/artists", params={"limit": 100, "index": index}, timeout=30).json()
@@ -218,6 +231,24 @@ def favorite_artists(account=None):
         index += len(data)
         if not data or index >= int(page.get("total") or 0):
             return artists
+
+
+# More favorite artists than anyone keeps: the gateway answers them in one page.
+GW_FAVORITES_LIMIT = 10000
+
+
+def _gateway_favorite_artists(uid, account=None):
+    """The profile page the account sees of itself, private or not."""
+    results = _gw("deezer.pageProfile", {"USER_ID": uid, "tab": "artists", "nb": GW_FAVORITES_LIMIT}, account=account) or {}
+    tab = (results.get("TAB") or {}).get("artists")
+    if not isinstance(tab, dict):
+        # An answer of another shape: say so rather than show an empty feed.
+        raise DeezerAccountError("the profile page holds no artists list")
+    return [
+        {"id": str(a["ART_ID"]), "name": a.get("ART_NAME") or "", "picture": _cover_url(a.get("ART_PICTURE"), "artist", 250)}
+        for a in tab.get("data") or []
+        if str(a.get("ART_ID") or "").isdigit()
+    ]
 
 
 def _cover_url(md5, kind="cover", size=500):
