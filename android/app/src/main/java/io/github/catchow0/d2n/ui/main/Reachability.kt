@@ -12,17 +12,29 @@ import kotlinx.coroutines.launch
  * Whether the server answers. A call that cannot reach it reports it: the app
  * shows its banner, checks again at once, then every [everyMillis], until the
  * server answers.
+ *
+ * A call reports when it started ([now]): one sent before the server answered
+ * again (waiting out its connection timeout meanwhile) is old news, and does
+ * not turn the banner back on.
  */
 class Reachability(
     private val probe: suspend () -> Boolean,
     private val scope: CoroutineScope,
     private val everyMillis: Long = 30_000,
+    private val clock: () -> Long = System::nanoTime,
 ) {
     private val _online = MutableStateFlow(true)
     val online: StateFlow<Boolean> = _online
     private var checking: Job? = null
 
-    fun reportFailure() {
+    @Volatile
+    private var answeredAt = Long.MIN_VALUE
+
+    /** The time to give [reportFailure] for a call starting now. */
+    fun now(): Long = clock()
+
+    fun reportFailure(startedAt: Long = now()) {
+        if (startedAt < answeredAt) return
         _online.value = false
         if (checking?.isActive == true) return
         checking = scope.launch {
@@ -41,7 +53,7 @@ class Reachability(
     }
 
     private suspend fun answers(): Boolean = try {
-        probe()
+        probe().also { if (it) answeredAt = clock() }
     } catch (e: CancellationException) {
         throw e
     } catch (e: Exception) {

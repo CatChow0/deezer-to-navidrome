@@ -25,6 +25,7 @@ import io.github.catchow0.d2n.ui.components.ButtonKind
 import io.github.catchow0.d2n.ui.components.Chip
 import io.github.catchow0.d2n.ui.components.D2nButton
 import io.github.catchow0.d2n.ui.components.GlassCard
+import io.github.catchow0.d2n.ui.components.LocalOnline
 import io.github.catchow0.d2n.ui.theme.D2nColors
 
 /** One task live: where it is, its events newest first, and Cancel. */
@@ -62,7 +63,7 @@ fun TaskScreen(vm: TaskViewModel, onBack: () -> Unit) {
                 }
                 (last?.message ?: summary?.message)?.let { Text(it, color = D2nColors.TextSoft) }
                 if (summary?.cancellable == true && ended == null) {
-                    D2nButton("Cancel", vm::cancel, kind = ButtonKind.Danger)
+                    D2nButton("Cancel", vm::cancel, kind = ButtonKind.Danger, enabled = LocalOnline.current)
                 }
             }
         }

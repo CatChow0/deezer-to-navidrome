@@ -3,6 +3,7 @@ package io.github.catchow0.d2n.ui.madeforyou
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -289,7 +290,7 @@ private fun Versions(state: MixesAnswer, busy: Set<String>, online: Boolean, vm:
         }
         SegmentedTabs(MODES, s.mixMode, { mode ->
             if (mode == "blend" && blocked.isNotBlank()) vm.notifyBlocked(blocked) else if (mode != s.mixMode) vm.setMode(mode)
-        })
+        }, enabled = online && "settings" !in busy)
         Text(modeText(s.mixMode, s.blendNewPercent), style = MaterialTheme.typography.bodyMedium, color = D2nColors.TextSoft)
         if (s.mixMode != "blend" && blocked.isNotBlank()) Banner("Daily Mix+ cannot be chosen. $blocked", BannerTone.Warn)
         ToggleRow(
@@ -314,7 +315,7 @@ private fun Versions(state: MixesAnswer, busy: Set<String>, online: Boolean, vm:
         if (a.paused) Text("Fix missing metadata was cancelled, so it does not run on its own.", style = MaterialTheme.typography.bodySmall, color = D2nColors.Muted)
         if (a.writeOff) Text("Writing to your files is off since the last undo. Fix missing metadata turns it back on.", style = MaterialTheme.typography.bodySmall, color = D2nColors.Muted)
         state.lastRun?.notes?.takeIf { it.isNotEmpty() }?.let { Banner(it.joinToString(" "), BannerTone.Warn) }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             D2nButton(
                 if (state.running) "Generating…" else "Regenerate now",
                 vm::generate,

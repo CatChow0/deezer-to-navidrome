@@ -14,6 +14,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -108,17 +110,24 @@ abstract class D2nViewModel(protected val deps: ScreenDeps) : ViewModel() {
         const val IDLE_WATCH_MILLIS = 15_000L
     }
 
-    /** Reads again each time the profile changes, starting now. */
+    /**
+     * Reads again each time the profile changes, starting now, and when the
+     * server answers again: what showed meanwhile was the saved copy.
+     */
     protected fun followProfile(load: suspend () -> Unit) {
         viewModelScope.launch { deps.profile.collectLatest { load() } }
+        viewModelScope.launch { deps.reachability.online.drop(1).filter { it }.collect { load() } }
     }
 
     /** A call to the server. Unreachable also lights the app's banner. */
-    protected suspend fun <T> call(block: suspend D2nApi.() -> T): T = try {
-        apiCall { deps.api().block() }
-    } catch (e: Unreachable) {
-        deps.reachability.reportFailure()
-        throw e
+    protected suspend fun <T> call(block: suspend D2nApi.() -> T): T {
+        val started = deps.reachability.now()
+        return try {
+            apiCall { deps.api().block() }
+        } catch (e: Unreachable) {
+            deps.reachability.reportFailure(started)
+            throw e
+        }
     }
 
     /** Fills a [Remote] from the server. */

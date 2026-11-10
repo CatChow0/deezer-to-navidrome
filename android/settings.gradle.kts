@@ -16,3 +16,6 @@ dependencyResolutionManagement {
 
 rootProject.name = "d2n"
 include(":app")
+// The baseline profile's generator runs on a PC with an emulator. The Docker
+// build's context holds app/ alone, so there it is left out.
+if (file("baselineprofile").isDirectory) include(":baselineprofile")

@@ -3,7 +3,8 @@
 - Every answer is a JSON object. A failure is {"error": {"code", "message"}}
   with the matching HTTP status.
 - Reads carry an ETag: a client sends it back in If-None-Match and gets a 304
-  when nothing changed, which is what its offline cache relies on.
+  when nothing changed, which is what its offline cache relies on. They vary
+  on X-Navidrome-Account, so that cache keeps each profile's copy apart.
 - A request is for the profile named in the X-Navidrome-Account header, else
   the default Navidrome account.
 - A device signs in once (POST /api/v1/auth/login) and sends its token as
@@ -43,7 +44,13 @@ def ok(payload=None, status=200, cache=False):
     response = current_app.response_class(text, status=status, mimetype="application/json")
     if cache and status == 200:
         response.set_etag(hashlib.sha256(text.encode()).hexdigest()[:24])
-        response.headers["Cache-Control"] = "private, no-cache"
+        # Stale at once, so each read asks again (a 304 when unchanged), but
+        # not no-cache: with it, a client's cache refuses to show the saved
+        # copy while the server is unreachable.
+        response.headers["Cache-Control"] = "private, max-age=0"
+        # The answer depends on the profile: a client's cache keeps one copy
+        # per profile, and never shows one profile's saved data to another.
+        response.vary.add("X-Navidrome-Account")
         response.make_conditional(request)
     else:
         response.headers["Cache-Control"] = "no-store"

@@ -121,7 +121,11 @@ fun DashboardScreen(
             val own = answer.own()
             if (own.isEmpty()) {
                 item(key = "playlists-empty") {
-                    EmptyState("No playlists yet. Add a Deezer or Spotify playlist link, or import a CSV.", actionLabel = "Add a playlist", onAction = { adding = "" })
+                    EmptyState(
+                        "No playlists yet. Add a Deezer or Spotify playlist link, or import a CSV.",
+                        actionLabel = "Add a playlist".takeIf { LocalOnline.current },
+                        onAction = { adding = "" },
+                    )
                 }
             }
             items(own, key = { "p-${it.id}" }) { tile -> PlaylistListRow(tile, onClick = { onOpenPlaylist(tile.id) }) }

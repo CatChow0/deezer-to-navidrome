@@ -71,6 +71,9 @@ class AppGraph(context: Context) {
         File(context.cacheDir, "net"),
         { store.state.value.let { RequestHeaders(it.token, it.profile, it.serverUrl?.toHttpUrlOrNull()) } },
         userAgent,
+        // A saved answer stood in for the server: the banner says so.
+        onSaved = { started -> reachability.reportFailure(started) },
+        offline = { !reachability.online.value },
     ) { _unauthorized.tryEmit(Unit) }
 
     /** For an address not trusted yet: never carries a token. */

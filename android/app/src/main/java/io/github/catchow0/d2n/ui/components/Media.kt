@@ -29,6 +29,8 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -64,7 +66,8 @@ fun Cover(link: String?, label: String, modifier: Modifier = Modifier, size: Dp 
         modifier
             .size(size)
             .clip(shape)
-            .background(Brush.linearGradient(listOf(D2nColors.Violet.copy(alpha = 0.45f), D2nColors.Magenta.copy(alpha = 0.3f)))),
+            .background(Brush.linearGradient(listOf(D2nColors.Violet.copy(alpha = 0.45f), D2nColors.Magenta.copy(alpha = 0.3f))))
+            .clearAndSetSemantics {},
         contentAlignment = Alignment.Center,
     ) {
         Text(label.trim().take(1).uppercase(), style = MaterialTheme.typography.titleMedium, color = D2nColors.TextSoft)
@@ -147,7 +150,7 @@ fun ListRow(
 
 /** The web's small E of an explicit track or album. */
 @Composable
-fun ExplicitMark() = Chip("E", tone = ChipTone.Idle)
+fun ExplicitMark() = Chip("E", Modifier.clearAndSetSemantics { contentDescription = "Explicit" }, tone = ChipTone.Idle)
 
 /** "3:42" from seconds. */
 fun formatDuration(seconds: Number?): String {

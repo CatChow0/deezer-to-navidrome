@@ -1000,7 +1000,15 @@ The API the Android app uses, described in [`docs/api/openapi.yaml`](docs/api/op
 <a id ="android-app"></a>
 ## 📱 Android app
 
-The app for your phone, in Kotlin and Jetpack Compose (Android 8 or later). This version signs in, picks the profile and follows the tasks in Activity; the rest of the web interface comes to it in the next versions.
+The app for your phone, in Kotlin and Jetpack Compose (Android 8 or later). It does what the web interface does, for the Navidrome profile picked at the top:
+
+- **Dashboard** and **Search**: the profile's playlists, adding one by link, ID or CSV (or by sharing a Deezer or Spotify link to the app), and Deezer search with previews and downloads.
+- **Playlists**: scans, downloading what is missing, choosing a file or a Deezer match per track, automation.
+- **Made for you**: the mixes, their limits and trial rules, and the quarantine (swipe to keep or remove).
+- **Stats**: tops, charts, artist, album and track pages, and the recaps as stories.
+- **Releases**, and every section of **Settings**, **Activity**, **What's new** and **Help** under More.
+
+When the server cannot be reached, the app says so and shows the pages it saved, for the same profile only; nothing is changed until the server answers again.
 
 ### Installing
 

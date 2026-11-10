@@ -66,7 +66,7 @@ private fun SecretRow(label: String, value: String) {
             style = MaterialTheme.typography.bodyMedium.copy(fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace),
             color = D2nColors.TextSoft,
         )
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             D2nButton(if (shown) "Hide" else "Show", { shown = !shown }, kind = ButtonKind.Ghost, small = true)
             D2nButton("Copy", { copy(label, value, true) }, kind = ButtonKind.Ghost, small = true)
         }
@@ -217,7 +217,7 @@ fun ListeningStatsScreen(vm: ListeningStatsViewModel, onBack: () -> Unit) {
                     Note("Merge adds what the sources have that is missing here and refreshes track details. It never removes a play.")
                     Note("Start clean wipes the history and rebuilds it from the sources only, so plays they no longer have are lost. It needs Navidrome's database.")
                     Note("Both keep a backup of the current history in the data folder (the last 3).")
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         D2nButton("Rebuild (merge)", vm::merge, small = true, enabled = online && s.sources.canMerge && !s.importRunning && "import" !in busy)
                         D2nButton("Start clean", vm::askClean, kind = ButtonKind.Danger, small = true, enabled = online && s.sources.canClean && !s.importRunning && "preview" !in busy)
                     }
@@ -244,7 +244,7 @@ fun ListeningStatsScreen(vm: ListeningStatsViewModel, onBack: () -> Unit) {
                     if (s.tokenFromEnv) {
                         Note("Set by the ${s.tokenEnv} environment variable.")
                     } else {
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             D2nButton(if (token.isNullOrBlank()) "Create a token" else "Make a new token", { if (token.isNullOrBlank()) vm.newToken() else ask = "new" }, kind = ButtonKind.Ghost, small = true, enabled = online && "token" !in busy)
                             if (!token.isNullOrBlank()) D2nButton("Remove the token", { ask = "remove" }, kind = ButtonKind.Danger, small = true, enabled = online && "token" !in busy)
                         }
@@ -333,7 +333,7 @@ fun DuplicatesScreen(vm: DuplicatesViewModel, onBack: () -> Unit) {
                 return@remote
             }
             item(key = "presets") {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     D2nButton("Keep the best copies", vm::keepBest, kind = ButtonKind.Ghost, small = true)
                     D2nButton("Keep everything", vm::keepAll, kind = ButtonKind.Ghost, small = true)
                 }

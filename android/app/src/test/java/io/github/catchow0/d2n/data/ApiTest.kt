@@ -104,7 +104,7 @@ class ApiTest {
 
     @Test
     fun `a read the server says is unchanged comes from the cache`() = runBlocking {
-        server.enqueue(json(200, info, "ETag" to "\"abc\"", "Cache-Control" to "private, no-cache"))
+        server.enqueue(json(200, info, "ETag" to "\"abc\"", "Cache-Control" to "private, max-age=0"))
         server.enqueue(MockResponse.Builder().code(304).addHeader("ETag", "\"abc\"").build())
         val first = apiCall { api.info() }
         val second = apiCall { api.info() }

@@ -38,14 +38,18 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import io.github.catchow0.d2n.R
 import io.github.catchow0.d2n.ui.theme.D2nColors
 import io.github.catchow0.d2n.ui.theme.D2nShapes
 
 /** The web's segmented buttons: one choice among a few, scrolling sideways when long. */
 @Composable
-fun <T> SegmentedTabs(options: List<Pair<T, String>>, selected: T, onSelect: (T) -> Unit, modifier: Modifier = Modifier) {
+fun <T> SegmentedTabs(options: List<Pair<T, String>>, selected: T, onSelect: (T) -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true) {
     Row(
         modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -58,11 +62,15 @@ fun <T> SegmentedTabs(options: List<Pair<T, String>>, selected: T, onSelect: (T)
                     .clip(D2nShapes.Chip)
                     .background(if (on) D2nColors.Violet.copy(alpha = 0.35f) else D2nColors.GlassRaised)
                     .border(1.dp, if (on) D2nColors.Violet else D2nColors.LineStrong, D2nShapes.Chip)
-                    .selectable(selected = on, role = Role.Tab, onClick = { onSelect(key) })
+                    .selectable(selected = on, enabled = enabled, role = Role.Tab, onClick = { onSelect(key) })
                     .padding(horizontal = 16.dp, vertical = 9.dp),
                 contentAlignment = Alignment.Center,
             ) {
-                Text(label, style = MaterialTheme.typography.labelLarge, color = if (on) D2nColors.Text else D2nColors.TextSoft)
+                Text(
+                    label,
+                    style = MaterialTheme.typography.labelLarge,
+                    color = (if (on) D2nColors.Text else D2nColors.TextSoft).copy(alpha = if (enabled) 1f else 0.45f),
+                )
             }
         }
     }
@@ -121,16 +129,19 @@ fun SearchField(
 fun NumberField(label: String, value: Int, onValueChange: (Int) -> Unit, range: IntRange, modifier: Modifier = Modifier, enabled: Boolean = true) {
     var text by remember(value) { mutableStateOf(value.toString()) }
     val number = text.toIntOrNull()
+    // The label sits above the field: a long one ("Tracks in each Daily Mix / Daily Mix+")
+    // wraps there instead of running over the value with a large font. TalkBack reads it on the field.
+    Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+    Text(label, Modifier.clearAndSetSemantics {}, style = MaterialTheme.typography.bodyMedium, color = if (enabled) D2nColors.Muted else D2nColors.Faint)
     OutlinedTextField(
         value = text,
         onValueChange = { typed ->
             text = typed.filter(Char::isDigit).take(6)
             text.toIntOrNull()?.takeIf { it in range }?.let(onValueChange)
         },
-        modifier = modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().semantics { contentDescription = label },
         enabled = enabled,
         singleLine = true,
-        label = { Text(label) },
         isError = number == null || number !in range,
         supportingText = if (number == null || number !in range) {
             { Text("From ${range.first} to ${range.last}", color = D2nColors.Miss) }
@@ -141,6 +152,7 @@ fun NumberField(label: String, value: Int, onValueChange: (Int) -> Unit, range: 
         shape = D2nShapes.Control,
         colors = fieldColors,
     )
+    }
 }
 
 /** A setting that is on or off, the whole row toggling it. */
@@ -220,7 +232,7 @@ fun StatTile(value: String, label: String, modifier: Modifier = Modifier) {
             .border(1.dp, D2nColors.Line, D2nShapes.Tile)
             .padding(horizontal = 14.dp, vertical = 10.dp),
     ) {
-        Text(value, style = MaterialTheme.typography.titleLarge)
-        Text(label, style = MaterialTheme.typography.labelMedium, color = D2nColors.Muted)
+        FitText(value, MaterialTheme.typography.titleLarge, minSize = 12.sp)
+        FitText(label, MaterialTheme.typography.labelMedium, color = D2nColors.Muted)
     }
 }

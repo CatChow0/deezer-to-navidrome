@@ -147,6 +147,17 @@ class Format(Base):
         again = self.get("/api/v1/info", token, **{"If-None-Match": first.headers["ETag"]})
         self.assertEqual((again.status_code, again.data), (304, b""))
 
+    def test_a_read_is_kept_per_profile(self):
+        token = self.token()
+        read = self.get("/api/v1/info", token)
+        # The app's offline cache matches on it: one profile never gets
+        # another's saved answer.
+        self.assertIn("X-Navidrome-Account", read.headers.get("Vary", ""))
+        # Asked again each time, yet kept for when the server is unreachable.
+        self.assertEqual(read.headers["Cache-Control"], "private, max-age=0")
+        failed = self.get("/api/v1/nothing-here", token)
+        self.assertEqual(failed.headers["Cache-Control"], "no-store")
+
     def test_the_profile_comes_from_the_header(self):
         from core import nd_accounts
 

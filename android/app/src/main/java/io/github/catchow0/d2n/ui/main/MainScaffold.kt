@@ -38,7 +38,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.LifecycleStartEffect
@@ -66,6 +68,7 @@ import io.github.catchow0.d2n.ui.activity.TaskScreen
 import io.github.catchow0.d2n.ui.activity.TaskViewModel
 import io.github.catchow0.d2n.ui.common.D2nViewModel
 import io.github.catchow0.d2n.ui.common.ScreenDeps
+import io.github.catchow0.d2n.ui.components.FitText
 import io.github.catchow0.d2n.ui.components.Aurora
 import io.github.catchow0.d2n.ui.components.Banner
 import io.github.catchow0.d2n.ui.components.BannerTone
@@ -190,7 +193,7 @@ import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
 @Serializable data class TaskRoute(val id: String)
 
-const val UNREACHABLE_BANNER = "Can't reach the server."
+const val UNREACHABLE_BANNER = "Can't reach the server — showing saved data. Changes wait until it is back."
 
 private data class Tab(val route: Any, val type: KClass<*>, val root: Any, val label: String, val icon: Int)
 
@@ -389,6 +392,10 @@ fun MainScaffold(graph: AppGraph, onSignedOut: (notice: String?) -> Unit, onOthe
                             unselectedIconColor = D2nColors.Muted,
                             unselectedTextColor = D2nColors.Muted,
                         )
+                        // The tabs' names grow with the font up to 115 %, all alike: past that,
+                        // five names no longer fit across a phone.
+                        val fontScale = LocalDensity.current.fontScale
+                        val tabLabel = MaterialTheme.typography.labelSmall.let { it.copy(fontSize = it.fontSize * (minOf(fontScale, 1.15f) / fontScale)) }
                         TABS.forEach { tab ->
                             NavigationBarItem(
                                 selected = tab == currentTab,
@@ -400,7 +407,7 @@ fun MainScaffold(graph: AppGraph, onSignedOut: (notice: String?) -> Unit, onOthe
                                         Icon(painterResource(tab.icon), contentDescription = null)
                                     }
                                 },
-                                label = { Text(tab.label, maxLines = 1, softWrap = false, style = MaterialTheme.typography.labelSmall) },
+                                label = { FitText(tab.label, tabLabel, minSize = 8.sp) },
                                 colors = colors,
                             )
                         }

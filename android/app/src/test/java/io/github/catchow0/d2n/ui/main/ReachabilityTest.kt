@@ -32,6 +32,30 @@ class ReachabilityTest {
     }
 
     @Test
+    fun `a call sent before the server came back does not turn the banner on again`() = runTest {
+        var up = false
+        var time = 0L
+        val reachability = Reachability({ up }, backgroundScope, clock = { time })
+        reachability.reportFailure()
+        runCurrent()
+        // A call starts while the server is down, and waits on its connection.
+        time = 10
+        val slowCall = reachability.now()
+        time = 20
+        up = true
+        reachability.retryNow()
+        runCurrent()
+        assertTrue(reachability.online.value)
+        // Its failure arrives now: old news.
+        time = 30
+        reachability.reportFailure(slowCall)
+        assertTrue(reachability.online.value)
+        // A call sent after the server came back is news.
+        reachability.reportFailure(reachability.now())
+        assertFalse(reachability.online.value)
+    }
+
+    @Test
     fun `while offline it checks every 30 seconds`() = runTest {
         val answers = ArrayDeque(listOf(false, false, true))
         var probes = 0

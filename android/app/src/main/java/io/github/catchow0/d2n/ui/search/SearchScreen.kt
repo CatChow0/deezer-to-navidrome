@@ -3,6 +3,7 @@ package io.github.catchow0.d2n.ui.search
 import android.content.Intent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.width
@@ -197,7 +198,7 @@ fun AlbumScreen(vm: AlbumViewModel, player: PreviewPlayer, title: String, onBack
                             }
                         }
                     }
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         D2nButton(
                             "Download album",
                             { vm.download("album", album.id, "${album.artist} - ${album.title}") },
@@ -261,7 +262,7 @@ fun ArtistScreen(vm: ArtistViewModel, name: String, onBack: () -> Unit, onAlbum:
                             ownedLabel(SearchKind.Artist, shown.summary, artist.nbAlbum)?.let { Chip(it, tone = ChipTone.Partial) }
                         }
                     }
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         D2nButton(
                             "Download discography",
                             { vm.download("artist", artist.id, "${artist.name} (discography)") },

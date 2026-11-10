@@ -77,8 +77,12 @@ android {
 
     buildTypes {
         getByName("release") {
-            // R8 comes in phase 9.
-            isMinifyEnabled = false
+            // R8 shrinks and optimizes the release. The libraries bring their own
+            // rules (OkHttp, Retrofit, kotlinx.serialization, Navigation, Coil,
+            // Media3); proguard-rules.pro holds only what the app adds.
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             if (keystoreFile != null) signingConfig = signingConfigs.getByName("release")
         }
         getByName("debug") {
@@ -126,10 +130,44 @@ dependencies {
     implementation(libs.coil.network.okhttp)
     implementation(libs.media3.exoplayer)
     implementation(libs.media3.datasource.okhttp)
+    // Applies src/main/baseline-prof.txt on the phone: the APK is installed
+    // from the server, not a store, so nothing else would.
+    implementation(libs.androidx.profileinstaller)
 
     testImplementation(libs.junit)
     testImplementation(libs.okhttp.mockwebserver)
     testImplementation(libs.kotlinx.coroutines.test)
+}
+
+// The baseline profile, generated on a PC by :baselineprofile (see android/README.md):
+// ./gradlew :app:generateBaselineProfile with the API 31 emulator running. The result
+// lands in src/main/baseline-prof.txt, which is versioned, so the Docker build (where
+// :baselineprofile is absent) ships it without this plugin.
+if (rootProject.findProject(":baselineprofile") != null) {
+    apply(plugin = "androidx.baselineprofile")
+    dependencies { "baselineProfile"(project(":baselineprofile")) }
+    extensions.configure<androidx.baselineprofile.gradle.consumer.BaselineProfileConsumerExtension> {
+        mergeIntoMain = true
+        automaticGenerationDuringBuild = false
+    }
+    // Without the release key on this PC, the profiling build is signed with the debug key.
+    if (keystoreFile == null) {
+        android.buildTypes.configureEach {
+            if (name.startsWith("nonMinified") || name.startsWith("benchmark")) signingConfig = android.signingConfigs.getByName("debug")
+        }
+    }
+    val keepProfile = tasks.register("keepProfile") {
+        description = "Moves the generated baseline profile to src/main/baseline-prof.txt."
+        val generated = layout.projectDirectory.dir("src/main/generated/baselineProfiles")
+        val kept = layout.projectDirectory.file("src/main/baseline-prof.txt")
+        doLast {
+            val from = generated.file("baseline-prof.txt").asFile
+            if (!from.isFile) throw GradleException("No profile at $from")
+            from.copyTo(kept.asFile, overwrite = true)
+            generated.asFile.parentFile.deleteRecursively()
+        }
+    }
+    tasks.matching { it.name == "generateBaselineProfile" }.configureEach { finalizedBy(keepProfile) }
 }
 
 // A release build without the key fails here, clearly, instead of producing
@@ -145,7 +183,7 @@ tasks.matching { it.name == "preReleaseBuild" }.configureEach {
 }
 
 // What the server image ships: the signed APK and what it is.
-val packageD2n by tasks.registering {
+tasks.register("packageD2n") {
     description = "Copies the signed release APK to build/d2n and writes app.json beside it."
     dependsOn("assembleRelease")
     val apk = layout.buildDirectory.file("outputs/apk/release/app-release.apk")

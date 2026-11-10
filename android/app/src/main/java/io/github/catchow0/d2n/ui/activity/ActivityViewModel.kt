@@ -55,11 +55,12 @@ class ActivityViewModel(
     }
 
     private suspend fun load() {
+        val started = reachability.now()
         try {
             val tasks = apiCall { api().tasks() }.tasks.sortedByDescending { it.createdAt ?: 0.0 }
             _state.update { it.copy(tasks = tasks, loading = false, refreshing = false, error = null) }
         } catch (e: Unreachable) {
-            reachability.reportFailure()
+            reachability.reportFailure(started)
             _state.update { it.copy(loading = false, refreshing = false) }
         } catch (e: ApiFailure) {
             _state.update { it.copy(loading = false, refreshing = false, error = e.message) }

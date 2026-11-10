@@ -16,21 +16,23 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.unit.sp
 import io.github.catchow0.d2n.ui.theme.D2nColors
 import io.github.catchow0.d2n.ui.theme.D2nShapes
 
 /** "Deezer → Navidrome", as at the top of the web's pages. */
 @Composable
 fun Brand(modifier: Modifier = Modifier) {
-    Text(
+    FitText(
         buildAnnotatedString {
             append("Deezer ")
             withStyle(SpanStyle(color = D2nColors.Cyan)) { append("→") }
             append(" Navidrome")
         },
+        MaterialTheme.typography.titleMedium,
         modifier,
-        style = MaterialTheme.typography.titleMedium,
         color = D2nColors.Text,
+        minSize = 12.sp,
     )
 }
 

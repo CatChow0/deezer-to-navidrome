@@ -1,5 +1,8 @@
 package io.github.catchow0.d2n.ui.stats
 
+import androidx.compose.ui.unit.sp
+import io.github.catchow0.d2n.ui.components.FitText
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -14,7 +17,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.MaterialTheme
@@ -34,7 +36,6 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.catchow0.d2n.R
@@ -147,12 +148,11 @@ fun StatsScreen(
                     SegmentedTabs(Period.entries.map { it to it.label }, choice.period, vm::setPeriod)
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         IconAction(R.drawable.ic_back, "Previous ${choice.period.label.lowercase()}", { vm.step(-1) }, enabled = vm.canStep(-1))
-                        Text(
+                        FitText(
                             overview.value?.takeIf { it.period == choice.period.api && it.key == choice.key }?.label ?: "…",
+                            MaterialTheme.typography.titleMedium,
                             Modifier.weight(1f),
-                            style = MaterialTheme.typography.titleMedium,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
+                            minSize = 12.sp,
                         )
                         // The back arrow, turned to point forward.
                         Box(Modifier.graphicsLayer(scaleX = -1f)) {
@@ -220,7 +220,8 @@ private fun ShelfCard(entry: RecapEntry, kind: String, onOpen: () -> Unit) {
     val tags = listOfNotNull("so far".takeIf { entry.soFar }, "partial".takeIf { entry.partial })
     Column(
         Modifier
-            .width(if (kind == "year") 150.dp else 130.dp)
+            // At least the web's width; wider when a large font needs it, as the shelf scrolls sideways.
+            .widthIn(min = if (kind == "year") 150.dp else 130.dp, max = 280.dp)
             .heightIn(min = 72.dp)
             .clip(D2nShapes.Tile)
             .background(if (kind == "year") D2nColors.Violet.copy(alpha = 0.3f) else D2nColors.GlassRaised)
@@ -287,7 +288,7 @@ private fun RankLine(rank: Int, kind: String, row: RankRow, max: Int, playing: S
         subtitle = row.artist,
         leading = {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("$rank", Modifier.width(22.dp), style = MaterialTheme.typography.labelMedium, color = D2nColors.Faint)
+                Text("$rank", Modifier.widthIn(min = 22.dp), maxLines = 1, softWrap = false, style = MaterialTheme.typography.labelMedium, color = D2nColors.Faint)
                 Cover(row.image, row.label, size = 44.dp, shape = if (kind == "artist") androidx.compose.foundation.shape.CircleShape else D2nShapes.Control)
             }
         },
