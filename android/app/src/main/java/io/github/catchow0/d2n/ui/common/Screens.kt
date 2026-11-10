@@ -28,6 +28,9 @@ class AppEvents {
     fun post(notice: Notice) {
         _notices.tryEmit(notice)
     }
+
+    /** The notes of a newer version are not read yet: a dot on More and on New. */
+    val unseenNotes = MutableStateFlow(false)
 }
 
 /** What every screen's ViewModel gets from the app. */

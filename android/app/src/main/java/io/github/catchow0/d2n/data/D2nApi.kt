@@ -159,6 +159,158 @@ interface D2nApi {
     @POST("api/v1/library/metadata/undo")
     suspend fun undoMetadata(): TaskStarted
 
+    // ── Settings ────────────────────────────────────────────────────────────
+
+    @GET("api/v1/settings")
+    suspend fun settings(): SettingsAnswer
+
+    @PUT("api/v1/settings")
+    suspend fun saveSettings(@Body body: SettingsChange): SettingsAnswer
+
+    @POST("api/v1/settings/clear/{what}")
+    suspend fun clear(@Path("what") what: String): ClearAnswer
+
+    @GET("api/v1/navidrome/accounts")
+    suspend fun navidromeProfiles(): NavidromeProfilesAnswer
+
+    @POST("api/v1/navidrome/accounts")
+    suspend fun createNavidromeProfile(@Body body: NavidromeProfileFields): NavidromeProfilesAnswer
+
+    @retrofit2.http.PATCH("api/v1/navidrome/accounts/{id}")
+    suspend fun updateNavidromeProfile(@Path("id") id: String, @Body body: NavidromeProfileFields): NavidromeProfilesAnswer
+
+    @DELETE("api/v1/navidrome/accounts/{id}")
+    suspend fun deleteNavidromeProfile(@Path("id") id: String): NavidromeProfilesAnswer
+
+    @POST("api/v1/navidrome/accounts/{id}/default")
+    suspend fun defaultNavidromeProfile(@Path("id") id: String): NavidromeProfilesAnswer
+
+    @POST("api/v1/navidrome/accounts/{id}/test")
+    suspend fun testNavidromeProfile(@Path("id") id: String): NavidromeProfilesAnswer
+
+    @POST("api/v1/navidrome/accounts/test")
+    suspend fun testNavidromeFields(@Body body: NavidromeProfileFields): TestAnswer
+
+    @GET("api/v1/navidrome/accounts/{id}/switch")
+    suspend fun switchPreview(@Path("id") id: String): SwitchPreviewAnswer
+
+    @POST("api/v1/navidrome/accounts/{id}/switch")
+    suspend fun switchToUser(@Path("id") id: String): TaskStarted
+
+    @GET("api/v1/deezer/accounts")
+    suspend fun deezerProfiles(): DeezerProfilesAnswer
+
+    @POST("api/v1/deezer/accounts")
+    suspend fun createDeezerProfile(@Body body: DeezerProfileFields): DeezerProfilesAnswer
+
+    @retrofit2.http.PATCH("api/v1/deezer/accounts/{id}")
+    suspend fun updateDeezerProfile(@Path("id") id: String, @Body body: DeezerProfileFields): DeezerProfilesAnswer
+
+    @DELETE("api/v1/deezer/accounts/{id}")
+    suspend fun deleteDeezerProfile(@Path("id") id: String): DeezerProfilesAnswer
+
+    @POST("api/v1/deezer/accounts/{id}/default")
+    suspend fun defaultDeezerProfile(@Path("id") id: String): DeezerProfilesAnswer
+
+    @POST("api/v1/deezer/accounts/{id}/download")
+    suspend fun downloadDeezerProfile(@Path("id") id: String): DeezerProfilesAnswer
+
+    @POST("api/v1/deezer/accounts/{id}/check")
+    suspend fun checkDeezerProfile(@Path("id") id: String): DeezerProfilesAnswer
+
+    @GET("api/v1/settings/security")
+    suspend fun security(): SecurityAnswer
+
+    @POST("api/v1/settings/password")
+    suspend fun changePassword(@Body body: PasswordRequest): Unit
+
+    @POST("api/v1/settings/api-token")
+    suspend fun newApiToken(): TokenAnswer
+
+    @PUT("api/v1/settings/webhook")
+    suspend fun setWebhook(@Body body: WebhookRequest): WebhookAnswer
+
+    @DELETE("api/v1/settings/webhook")
+    suspend fun removeWebhook(): WebhookAnswer
+
+    @POST("api/v1/settings/webhook/test")
+    suspend fun testWebhook(): WebhookTestAnswer
+
+    @GET("api/v1/devices")
+    suspend fun devices(): DevicesAnswer
+
+    @DELETE("api/v1/devices/{id}")
+    suspend fun revokeDevice(@Path("id") id: String): Unit
+
+    @GET("api/v1/stats/status")
+    suspend fun statsStatus(): StatsStatus
+
+    @POST("api/v1/stats/import")
+    suspend fun importStats(@Body body: ImportRequest): TaskStarted
+
+    @POST("api/v1/stats/import/preview")
+    suspend fun previewStatsImport(): ImportPreview
+
+    @POST("api/v1/stats/token")
+    suspend fun setStatsToken(@Body body: StatsTokenRequest): StatsTokenAnswer
+
+    @DELETE("api/v1/stats/token")
+    suspend fun deleteStatsToken(): Unit
+
+    @POST("api/v1/library/rebuild")
+    suspend fun rebuildLibrary(): TaskStarted
+
+    @POST("api/v1/downloads/repair")
+    suspend fun repairDownloads(): TaskStarted
+
+    @POST("api/v1/dedup/start")
+    suspend fun scanDuplicates(): TaskStarted
+
+    @GET("api/v1/dedup/report")
+    suspend fun duplicates(): DuplicateReportAnswer
+
+    @POST("api/v1/dedup/apply")
+    suspend fun applyDuplicates(@Body body: DuplicateApply): DuplicateApplyAnswer
+
+    // ── New and Help ────────────────────────────────────────────────────────
+
+    @GET("api/v1/content/notes")
+    suspend fun notes(): NotesAnswer
+
+    @POST("api/v1/content/notes/seen")
+    suspend fun notesSeen(): Unit
+
+    @GET("api/v1/content/help")
+    suspend fun help(): HelpAnswer
+
+    // ── Stats ───────────────────────────────────────────────────────────────
+
+    @GET("api/v1/stats/overview")
+    suspend fun statsOverview(@Query("period") period: String, @Query("key") key: String, @Query("tz") tz: String): StatsOverview
+
+    @GET("api/v1/stats/recaps")
+    suspend fun recaps(@Query("tz") tz: String): RecapIndex
+
+    @GET("api/v1/stats/recap")
+    suspend fun recap(@Query("type") kind: String, @Query("key") key: String, @Query("tz") tz: String): Recap
+
+    @GET("api/v1/stats/{kind}/{id}")
+    suspend fun statsEntity(@Path("kind") kind: String, @Path("id") id: Long, @Query("tz") tz: String): StatsEntity
+
+    @GET("api/v1/stats/plays")
+    suspend fun plays(@Query("q") query: String, @Query("page") page: Int): PlaysPage
+
+    // ── Releases ────────────────────────────────────────────────────────────
+
+    @GET("api/v1/releases")
+    suspend fun releases(): ReleasesAnswer
+
+    @POST("api/v1/releases/refresh")
+    suspend fun refreshReleases(): TaskStarted
+
+    @POST("api/v1/releases/mute")
+    suspend fun muteArtist(@Body body: MuteRequest): MutedAnswer
+
     @GET("api/v1/deezer/mixes")
     suspend fun deezerMixes(): DeezerMixesAnswer
 

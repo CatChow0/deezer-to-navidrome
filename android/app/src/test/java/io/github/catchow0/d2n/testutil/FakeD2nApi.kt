@@ -44,6 +44,40 @@ import io.github.catchow0.d2n.data.SearchAnswer
 import io.github.catchow0.d2n.data.SourceMatchRequest
 import io.github.catchow0.d2n.data.TaskStarted
 import io.github.catchow0.d2n.data.TrackDownloadRequest
+import io.github.catchow0.d2n.data.ClearAnswer
+import io.github.catchow0.d2n.data.DeezerProfileFields
+import io.github.catchow0.d2n.data.DeezerProfilesAnswer
+import io.github.catchow0.d2n.data.DevicesAnswer
+import io.github.catchow0.d2n.data.DuplicateApply
+import io.github.catchow0.d2n.data.DuplicateApplyAnswer
+import io.github.catchow0.d2n.data.DuplicateReportAnswer
+import io.github.catchow0.d2n.data.HelpAnswer
+import io.github.catchow0.d2n.data.ImportPreview
+import io.github.catchow0.d2n.data.ImportRequest
+import io.github.catchow0.d2n.data.MuteRequest
+import io.github.catchow0.d2n.data.MutedAnswer
+import io.github.catchow0.d2n.data.NavidromeProfileFields
+import io.github.catchow0.d2n.data.NavidromeProfilesAnswer
+import io.github.catchow0.d2n.data.NotesAnswer
+import io.github.catchow0.d2n.data.PasswordRequest
+import io.github.catchow0.d2n.data.PlaysPage
+import io.github.catchow0.d2n.data.Recap
+import io.github.catchow0.d2n.data.RecapIndex
+import io.github.catchow0.d2n.data.ReleasesAnswer
+import io.github.catchow0.d2n.data.SecurityAnswer
+import io.github.catchow0.d2n.data.SettingsAnswer
+import io.github.catchow0.d2n.data.SettingsChange
+import io.github.catchow0.d2n.data.StatsEntity
+import io.github.catchow0.d2n.data.StatsOverview
+import io.github.catchow0.d2n.data.StatsStatus
+import io.github.catchow0.d2n.data.StatsTokenAnswer
+import io.github.catchow0.d2n.data.StatsTokenRequest
+import io.github.catchow0.d2n.data.SwitchPreviewAnswer
+import io.github.catchow0.d2n.data.TestAnswer
+import io.github.catchow0.d2n.data.TokenAnswer
+import io.github.catchow0.d2n.data.WebhookAnswer
+import io.github.catchow0.d2n.data.WebhookRequest
+import io.github.catchow0.d2n.data.WebhookTestAnswer
 import okhttp3.MultipartBody
 
 /** A D2nApi whose answers each test sets; a call nobody set fails the test.
@@ -115,6 +149,54 @@ class FakeD2nApi : D2nApi {
     override suspend fun emptyTrash(): MixesAnswer = reply("emptyTrash")
     override suspend fun fixMetadata(): TaskStarted = reply("fixMetadata")
     override suspend fun undoMetadata(): TaskStarted = reply("undoMetadata")
+    override suspend fun settings(): SettingsAnswer = reply("settings")
+    override suspend fun saveSettings(body: SettingsChange): SettingsAnswer = reply("saveSettings", body)
+    override suspend fun clear(what: String): ClearAnswer = reply("clear", what)
+    override suspend fun navidromeProfiles(): NavidromeProfilesAnswer = reply("navidromeProfiles")
+    override suspend fun createNavidromeProfile(body: NavidromeProfileFields): NavidromeProfilesAnswer = reply("createNavidromeProfile", body)
+    override suspend fun updateNavidromeProfile(id: String, body: NavidromeProfileFields): NavidromeProfilesAnswer = reply("updateNavidromeProfile", id, body)
+    override suspend fun deleteNavidromeProfile(id: String): NavidromeProfilesAnswer = reply("deleteNavidromeProfile", id)
+    override suspend fun defaultNavidromeProfile(id: String): NavidromeProfilesAnswer = reply("defaultNavidromeProfile", id)
+    override suspend fun testNavidromeProfile(id: String): NavidromeProfilesAnswer = reply("testNavidromeProfile", id)
+    override suspend fun testNavidromeFields(body: NavidromeProfileFields): TestAnswer = reply("testNavidromeFields", body)
+    override suspend fun switchPreview(id: String): SwitchPreviewAnswer = reply("switchPreview", id)
+    override suspend fun switchToUser(id: String): TaskStarted = reply("switchToUser", id)
+    override suspend fun deezerProfiles(): DeezerProfilesAnswer = reply("deezerProfiles")
+    override suspend fun createDeezerProfile(body: DeezerProfileFields): DeezerProfilesAnswer = reply("createDeezerProfile", body)
+    override suspend fun updateDeezerProfile(id: String, body: DeezerProfileFields): DeezerProfilesAnswer = reply("updateDeezerProfile", id, body)
+    override suspend fun deleteDeezerProfile(id: String): DeezerProfilesAnswer = reply("deleteDeezerProfile", id)
+    override suspend fun defaultDeezerProfile(id: String): DeezerProfilesAnswer = reply("defaultDeezerProfile", id)
+    override suspend fun downloadDeezerProfile(id: String): DeezerProfilesAnswer = reply("downloadDeezerProfile", id)
+    override suspend fun checkDeezerProfile(id: String): DeezerProfilesAnswer = reply("checkDeezerProfile", id)
+    override suspend fun security(): SecurityAnswer = reply("security")
+    override suspend fun changePassword(body: PasswordRequest): Unit = reply("changePassword", body)
+    override suspend fun newApiToken(): TokenAnswer = reply("newApiToken")
+    override suspend fun setWebhook(body: WebhookRequest): WebhookAnswer = reply("setWebhook", body)
+    override suspend fun removeWebhook(): WebhookAnswer = reply("removeWebhook")
+    override suspend fun testWebhook(): WebhookTestAnswer = reply("testWebhook")
+    override suspend fun devices(): DevicesAnswer = reply("devices")
+    override suspend fun revokeDevice(id: String): Unit = reply("revokeDevice", id)
+    override suspend fun statsStatus(): StatsStatus = reply("statsStatus")
+    override suspend fun importStats(body: ImportRequest): TaskStarted = reply("importStats", body)
+    override suspend fun previewStatsImport(): ImportPreview = reply("previewStatsImport")
+    override suspend fun setStatsToken(body: StatsTokenRequest): StatsTokenAnswer = reply("setStatsToken", body)
+    override suspend fun deleteStatsToken(): Unit = reply("deleteStatsToken")
+    override suspend fun rebuildLibrary(): TaskStarted = reply("rebuildLibrary")
+    override suspend fun repairDownloads(): TaskStarted = reply("repairDownloads")
+    override suspend fun scanDuplicates(): TaskStarted = reply("scanDuplicates")
+    override suspend fun duplicates(): DuplicateReportAnswer = reply("duplicates")
+    override suspend fun applyDuplicates(body: DuplicateApply): DuplicateApplyAnswer = reply("applyDuplicates", body)
+    override suspend fun notes(): NotesAnswer = reply("notes")
+    override suspend fun notesSeen(): Unit = reply("notesSeen")
+    override suspend fun help(): HelpAnswer = reply("help")
+    override suspend fun statsOverview(period: String, key: String, tz: String): StatsOverview = reply("statsOverview", period, key, tz)
+    override suspend fun recaps(tz: String): RecapIndex = reply("recaps", tz)
+    override suspend fun recap(kind: String, key: String, tz: String): Recap = reply("recap", kind, key, tz)
+    override suspend fun statsEntity(kind: String, id: Long, tz: String): StatsEntity = reply("statsEntity", kind, id, tz)
+    override suspend fun plays(query: String, page: Int): PlaysPage = reply("plays", query, page)
+    override suspend fun releases(): ReleasesAnswer = reply("releases")
+    override suspend fun refreshReleases(): TaskStarted = reply("refreshReleases")
+    override suspend fun muteArtist(body: MuteRequest): MutedAnswer = reply("muteArtist", body)
     override suspend fun deezerMixes(): DeezerMixesAnswer = reply("deezerMixes")
     override suspend fun followMix(body: FollowMixRequest): FollowAnswer = reply("followMix", body)
 }

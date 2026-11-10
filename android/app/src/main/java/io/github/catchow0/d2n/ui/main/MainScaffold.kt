@@ -92,7 +92,37 @@ import io.github.catchow0.d2n.ui.search.ArtistScreen
 import io.github.catchow0.d2n.ui.search.ArtistViewModel
 import io.github.catchow0.d2n.ui.search.SearchScreen
 import io.github.catchow0.d2n.ui.search.SearchViewModel
+import io.github.catchow0.d2n.ui.releases.ReleasesScreen
+import io.github.catchow0.d2n.ui.releases.ReleasesViewModel
+import io.github.catchow0.d2n.ui.content.HelpScreen
+import io.github.catchow0.d2n.ui.content.HelpSectionScreen
+import io.github.catchow0.d2n.ui.content.HelpViewModel
+import io.github.catchow0.d2n.ui.content.NotesScreen
+import io.github.catchow0.d2n.ui.content.NotesViewModel
+import io.github.catchow0.d2n.ui.settings.DeezerAccountsScreen
+import io.github.catchow0.d2n.ui.settings.DeezerAccountsViewModel
+import io.github.catchow0.d2n.ui.settings.DuplicatesScreen
+import io.github.catchow0.d2n.ui.settings.DuplicatesViewModel
+import io.github.catchow0.d2n.ui.settings.ListeningStatsScreen
+import io.github.catchow0.d2n.ui.settings.ListeningStatsViewModel
+import io.github.catchow0.d2n.ui.settings.MaintenanceScreen
+import io.github.catchow0.d2n.ui.settings.MaintenanceViewModel
+import io.github.catchow0.d2n.ui.settings.MusicSettingsScreen
+import io.github.catchow0.d2n.ui.settings.MusicSettingsViewModel
+import io.github.catchow0.d2n.ui.settings.NavidromeAccountsScreen
+import io.github.catchow0.d2n.ui.settings.NavidromeAccountsViewModel
+import io.github.catchow0.d2n.ui.settings.ResetScreen
+import io.github.catchow0.d2n.ui.settings.SecurityScreen
+import io.github.catchow0.d2n.ui.settings.SecurityViewModel
+import io.github.catchow0.d2n.ui.settings.SettingsHome
+import io.github.catchow0.d2n.ui.settings.SettingsPage
 import io.github.catchow0.d2n.ui.share.resolveShared
+import io.github.catchow0.d2n.ui.stats.RecapStory
+import io.github.catchow0.d2n.ui.stats.RecapViewModel
+import io.github.catchow0.d2n.ui.stats.StatsEntityScreen
+import io.github.catchow0.d2n.ui.stats.StatsEntityViewModel
+import io.github.catchow0.d2n.ui.stats.StatsScreen
+import io.github.catchow0.d2n.ui.stats.StatsViewModel
 import io.github.catchow0.d2n.ui.theme.D2nColors
 import io.github.catchow0.d2n.ui.update.UpdateBanner
 import io.github.catchow0.d2n.ui.update.UpdateViewModel
@@ -143,6 +173,21 @@ import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 // Above the tabs: reached from any of them (the top bar, a snackbar).
 @Serializable object ActivityRoute
 
+@Serializable data class StatsEntityRoute(val kind: String, val id: Long)
+
+@Serializable object SettingsRoute
+
+/** A page of Settings, by its [SettingsPage] name. */
+@Serializable data class SettingsPageRoute(val page: String)
+
+@Serializable object DuplicatesRoute
+
+@Serializable object NotesRoute
+
+@Serializable object HelpRoute
+
+@Serializable data class HelpSectionRoute(val id: String)
+
 @Serializable data class TaskRoute(val id: String)
 
 const val UNREACHABLE_BANNER = "Can't reach the server."
@@ -166,6 +211,17 @@ class RunningTasksViewModel(deps: ScreenDeps) : D2nViewModel(deps) {
     init {
         // A task just started: count it at once.
         viewModelScope.launch { deps.events.notices.collect { if (it.taskId != null) poll() } }
+    }
+
+    /** Whether a newer version's notes wait to be read: the dot on More. */
+    fun checkNotes() {
+        viewModelScope.launch {
+            try {
+                deps.events.unseenNotes.value = call { notes() }.unseen
+            } catch (e: ApiFailure) {
+                // The dot waits for the next start.
+            }
+        }
     }
 
     fun start() {
@@ -229,6 +285,7 @@ fun MainScaffold(graph: AppGraph, onSignedOut: (notice: String?) -> Unit, onOthe
     val update by updates.state.collectAsStateWithLifecycle()
     val running by tasks.running.collectAsStateWithLifecycle()
     val now by graph.player.now.collectAsStateWithLifecycle()
+    val unseenNotes by graph.events.unseenNotes.collectAsStateWithLifecycle()
     val shared by graph.sharedLink.collectAsStateWithLifecycle()
     val stored by graph.store.state.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
@@ -249,6 +306,7 @@ fun MainScaffold(graph: AppGraph, onSignedOut: (notice: String?) -> Unit, onOthe
     // Leaving the app pauses the preview: it never plays in the background.
     LifecycleEventEffect(Lifecycle.Event.ON_STOP) { graph.player.pause() }
     LifecycleStartEffect(tasks) {
+        tasks.checkNotes()
         tasks.start()
         onStopOrDispose { tasks.stop() }
     }
@@ -335,7 +393,13 @@ fun MainScaffold(graph: AppGraph, onSignedOut: (notice: String?) -> Unit, onOthe
                             NavigationBarItem(
                                 selected = tab == currentTab,
                                 onClick = { inner.openTab(tab, currentTab.takeIf { inTab >= 0 }) },
-                                icon = { Icon(painterResource(tab.icon), contentDescription = null) },
+                                icon = {
+                                    if (tab.route == MoreTab && unseenNotes) {
+                                        BadgedBox(badge = { Badge(containerColor = D2nColors.Cyan) }) { Icon(painterResource(tab.icon), contentDescription = "New notes") }
+                                    } else {
+                                        Icon(painterResource(tab.icon), contentDescription = null)
+                                    }
+                                },
                                 label = { Text(tab.label, maxLines = 1, softWrap = false, style = MaterialTheme.typography.labelSmall) },
                                 colors = colors,
                             )
@@ -358,8 +422,10 @@ private fun Tabs(
     shared: String?,
 ) {
     val deps = graph.screens
+    val unseenNotes by deps.events.unseenNotes.collectAsStateWithLifecycle()
     val back: () -> Unit = { inner.popBackStack() }
     val openPlaylist: (String) -> Unit = { inner.navigate(PlaylistRoute(it)) }
+    val openSettings: (SettingsPage) -> Unit = { page -> inner.navigate(SettingsPageRoute(page.name)) }
     NavHost(inner, startDestination = DashboardTab) {
         navigation<DashboardTab>(startDestination = DashboardRoute) {
             composable<DashboardRoute> {
@@ -380,14 +446,6 @@ private fun Tabs(
                     onAlbum = { id, title -> inner.navigate(AlbumRoute(id, title)) },
                     onArtist = { id, name -> inner.navigate(ArtistRoute(id, name)) },
                 )
-            }
-            composable<AlbumRoute> { entry ->
-                val route = entry.toRoute<AlbumRoute>()
-                AlbumScreen(viewModel { AlbumViewModel(deps, route.id) }, graph.player, route.title, onBack = back)
-            }
-            composable<ArtistRoute> { entry ->
-                val route = entry.toRoute<ArtistRoute>()
-                ArtistScreen(viewModel { ArtistViewModel(deps, route.id) }, route.name, onBack = back, onAlbum = { id, title -> inner.navigate(AlbumRoute(id, title)) })
             }
             composable<PlaylistRoute> { entry ->
                 val route = entry.toRoute<PlaylistRoute>()
@@ -412,10 +470,24 @@ private fun Tabs(
             composable<DeezerMixesRoute> { DeezerMixesScreen(viewModel { DeezerMixesViewModel(deps) }, onBack = back) }
         }
         navigation<StatsTab>(startDestination = StatsRoute) {
-            composable<StatsRoute> { Placeholder("Stats", "Your listening stats come to the app in the next step.") }
+            composable<StatsRoute> {
+                var recap by rememberSaveable { mutableStateOf<List<String>?>(null) }
+                StatsScreen(
+                    viewModel { StatsViewModel(deps) },
+                    graph.player,
+                    onEntity = { kind, id -> inner.navigate(StatsEntityRoute(kind, id)) },
+                    onRecap = { kind, key -> recap = listOf(kind, key) },
+                    onSettings = { openSettings(SettingsPage.Listening) },
+                )
+                recap?.let { (kind, key) ->
+                    RecapStory(viewModel(key = "recap-$kind-$key") { RecapViewModel(deps, kind, key) }, graph.player, onClose = { recap = null })
+                }
+            }
         }
         navigation<ReleasesTab>(startDestination = ReleasesRoute) {
-            composable<ReleasesRoute> { Placeholder("Releases", "The release feed comes to the app in the next step.") }
+            composable<ReleasesRoute> {
+                ReleasesScreen(viewModel { ReleasesViewModel(deps) }, onAlbum = { id, title -> inner.navigate(AlbumRoute(id, title)) }, onSettings = { openSettings(SettingsPage.Deezer) })
+            }
         }
         navigation<MoreTab>(startDestination = MoreRoute) {
             composable<MoreRoute> {
@@ -426,8 +498,45 @@ private fun Tabs(
                     onSignedOut = { onSignedOut(null) },
                     onOtherServer = onOtherServer,
                     onActivity = { inner.navigate(ActivityRoute) },
+                    onSettings = { inner.navigate(SettingsRoute) },
+                    onNotes = { inner.navigate(NotesRoute) },
+                    onHelp = { inner.navigate(HelpRoute) },
+                    unseenNotes = unseenNotes,
                 )
             }
+            composable<SettingsRoute> { SettingsHome(onBack = back, onPage = openSettings) }
+            composable<SettingsPageRoute> { entry ->
+                when (SettingsPage.valueOf(entry.toRoute<SettingsPageRoute>().page)) {
+                    SettingsPage.Music -> MusicSettingsScreen(viewModel { MusicSettingsViewModel(deps) }, onBack = back)
+                    SettingsPage.Navidrome -> NavidromeAccountsScreen(viewModel { NavidromeAccountsViewModel(deps) }, onBack = back)
+                    SettingsPage.Deezer -> DeezerAccountsScreen(viewModel { DeezerAccountsViewModel(deps) }, onBack = back)
+                    SettingsPage.Listening -> ListeningStatsScreen(viewModel { ListeningStatsViewModel(deps) }, onBack = back)
+                    SettingsPage.Security -> SecurityScreen(viewModel { SecurityViewModel(deps) }, onBack = back)
+                    SettingsPage.Maintenance -> MaintenanceScreen(viewModel { MaintenanceViewModel(deps) }, onBack = back, onDuplicates = { inner.navigate(DuplicatesRoute) })
+                    SettingsPage.Reset -> ResetScreen(viewModel { MaintenanceViewModel(deps) }, onBack = back)
+                }
+            }
+            composable<DuplicatesRoute> { DuplicatesScreen(viewModel { DuplicatesViewModel(deps) }, onBack = back) }
+            composable<NotesRoute> { NotesScreen(viewModel { NotesViewModel(deps) }, onBack = back) }
+            composable<HelpRoute> { HelpScreen(viewModel { HelpViewModel(deps) }, onBack = back, onSection = { inner.navigate(HelpSectionRoute(it)) }) }
+            composable<HelpSectionRoute> { entry ->
+                // The sections are read once, on the Help screen's ViewModel.
+                val help = inner.previousBackStackEntry?.takeIf { it.destination.hasRoute(HelpRoute::class) }
+                val vm: HelpViewModel = if (help != null) viewModel(help) { HelpViewModel(deps) } else viewModel { HelpViewModel(deps) }
+                HelpSectionScreen(vm, entry.toRoute<HelpSectionRoute>().id, onBack = back)
+            }
+        }
+        composable<AlbumRoute> { entry ->
+            val route = entry.toRoute<AlbumRoute>()
+            AlbumScreen(viewModel { AlbumViewModel(deps, route.id) }, graph.player, route.title, onBack = back)
+        }
+        composable<ArtistRoute> { entry ->
+            val route = entry.toRoute<ArtistRoute>()
+            ArtistScreen(viewModel { ArtistViewModel(deps, route.id) }, route.name, onBack = back, onAlbum = { id, title -> inner.navigate(AlbumRoute(id, title)) })
+        }
+        composable<StatsEntityRoute> { entry ->
+            val route = entry.toRoute<StatsEntityRoute>()
+            StatsEntityScreen(viewModel { StatsEntityViewModel(deps, route.kind, route.id) }, graph.player, onBack = back)
         }
         composable<ActivityRoute> {
             ActivityScreen(viewModel { ActivityViewModel(graph::requireApi, graph.reachability) }, onBack = back) { id -> inner.navigate(TaskRoute(id)) }
@@ -443,10 +552,3 @@ private fun Tabs(
     }
 }
 
-/** A tab whose screens come in the next step. */
-@Composable
-private fun Placeholder(title: String, message: String) {
-    ScreenScaffold(title = title) {
-        item { EmptyState(message) }
-    }
-}

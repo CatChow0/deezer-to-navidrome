@@ -1,6 +1,7 @@
 package io.github.catchow0.d2n.ui.components
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -55,6 +56,8 @@ fun ScreenScaffold(
     refreshing: Boolean = false,
     onRefresh: (() -> Unit)? = null,
     state: LazyListState = rememberLazyListState(),
+    /** Stays under the list: the actions of a long one. */
+    bottomBar: (@Composable () -> Unit)? = null,
     content: LazyListScope.() -> Unit,
 ) {
     Column(Modifier.fillMaxSize()) {
@@ -81,11 +84,14 @@ fun ScreenScaffold(
                 content = content,
             )
         }
-        if (onRefresh != null) {
-            PullToRefreshBox(isRefreshing = refreshing, onRefresh = onRefresh, modifier = Modifier.fillMaxSize()) { list() }
-        } else {
-            list()
+        Box(Modifier.weight(1f).fillMaxWidth()) {
+            if (onRefresh != null) {
+                PullToRefreshBox(isRefreshing = refreshing, onRefresh = onRefresh, modifier = Modifier.fillMaxSize()) { list() }
+            } else {
+                list()
+            }
         }
+        bottomBar?.invoke()
     }
 }
 

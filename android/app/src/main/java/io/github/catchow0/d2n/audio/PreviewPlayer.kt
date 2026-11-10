@@ -56,6 +56,7 @@ class PreviewPlayer(
     val now: StateFlow<NowPlaying?> = _now
 
     private var player: ExoPlayer? = null
+    private var fallback: Triple<String, String, String>? = null
     private var ticker: Job? = null
     private var loading: Job? = null
 
@@ -85,20 +86,34 @@ class PreviewPlayer(
         }
     }
 
-    /** A file the server serves itself, such as a recap's track. */
-    fun playUrl(id: String, url: String, title: String, artist: String, cover: String? = null) {
-        if (_now.value?.id == id) {
-            toggle()
-            return
-        }
+    /**
+     * A file the server serves itself, such as a recap's track, from [startAtMs].
+     * When it cannot be played, the Deezer preview of [fallbackDeezerId] plays
+     * instead, and nothing is said: a recap goes on in silence at worst.
+     */
+    fun playUrl(
+        id: String,
+        url: String,
+        title: String,
+        artist: String,
+        cover: String? = null,
+        startAtMs: Long = 0,
+        fallbackDeezerId: String? = null,
+    ) {
+        if (_now.value?.id == id) return
         stop()
         _now.value = NowPlaying(id, title, artist, cover)
-        start(url, 1f)
+        fallback = fallbackDeezerId?.takeIf { it.isNotBlank() }?.let { Triple(it, title, artist) }
+        start(url, VOLUME, startAtMs)
     }
 
     fun toggle() {
         val p = player ?: return
         if (p.isPlaying) p.pause() else p.play()
+    }
+
+    fun resume() {
+        player?.takeIf { _now.value != null }?.play()
     }
 
     /** Leaving the app pauses; it never plays in the background. */
@@ -107,6 +122,7 @@ class PreviewPlayer(
     }
 
     fun stop() {
+        fallback = null
         loading?.cancel()
         ticker?.cancel()
         player?.run {
@@ -136,17 +152,22 @@ class PreviewPlayer(
                 }
 
                 override fun onPlayerError(error: PlaybackException) {
+                    val instead = fallback
                     stop()
-                    events.post(Notice("The preview cannot be played.", error = true))
+                    if (instead != null) {
+                        playDeezer(instead.first, instead.second, instead.third)
+                    } else {
+                        events.post(Notice("The preview cannot be played.", error = true))
+                    }
                 }
             })
             player = created
         }
 
-    private fun start(url: String, volume: Float) {
+    private fun start(url: String, volume: Float, startAtMs: Long = 0) {
         val p = ensurePlayer()
         p.volume = volume
-        p.setMediaItem(MediaItem.fromUri(url))
+        p.setMediaItem(MediaItem.fromUri(url), startAtMs)
         p.prepare()
         p.play()
         ticker?.cancel()

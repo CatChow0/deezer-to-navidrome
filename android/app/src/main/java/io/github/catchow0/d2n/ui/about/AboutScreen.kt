@@ -21,7 +21,10 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.catchow0.d2n.ui.components.ButtonKind
 import io.github.catchow0.d2n.ui.components.D2nButton
+import io.github.catchow0.d2n.ui.components.Chip
+import io.github.catchow0.d2n.ui.components.ChipTone
 import io.github.catchow0.d2n.ui.components.GlassCard
+import io.github.catchow0.d2n.ui.components.ListRow
 import io.github.catchow0.d2n.ui.main.SessionViewModel
 import io.github.catchow0.d2n.ui.theme.D2nColors
 import io.github.catchow0.d2n.ui.update.UpdateViewModel
@@ -43,6 +46,10 @@ fun AboutScreen(
     onSignedOut: () -> Unit,
     onOtherServer: () -> Unit,
     onActivity: () -> Unit = {},
+    onSettings: () -> Unit = {},
+    onNotes: () -> Unit = {},
+    onHelp: () -> Unit = {},
+    unseenNotes: Boolean = false,
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
     val update by updates.state.collectAsStateWithLifecycle()
@@ -52,7 +59,16 @@ fun AboutScreen(
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Text("More", Modifier.semantics { heading() }, style = MaterialTheme.typography.headlineSmall)
-        D2nButton("Activity", onActivity, Modifier.fillMaxWidth(), kind = ButtonKind.Ghost, icon = R.drawable.ic_activity)
+        ListRow("Settings", subtitle = "Folders, accounts, sign-in, maintenance", onClick = onSettings, clickLabel = "Open")
+        ListRow("Activity", subtitle = "Scans, downloads and rebuilds, live", onClick = onActivity, clickLabel = "Open")
+        ListRow(
+            "What's new",
+            subtitle = "The notes of each version",
+            chips = if (unseenNotes) ({ Chip("New", tone = ChipTone.Info) }) else null,
+            onClick = onNotes,
+            clickLabel = "Open",
+        )
+        ListRow("Help", subtitle = "How each part works", onClick = onHelp, clickLabel = "Open")
         GlassCard(Modifier.fillMaxWidth()) {
             Text("This app", style = MaterialTheme.typography.titleSmall)
             InfoRow("Version", "${state.appVersion} (${state.commit})")
