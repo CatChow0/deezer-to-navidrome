@@ -73,6 +73,23 @@ def deezer_accounts_from_secrets() -> int:
     return made
 
 
+def app_accounts() -> bool:
+    """1.20: the account of older versions becomes the Super-Admin, and owns
+    every Navidrome and Deezer account, the download account and the devices."""
+    from core import deezer_accounts, devices, nd_accounts, users
+
+    made = users.ensure_initial()
+    owner = users.superadmin()
+    if owner is None:
+        return False
+    nd_accounts.set_owner([a["id"] for a in nd_accounts.list_accounts() if not a.get("owner")], owner["id"])
+    deezer_accounts.set_owner([a["id"] for a in deezer_accounts.list_accounts() if not a.get("owner")], owner["id"])
+    devices.claim_unowned(owner["id"])
+    if made and deezer_accounts.download_id():
+        users.set_field(owner["id"], "download_deezer", deezer_accounts.download_id())
+    return made
+
+
 def run() -> None:
     from core import config, library, nd_accounts
 
@@ -106,3 +123,8 @@ def run() -> None:
             logger.info("%s playlists now belong to the first Navidrome account", given)
     except Exception as e:
         logger.error("Could not give the playlists to the first Navidrome account: %s", e)
+    try:
+        if app_accounts():
+            logger.info("The account of this install is now its Super-Admin")
+    except Exception as e:
+        logger.error("Could not set up the accounts of this app: %s", e)

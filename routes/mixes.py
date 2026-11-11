@@ -6,7 +6,8 @@ from contextlib import contextmanager
 
 from flask import Blueprint, Response, jsonify, request, session
 
-from core import account_context, mix_builder, metadata_fix, mixes_db, nd_accounts, stats_db, stats_import, trial
+from core import account_context, mix_builder, metadata_fix, mixes_db, nd_accounts, stats_db, stats_import, trial, users
+from routes.auth import me
 
 logger = logging.getLogger(__name__)
 
@@ -60,7 +61,7 @@ def _state(conn, account) -> dict:
     return {
         "profile": {"id": account, "label": profile.get("label") or account, "several": len(mix_builder.accounts()) > 1},
         "settings": settings,
-        "downloads_blocked": mix_builder.downloads_possible(),
+        "downloads_blocked": mix_builder.downloads_possible(account),
         "analysis": analysis,
         "running": mix_builder.is_running(),
         "last_run": mix_builder.last_run(conn, account),
@@ -87,12 +88,15 @@ def settings():
     body = request.get_json(silent=True)
     if not isinstance(body, dict):
         return jsonify({"ok": False, "error": "Expected settings"}), 400
+    if mix_builder.SHARED & set(body) and not users.can(me(), "admin"):
+        # The disk limits count every profile together: an Admin sets them.
+        return jsonify({"ok": False, "error": "Only an Admin changes the shared disk limits."}), 403
     mode = body.pop("mix_mode", None)
     discover = body.pop("discover", None)
     if mode is not None and mode not in mix_builder.MIX_MODES:
         return jsonify({"ok": False, "error": "Choose off, Daily Mix or Daily Mix+"}), 400
     if mode == "blend" or discover:
-        blocked = mix_builder.downloads_possible()
+        blocked = mix_builder.downloads_possible(_profile())
         if blocked:
             return jsonify({"ok": False, "error": blocked}), 400
     account = _profile()

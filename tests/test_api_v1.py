@@ -99,14 +99,16 @@ class SignIn(Base):
     def test_changing_the_password_in_settings_signs_the_devices_out(self):
         os.environ.pop("APP_USERNAME")
         os.environ.pop("APP_PASSWORD")
-        auth.set_account("admin", PASSWORD)
-        self.addCleanup(lambda: [config.save_secret(n, "") for n in ("app_username", "app_password_hash")])
+        from core import users
+
+        admin = users.create("admin", PASSWORD, users.SUPERADMIN, must_change=False)
+        self.addCleanup(lambda: (Path(config.DATA_DIR) / "users.json").unlink(missing_ok=True))
         token = self.token()
         changed = self.client.post("/api/auth/password", json={"current": PASSWORD, "new": "a-brand-new-password"},
                                    headers={"Authorization": f"Bearer {token}"})
         self.assertEqual(changed.status_code, 200)
         self.assertEqual(self.get("/api/v1/info", token).status_code, 401)
-        self.assertEqual(devices.list_devices(), [])
+        self.assertEqual(devices.list_devices(admin["id"]), [])
 
     def test_the_catboard_token_stays_read_only(self):
         with mock.patch.dict(os.environ, {"API_TOKEN": "catboard-token-123"}):

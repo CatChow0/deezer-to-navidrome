@@ -529,3 +529,14 @@ body.has-player .save-bar {
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+.login-code code {
+  display: block;
+  padding: 12px;
+  border-radius: var(--r-control);
+  background: var(--glass-raised);
+  font-size: var(--step-1);
+  letter-spacing: 0.08em;
+  text-align: center;
+  user-select: all;
+}

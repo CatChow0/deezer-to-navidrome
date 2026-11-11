@@ -23,9 +23,11 @@ FAILED = "failed"
 
 
 class DownloadTask:
-    def __init__(self, description, kind, music_id, on_done=None, on_progress=None, base_dir=None):
+    def __init__(self, description, kind, music_id, on_done=None, on_progress=None, base_dir=None, deezer_account=None):
         self.id = id(self)
         self.base_dir = base_dir
+        # The Deezer account it downloads with: the one of who asked for it.
+        self.deezer_account = deezer_account
         self.description = description
         self.kind = kind
         self.music_id = str(music_id)
@@ -93,13 +95,15 @@ class DownloadQueue:
                 thread.start()
                 self.threads.append(thread)
 
-    def enqueue(self, description, kind, music_id, on_done=None, on_progress=None, base_dir=None):
-        task = DownloadTask(description, kind, music_id, on_done=on_done, on_progress=on_progress, base_dir=base_dir)
+    def enqueue(self, description, kind, music_id, on_done=None, on_progress=None, base_dir=None, deezer_account=None):
+        task = DownloadTask(description, kind, music_id, on_done=on_done, on_progress=on_progress, base_dir=base_dir,
+                            deezer_account=deezer_account)
         with self.lock:
             # The same download already waiting or running: joined, not made
             # twice (the automatic downloads ask again at every scan).
             same = next((t for t in self.tasks if t.state in (WAITING, ACTIVE) and not t.settled
-                         and (t.kind, t.music_id, t.base_dir) == (task.kind, task.music_id, base_dir)), None)
+                         and (t.kind, t.music_id, t.base_dir, t.deezer_account)
+                         == (task.kind, task.music_id, base_dir, deezer_account)), None)
             if same is not None:
                 if on_done:
                     same.joined.append(on_done)
@@ -133,7 +137,8 @@ class DownloadQueue:
     def _run_task(self, task):
         task.report("downloading", "Starting", 0, "0%")
         try:
-            task.result = self._run(task)
+            with deezer_dl.using(task.deezer_account):
+                task.result = self._run(task)
             task.state = DONE
         except Exception as e:
             print(traceback.format_exc(), flush=True)
@@ -286,11 +291,13 @@ def get_queue():
         return _queue
 
 
-def enqueue_download(kind, music_id, on_done=None, on_progress=None, base_dir=None):
+def enqueue_download(kind, music_id, on_done=None, on_progress=None, base_dir=None, deezer_account=None):
     """Puts a download in the queue and returns the task. `base_dir`: another folder
-    for a single track, instead of the usual songs folder."""
+    for a single track, instead of the usual songs folder. `deezer_account`: the
+    one it downloads with (account_context.download_account_of)."""
     description = f"Downloading {kind} {music_id}"
-    return get_queue().enqueue(description, kind, music_id, on_done=on_done, on_progress=on_progress, base_dir=base_dir)
+    return get_queue().enqueue(description, kind, music_id, on_done=on_done, on_progress=on_progress, base_dir=base_dir,
+                               deezer_account=deezer_account)
 
 
 def queue_snapshot():

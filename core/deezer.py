@@ -1194,6 +1194,11 @@ def submit_missing_downloads(playlist_id: str) -> int:
         and not row.get("downloaded")
     ]
 
+    from core import account_context
+
+    owners = accounts_for(playlist_id)
+    account = account_context.download_account_of_profile(owners[0]) if owners else None
+
     def done(task, result, error):
         # Marked, so the next scan does not ask for it again.
         if not error:
@@ -1205,7 +1210,7 @@ def submit_missing_downloads(playlist_id: str) -> int:
         if not track_id.isdigit():
             continue
         try:
-            enqueue_download("track", track_id, on_done=done)
+            enqueue_download("track", track_id, on_done=done, deezer_account=account)
             submitted += 1
         except Exception:
             pass

@@ -29,6 +29,7 @@ from core.deezer import (
 from core import account_context, android_app, crossplatform, nd_accounts, publish
 from core.deezer import accounts_for, add_entry, give_to_account, is_auto_id, modify_playlists, remove_entries, set_accounts
 from core.utils import extract_playlist_id
+from routes.auth import my_download_account
 from core.xp_sources import MAX_CSV_BYTES, SourceError, spotify_playlist_id
 from core import scheduler
 
@@ -401,7 +402,8 @@ def download_missing_start(playlist_id: str):
     if not missing_rows:
         return jsonify({"error": "No missing tracks to download"}), 400
 
-    if not deezer_dl.download_arl():
+    account = my_download_account()
+    if not deezer_dl.download_arl(account):
         return jsonify({"error": "No Deezer account for the downloads: add one in Settings → Deezer accounts."}), 400
 
     task_id = create_task(f"Download missing: {playlist_title(playlist_id)}", kind="download-missing", playlist_id=playlist_id)
@@ -443,7 +445,7 @@ def download_missing_start(playlist_id: str):
                     continue
                 _log_dl(f"queue download track_id={track_id}")
                 try:
-                    enqueue_download("track", track_id, on_done=on_track_done)
+                    enqueue_download("track", track_id, on_done=on_track_done, deezer_account=account)
                 except Exception as e:
                     # The queue should not refuse a download, but if it does the
                     # track must not be silently forgotten.

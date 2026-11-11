@@ -81,6 +81,46 @@ def default_id():
     return data.get("default") if data.get("default") in ids else (ids[0] if ids else None)
 
 
+def usable_by(user_id) -> list:
+    """The Deezer accounts an account of this app may use: its own, and those
+    shared with it."""
+    from core import users
+
+    if not user_id:
+        return list_accounts()  # no accounts in this app (DISABLE_AUTH): one person uses them all
+    return [a for a in list_accounts()
+            if users.effective_owner(a.get("owner")) == user_id or user_id in (a.get("shared_with") or [])]
+
+
+def set_owner(account_ids, owner) -> None:
+    with _lock:
+        data = _read()
+        for account in data["accounts"]:
+            if account["id"] in account_ids:
+                account["owner"] = owner
+                account["shared_with"] = [u for u in account.get("shared_with") or [] if u != owner]
+        _write(data)
+
+
+def set_shared(account_id, user_ids) -> None:
+    with _lock:
+        data = _read()
+        account = next((a for a in data["accounts"] if a["id"] == account_id), None)
+        if account is None:
+            raise DeezerAccountsError("Unknown Deezer account.")
+        account["shared_with"] = sorted({str(u) for u in user_ids if u and u != account.get("owner")})
+        _write(data)
+
+
+def forget_user(user_id) -> None:
+    """An account of this app removed: its Deezer accounts are no longer shared with it."""
+    with _lock:
+        data = _read()
+        for account in data["accounts"]:
+            account["shared_with"] = [u for u in account.get("shared_with") or [] if u != user_id]
+        _write(data)
+
+
 def download_id():
     """The account that downloads: the one marked, else the default one."""
     with _lock:
@@ -111,6 +151,8 @@ def public(account) -> dict:
         "format": account.get("format") or "",
         "from_env": account.get("env") or "",
         "has_arl": bool(account.get("arl") or (account.get("env") and os.environ.get(account["env"]))),
+        "owner": account.get("owner") or "",
+        "shared_with": list(account.get("shared_with") or []),
         "is_default": account["id"] == default_id(),
         "is_download": account["id"] == download_id(),
         "checked_at": account.get("checked_at") or 0,
@@ -145,7 +187,7 @@ def _signed_in(arl_value) -> dict:
 def _same_user(data, user_id, ignore=None):
     for account in data["accounts"]:
         if account["id"] != ignore and user_id and account.get("user_id") == user_id:
-            raise DeezerAccountsError(f"This Deezer user already has an account here ({account['label']}).")
+            raise DeezerAccountsError("This Deezer account is already in the app: ask its owner to share it with you.")
 
 
 def create(fields: dict, now=None, check=True) -> dict:
@@ -159,6 +201,7 @@ def create(fields: dict, now=None, check=True) -> dict:
         _same_user(data, result.get("user_id"))
         number = int(data.get("next") or 1)
         account = {"id": f"dz{number}", "label": "", "arl": crypto.encrypt(arl_value), "env": "",
+                   "owner": str(fields.get("owner") or ""), "shared_with": [],
                    "legacy": False, "created_at": now, "updated_at": now}
         _apply_check(account, result, now)
         account["label"] = _label(fields.get("label"), account.get("name") or f"Deezer {number}")

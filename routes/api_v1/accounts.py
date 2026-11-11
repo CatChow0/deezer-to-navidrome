@@ -25,3 +25,4 @@ expose(f"{D}/<account_id>", deezer.remove_account_route, ("DELETE",), name="deez
 expose(f"{D}/<account_id>/check", deezer.check_account_route, ("POST",), name="deezer_account_check")
 expose(f"{D}/<account_id>/default", deezer.default_account_route, ("POST",), name="deezer_account_default")
 expose(f"{D}/<account_id>/download", deezer.download_account_route, ("POST",), name="deezer_account_download")
+expose(f"{D}/<account_id>/share", deezer.share_account_route, ("PUT",), name="deezer_account_share")

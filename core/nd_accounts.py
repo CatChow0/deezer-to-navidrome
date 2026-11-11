@@ -98,6 +98,23 @@ def default_id():
     return data["default"] if data["default"] in ids else (ids[0] if ids else None)
 
 
+def accounts_of(user_id) -> list:
+    """The profiles of an account of this app: the Navidrome accounts it owns."""
+    from core import users
+
+    return [a for a in list_accounts() if users.effective_owner(a.get("owner")) == user_id]
+
+
+def set_owner(account_ids, owner) -> None:
+    """Gives these Navidrome accounts to another account of this app."""
+    with _lock:
+        data = _read()
+        for account in data["accounts"]:
+            if account["id"] in account_ids:
+                account["owner"] = owner
+        _write(data)
+
+
 def public(account) -> dict:
     """Everything the interface may show: never the secret."""
     last = account.get("last_test") or {}
@@ -111,6 +128,7 @@ def public(account) -> dict:
         "navidrome_user_id": account.get("navidrome_user_id") or "",
         "publish_mode": account["publish_mode"],
         "deezer_account": account.get("deezer_account") or "",
+        "owner": account.get("owner") or "",
         "is_default": account["id"] == default_id(),
         "complete": bool(account["url"] and account["username"] and account.get("secret")),
         "legacy": bool(account.get("legacy")),
@@ -193,6 +211,7 @@ def create(fields: dict, now=None) -> dict:
             # belongs to Navidrome's first admin.
             "publish_mode": "api",
             "deezer_account": _deezer_account(fields.get("deezer_account")),
+            "owner": str(fields.get("owner") or ""),
             "legacy": False,
             "created_at": now,
             "updated_at": now,

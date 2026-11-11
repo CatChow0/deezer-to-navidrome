@@ -144,9 +144,10 @@ def library_copies() -> dict:
     return {t.key: t.path for t in mix_taste.owned_tracks(library_entries(), exclude_under=[str(trial.trial_dir())])}
 
 
-def downloads_possible() -> str:
-    """Why this install cannot download, or an empty string when it can."""
-    if not deezer_dl.download_arl():
+def downloads_possible(account=None) -> str:
+    """Why this profile cannot download (with its owner's Deezer account), or
+    an empty string when it can."""
+    if not deezer_dl.download_arl(account_context.download_account_of_profile(account) if account else None):
         return "Add a Deezer account in Settings → Deezer accounts first."
     if not deezer_dl.download_dir_status().get("writable"):
         return "The downloads folder cannot be written to: check Settings."
@@ -273,7 +274,8 @@ def download_to_trial(conn, account, candidates, want, mix_id, now, enqueue=None
                 _drop_late_download(result)
 
         for candidate in batch:
-            enqueue("track", candidate.deezer_id, on_done=finished, base_dir=str(target))
+            enqueue("track", candidate.deezer_id, on_done=finished, base_dir=str(target),
+                    deezer_account=account_context.download_account_of_profile(account))
         if not done.wait(DOWNLOAD_TIMEOUT):
             logger.warning("Downloads for %s took too long", mix_id)
         with lock:
@@ -624,7 +626,7 @@ def generate(account, versions=None, progress=None, now=None) -> dict:
         run = _Run(conn, stats_conn, account, now, seed_text)
         run.emit = emit
         built = {}
-        blocked = downloads_possible()
+        blocked = downloads_possible(account)
         for name, build, downloads in (("daily", build_daily, False), ("blend", build_blend, True),
                                        ("discover", build_discover, True)):
             if name not in wanted:

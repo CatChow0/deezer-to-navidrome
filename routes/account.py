@@ -3,10 +3,12 @@ the release feed of its favorite artists and its mixes (Flow, made for you).
 
 No answer ever carries an ARL: deezer_accounts.public() leaves it out."""
 import threading
+from functools import wraps
 
-from flask import Blueprint, jsonify, request, session
+from flask import Blueprint, g, jsonify, request, session
 
-from core import account_context, deezer_accounts
+from core import account_context, deezer_accounts, users, webhook
+from routes.auth import may_manage, my_download_account, owner_only, refused, subject
 from core.config import create_task, push_task_event
 from core.deezer import follow_mix, give_to_account, load_playlists, mix_id
 from core.deezer_account import DeezerAccountError, account_status, available_mixes
@@ -26,12 +28,13 @@ def _deezer_account():
 
 
 def _download_status():
-    """What the account used for the downloads can do."""
+    """What the Deezer account the asker's downloads go through can do."""
     from core import deezer_dl
 
-    account_id = deezer_accounts.download_id()
+    account_id = my_download_account()
     account = deezer_accounts.get(account_id) if account_id else None
-    info = deezer_dl.account_info()
+    with deezer_dl.using(account_id):
+        info = deezer_dl.account_info()
     return {
         "account": account_id,
         "label": account["label"] if account else "",
@@ -44,13 +47,31 @@ def _download_status():
 
 
 def _accounts_state():
-    return {
-        "ok": True,
-        "accounts": [deezer_accounts.public(a) for a in deezer_accounts.list_accounts()],
-        "default": deezer_accounts.default_id(),
-        "download": deezer_accounts.download_id(),
-        "profile_account": _deezer_account(),
-    }
+    """The Deezer accounts the account managed may use: its own, and those
+    shared with it (marked, without their ARL's details to change)."""
+    owner = subject()
+    found = deezer_accounts.usable_by(owner["id"]) if owner else []
+    download = account_context.download_account_of(owner["id"]) if owner else None
+    accounts = []
+    for account in found:
+        public = deezer_accounts.public(account)
+        public["mine"] = may_manage(account.get("owner"))
+        public["is_download"] = account["id"] == download
+        accounts.append(public)
+    return {"ok": True, "accounts": accounts, "default": deezer_accounts.default_id(), "download": download,
+            "profile_account": _deezer_account()}
+
+
+_mine = owner_only(deezer_accounts.get, "Deezer")
+
+
+def _usable(view):
+    """Choosing the download account: one this account may use, its own or shared with it."""
+    @wraps(view)
+    def guarded(account_id):
+        usable = {a["id"] for a in deezer_accounts.usable_by((subject() or {}).get("id") or "-")}
+        return view(account_id) if account_id in usable else refused("This Deezer account is not shared with you.")
+    return guarded
 
 
 def _error(e, status=400):
@@ -63,6 +84,7 @@ def _fields():
 
 
 @account_bp.get("/api/deezer/accounts")
+@_mine
 def accounts_route():
     # Accounts never checked (moved from an older install): signed in once, so
     # the list shows who they are and what they can download.
@@ -78,18 +100,20 @@ def accounts_route():
 
 
 @account_bp.post("/api/deezer/accounts")
+@_mine
 def add_account_route():
     fields = _fields()
     if fields is None:
         return _error("Expected an account")
     try:
-        account = deezer_accounts.create(fields)
+        account = deezer_accounts.create({**fields, "owner": subject()["id"]})
     except deezer_accounts.DeezerAccountsError as e:
         return _error(e)
     return jsonify({**_accounts_state(), "created": account["id"]})
 
 
 @account_bp.patch("/api/deezer/accounts/<account_id>")
+@_mine
 def edit_account_route(account_id):
     fields = _fields()
     if fields is None:
@@ -102,6 +126,7 @@ def edit_account_route(account_id):
 
 
 @account_bp.delete("/api/deezer/accounts/<account_id>")
+@_mine
 def remove_account_route(account_id):
     try:
         deezer_accounts.delete(account_id)
@@ -111,6 +136,7 @@ def remove_account_route(account_id):
 
 
 @account_bp.post("/api/deezer/accounts/<account_id>/default")
+@_mine
 def default_account_route(account_id):
     try:
         deezer_accounts.set_default(account_id)
@@ -120,17 +146,26 @@ def default_account_route(account_id):
 
 
 @account_bp.post("/api/deezer/accounts/<account_id>/download")
+@_usable
 def download_account_route(account_id):
-    try:
-        deezer_accounts.set_download(account_id)
-    except deezer_accounts.DeezerAccountsError as e:
-        return _error(e, 404)
+    """The Deezer account this account of the app downloads with (its own, or one shared with it)."""
+    users.set_field(subject()["id"], "download_deezer", account_id)
     state = _accounts_state()
     state["downloads"] = _download_status()
     return jsonify(state)
 
 
+@account_bp.put("/api/deezer/accounts/<account_id>/share")
+@_mine
+def share_account_route(account_id):
+    """The accounts of this app this Deezer account is shared with (body users)."""
+    wanted = [u for u in (request.get_json(silent=True) or {}).get("users") or [] if users.get(u)]
+    deezer_accounts.set_shared(account_id, wanted)
+    return jsonify(_accounts_state())
+
+
 @account_bp.post("/api/deezer/accounts/<account_id>/check")
+@_mine
 def check_account_route(account_id):
     try:
         deezer_accounts.check(account_id)
@@ -184,10 +219,30 @@ def follow_mix_route():
     return jsonify({"ok": True, "id": pid, "added": added})
 
 
+def _merged_feed(accounts) -> dict:
+    """The feeds of these Deezer accounts as one, each release once."""
+    feeds = [load_releases(a) for a in accounts]
+    releases = {r["id"]: r for feed in feeds for r in feed.get("releases", [])}
+    return {
+        "updated_at": max((f.get("updated_at") or 0 for f in feeds), default=0) or None,
+        "artists": sum(f.get("artists") or 0 for f in feeds),
+        "releases": sorted(releases.values(), key=lambda r: (r.get("release_date") or "", r.get("artist") or ""),
+                           reverse=True),
+        "muted": {k: v for a in accounts for k, v in load_prefs(a)["muted"].items()},
+    }
+
+
 @account_bp.get("/api/releases")
 def releases_route():
-    """The feed of the Deezer account of this browser's profile. An app with the
-    API token has no profile: it gets the default one's."""
+    """The feed of the Deezer account of this browser's profile. An app with an
+    account's API token (CatBoard) gets the feeds of the profiles that account
+    chose, as one."""
+    if g.get("token"):
+        accounts = sorted(webhook.catboard_deezer_accounts(g.user))
+        merged = _merged_feed(accounts)
+        return jsonify({"ok": True, "connected": any(deezer_accounts.arl(a) for a in accounts), "deezer_account": None,
+                        "refresh_hours": refresh_hours(), "window_days": load_releases(None).get("window_days"),
+                        **merged})
     account_id = _deezer_account()
     account = deezer_accounts.get(account_id) if account_id else None
     return jsonify({
@@ -207,7 +262,7 @@ def mute_artist_route():
     if not artist_id.isdigit():
         return jsonify({"ok": False, "error": "Unknown artist"}), 400
     prefs = set_muted(artist_id, str(data.get("name") or ""), bool(data.get("muted")), account=_deezer_account())
-    notify("releases.updated", reason="muted")
+    notify("releases.updated", deezer_account=_deezer_account(), reason="muted")
     return jsonify({"ok": True, "muted": prefs["muted"]})
 
 
@@ -235,7 +290,7 @@ def start_release_refresh(title="Release feed refresh", account=None):
                 progress=100,
                 done=True,
             )
-            notify("releases.updated", releases=len(feed["releases"]), artists=feed["artists"])
+            notify("releases.updated", deezer_account=account, releases=len(feed["releases"]), artists=feed["artists"])
         except Exception as e:
             push_task_event(task_id, f"Release feed failed: {e}", stage="error", done=True, error=True)
         finally:

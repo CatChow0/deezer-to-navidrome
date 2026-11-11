@@ -4,7 +4,9 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#07061a">
-  <title>{{ 'Create your account' if mode == 'setup' else 'Sign in' }} · Deezer → Navidrome</title>
+  {% set titles = {'setup': 'Create your account', 'first': 'Choose your password', 'forgot': 'Forgot your password',
+                   'recovery': 'Your recovery code'} %}
+  <title>{{ titles.get(mode, 'Sign in') }} · Deezer → Navidrome</title>
   {% for sheet in ['tokens', 'layers', 'cells', 'components', 'config'] %}
   <link rel="stylesheet" href="{{ url_for('static', filename='css/' ~ sheet ~ '.css') }}">
   {% endfor %}
@@ -18,34 +20,60 @@
   <main class="login-page">
     <section class="cell login-card" aria-labelledby="login-title">
       <p class="brand-name">Deezer <span>→</span> Navidrome</p>
+      <h1 class="cell-title" id="login-title">{{ titles.get(mode, 'Sign in') }}</h1>
       {% if mode == 'setup' %}
-      <h1 class="cell-title" id="login-title">Create your account</h1>
-      <p class="cell-sub">This account protects the app. Other apps, like CatBoard, use an API token you get in Settings afterwards.</p>
-      {% else %}
-      <h1 class="cell-title" id="login-title">Sign in</h1>
+      <p class="cell-sub">This first account is the Super-Admin: it adds the other accounts in Settings → Users.</p>
+      {% elif mode == 'first' %}
+      <p class="cell-sub">Your account was made with a temporary password: choose your own.</p>
+      {% elif mode == 'forgot' %}
+      <p class="cell-sub">Enter your username, your recovery code and a new password. Lost your code? An Admin makes you a new one.</p>
       {% endif %}
 
       {% if error %}<p class="login-error" role="alert">{{ error }}</p>{% endif %}
+      {% if notice %}<p class="cell-sub" role="status">{{ notice }}</p>{% endif %}
 
+      {% if mode == 'recovery' %}
+      <p class="cell-sub">{{ 'Your password is changed. ' if recovered }}Keep this recovery code somewhere safe: with it, you choose a new password if you forget yours. It is shown only now; Settings makes you a new one.</p>
+      <p class="login-code"><code>{{ code }}</code></p>
+      <a class="btn btn--block" href="{{ url_for('playlists.home') if not recovered else url_for('auth.login') }}">{{ 'Sign in' if recovered else 'Continue' }}</a>
+      {% else %}
       <form method="post" class="login-form">
         {% if mode == 'login' %}<input type="hidden" name="next" value="{{ next }}">{% endif %}
+        {% if mode != 'first' %}
         <label class="form-field">
           <span>Username</span>
           <input type="text" name="username" autocomplete="username" required autofocus value="{{ request.form.get('username', '') }}">
         </label>
+        {% endif %}
+        {% if mode == 'forgot' %}
         <label class="form-field">
-          <span>Password</span>
-          <input type="password" name="password" autocomplete="{{ 'new-password' if mode == 'setup' else 'current-password' }}" required {% if mode == 'setup' %}minlength="8"{% endif %}>
-          {% if mode == 'setup' %}<small>At least 8 characters.</small>{% endif %}
+          <span>Recovery code</span>
+          <input type="text" name="code" autocomplete="one-time-code" required spellcheck="false">
         </label>
-        {% if mode == 'setup' %}
+        {% endif %}
+        <label class="form-field">
+          <span>{{ 'New password' if mode in ('first', 'forgot') else 'Password' }}</span>
+          <input type="password" name="password" autocomplete="{{ 'current-password' if mode == 'login' else 'new-password' }}" required {% if mode != 'login' %}minlength="8"{% endif %}>
+          {% if mode != 'login' %}<small>At least 8 characters.</small>{% endif %}
+        </label>
+        {% if mode in ('setup', 'first') %}
         <label class="form-field">
           <span>Confirm the password</span>
           <input type="password" name="confirm" autocomplete="new-password" required minlength="8">
         </label>
         {% endif %}
-        <button type="submit" class="btn btn--block">{{ 'Create the account' if mode == 'setup' else 'Sign in' }}</button>
+        <button type="submit" class="btn btn--block">{{ {'setup': 'Create the account', 'first': 'Save my password', 'forgot': 'Change my password'}.get(mode, 'Sign in') }}</button>
       </form>
+      {% if mode == 'login' %}
+      <p class="cell-sub"><a href="{{ url_for('auth.forgot') }}">Forgot your password?</a></p>
+      {% elif mode == 'forgot' %}
+      <form method="post" action="{{ url_for('auth.forgot_superadmin') }}">
+        <p class="cell-sub">The Super-Admin without its code can get a one-time code in the app's data folder on the server:</p>
+        <button type="submit" class="btn btn--ghost btn--block">Write a code on the server</button>
+      </form>
+      <p class="cell-sub"><a href="{{ url_for('auth.login') }}">Back to sign-in</a></p>
+      {% endif %}
+      {% endif %}
     </section>
   </main>
 </body>

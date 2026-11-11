@@ -6,7 +6,7 @@ from flask import Flask, g, jsonify, redirect, request, session, url_for
 from werkzeug.exceptions import HTTPException
 from werkzeug.middleware.proxy_fix import ProxyFix
 
-from core import auth, content, devices
+from core import auth, content, devices, users
 from core.config import ensure_dirs
 from core import migrations
 from core import scheduler
@@ -24,6 +24,7 @@ from routes.playlists import playlists_bp
 from routes.search import search_bp
 from routes.stats import stats_bp
 from routes.system import SETTING_CHOICES, system_bp
+from routes.users import users_bp
 
 ensure_dirs()
 migrations.run()
@@ -75,12 +76,14 @@ app.register_blueprint(navidrome_playlists_bp)
 app.register_blueprint(search_bp)
 app.register_blueprint(stats_bp)
 app.register_blueprint(system_bp)
+app.register_blueprint(users_bp)
 
 # The ListenBrainz routes check their own token: Navidrome has no session.
 PUBLIC_ENDPOINTS = {
     "auth.login", "auth.setup", "static", "system.favicon", "system.health",
     "listenbrainz.submit", "listenbrainz.submit_slash", "listenbrainz.validate", "listenbrainz.validate_slash",
     "api_v1.auth_status", "api_v1.auth_login", "api_v1.auth_setup",
+    "auth.forgot", "auth.forgot_superadmin", "api_v1.auth_forgot", "api_v1.auth_forgot_superadmin",
 }
 
 
@@ -89,11 +92,14 @@ def navidrome_accounts_for_pages():
     """The account picker in the top bar. Only for a signed-in page."""
     from core import account_context, nd_accounts
 
-    if not (auth.auth_disabled() or session.get("user")):
+    user = g.get("user")
+    if not user:
         return {}
     try:
-        accounts = [nd_accounts.public(a) for a in nd_accounts.list_accounts()]
-        return {"nd_accounts": accounts, "nd_active": account_context.resolve(request, session)}
+        # Each account picks among its own profiles only, Admins too.
+        accounts = [nd_accounts.public(a) for a in nd_accounts.accounts_of(user["id"])]
+        return {"nd_accounts": accounts, "nd_active": account_context.resolve(request, session),
+                "me": users.public(user), "is_admin": users.can(user, "admin")}
     except Exception:
         return {}
 
@@ -116,18 +122,42 @@ def refuse_other_sites():
     return None
 
 
-@app.before_request
-def require_sign_in():
-    if auth.auth_disabled() or request.endpoint in PUBLIC_ENDPOINTS:
-        return None
-    if session.get("user") and session.get("stamp") == auth.session_stamp() and auth.account_exists():
-        return None
-    # A device signed in through the API: its token opens every route.
+# What an account with a temporary password may still do: choose its own.
+WHILE_CHANGING = {"auth.first_password", "auth.logout", "api_v1.auth_first_password", "api_v1.auth_logout",
+                  "api_v1.auth_status", "api_v1.me", "static", "system.favicon", "system.health"}
+
+
+def _signed_in_user():
+    """The account of this request: its web session, its device, or (on the few
+    routes it opens) its API token. None when there is none."""
+    user = users.get(session.get("user_id")) if session.get("user_id") else None
+    if user and session.get("stamp") == users.stamp(user):
+        return user
+    # A device signed in through the API: its token opens every route of its account.
     device = devices.verify(request.headers.get("Authorization"), request.remote_addr or "")
     if device:
         g.device = device
+        return users.get(device.get("user"))
+    user = auth.token_user(request.headers.get("Authorization"), request.method, request.path)
+    g.token = bool(user)
+    return user
+
+
+@app.before_request
+def require_sign_in():
+    if auth.auth_disabled():
+        # One person behind the proxy's login: the whole app, as the Super-Admin.
+        g.user = users.superadmin() or users.OPEN
         return None
-    if auth.token_ok(request.headers.get("Authorization"), request.method, request.path):
+    if request.endpoint in PUBLIC_ENDPOINTS:
+        return None
+    user = _signed_in_user()
+    if user:
+        g.user = user
+        if user.get("must_change") and request.endpoint not in WHILE_CHANGING:
+            if request.path.startswith(api_v1.PREFIX):
+                return api_v1.error("password_change_needed", "Choose your own password first.", 403)
+            return redirect(url_for("auth.first_password"))
         return None
     if request.path.startswith(api_v1.PREFIX):
         return api_v1.error("unauthorized", "Sign in first: send this device's token.", 401)

@@ -42,6 +42,9 @@ from core.version import get_app_version, get_latest_available_version
 from core import deezer_dl
 from core import download_queue
 from core import scheduler
+from routes.auth import my_download_account
+from core import users
+from routes.auth import admin_only, me, refused
 from routes.playlists import render_app
 
 system_bp = Blueprint("system", __name__)
@@ -194,6 +197,8 @@ def save_settings_values(values: dict) -> dict:
 @system_bp.route("/config", methods=["GET", "POST"])
 def config_view():
     if request.method == "POST":
+        if not users.can(me(), "admin"):
+            return refused("Only an Admin changes the server's settings.")
         form = request.form
         values = {
             "scan_dirs": form.get("scan_dirs", "").splitlines(),
@@ -270,31 +275,37 @@ def _clear_route(what):
 
 
 @system_bp.post("/admin/clear/library-cache")
+@admin_only
 def clear_library_cache_route():
     return _clear_route("library-cache")
 
 
 @system_bp.post("/admin/clear/preview-state")
+@admin_only
 def clear_preview_state_route():
     return _clear_route("preview-state")
 
 
 @system_bp.post("/admin/clear/playlists")
+@admin_only
 def clear_playlists_route():
     return _clear_route("playlists")
 
 
 @system_bp.post("/admin/clear/all")
+@admin_only
 def clear_all_route():
     return _clear_route("all")
 
 
 @system_bp.post("/admin/clear/dedup-report")
+@admin_only
 def clear_dedup_report_route():
     return _clear_route("dedup-report")
 
 
 @system_bp.post("/admin/clear/dedup-choices")
+@admin_only
 def clear_dedup_choices_route():
     return _clear_route("dedup-choices")
 
@@ -333,7 +344,7 @@ def _final_message(kind, summary):
     return f"Downloaded: {label} ({saved} track{'s' if saved != 1 else ''}{extra})"
 
 
-def _start_download(kind, music_id, label="", playlist_id=None):
+def _start_download(kind, music_id, label="", playlist_id=None, deezer_account=None):
     """Queues a download and follows it in a task visible in Activity."""
     label = (label or "").strip()[:120] or f"{KIND_NAMES[kind]} {music_id}"
     task_id = create_task(f"Download: {label}", kind="download", playlist_id=playlist_id)
@@ -356,7 +367,7 @@ def _start_download(kind, music_id, label="", playlist_id=None):
             task_id, "done", _final_message(kind, summary), 100, done=True, summary=summary,
         )
 
-    download_queue.enqueue_download(kind, music_id, on_done=on_done, on_progress=on_progress)
+    download_queue.enqueue_download(kind, music_id, on_done=on_done, on_progress=on_progress, deezer_account=deezer_account)
     return task_id
 
 
@@ -366,10 +377,11 @@ def _download_request(kind, music_id):
         return jsonify({"error": "invalid type"}), 400
     if not str(music_id).isdigit():
         return jsonify({"error": "invalid id"}), 400
-    if not deezer_dl.download_arl():
+    account = my_download_account()
+    if not deezer_dl.download_arl(account):
         return jsonify({"error": "No Deezer account for the downloads: add one in Settings → Deezer accounts."}), 400
     playlist_id = str(data.get("playlist_id") or "").strip() or None
-    task_id = _start_download(kind, str(music_id), str(data.get("label") or ""), playlist_id)
+    task_id = _start_download(kind, str(music_id), str(data.get("label") or ""), playlist_id, account)
     return jsonify({"task_id": task_id})
 
 
@@ -385,7 +397,8 @@ def repair_downloads_start():
     downloads them again."""
     from core import download_repair
 
-    if not deezer_dl.download_arl():
+    account = my_download_account()
+    if not deezer_dl.download_arl(account):
         return jsonify({"ok": False, "error": "Add a Deezer account first, in Settings → Deezer accounts: the files are downloaded again"}), 400
     if download_repair.is_running():
         return jsonify({"ok": False, "error": "A repair is already running"}), 409
@@ -393,10 +406,12 @@ def repair_downloads_start():
 
     def runner():
         try:
-            summary = download_repair.repair_downloads(
-                progress=lambda message, percent: push_task_event(task_id, message, stage="repair", progress=percent, check_cancel=False),
-                should_stop=lambda: cancel_requested(task_id),
-            )
+            with deezer_dl.using(account):
+                summary = download_repair.repair_downloads(
+                    progress=lambda message, percent: push_task_event(task_id, message, stage="repair", progress=percent,
+                                                                      check_cancel=False),
+                    should_stop=lambda: cancel_requested(task_id),
+                )
         except Exception as e:
             push_task_event(task_id, f"Repair failed: {e}", stage="error", done=True, error=True)
             return
