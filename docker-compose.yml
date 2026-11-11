@@ -11,6 +11,8 @@ services:
     cpus: "4.0"          # set to your actual core count
     cpu_shares: 1024     # default share weight (relative priority)
 
+    # Behind a reverse proxy on the same machine, "127.0.0.1:8080:8080" keeps
+    # the app reachable through the proxy only (and set TRUSTED_PROXIES below).
     ports:
       - "8080:8080"
 
@@ -59,6 +61,16 @@ services:
       # a premium account for FLAC (used only for the downloads).
       # DEEZER_ARL: ""
       # DEEZER_ARL_PREMIUM: ""
+
+      # Optional: run as this user and group instead of root (your own: `id -u`,
+      # `id -g`). The data folder is given to them; the music folders must be
+      # writable by them already.
+      # PUID: "1000"
+      # PGID: "1000"
+
+      # Optional: the number of reverse proxies in front of the app, so the
+      # limit on failed sign-ins sees each visitor's address.
+      # TRUSTED_PROXIES: "1"
 
       # Optional: session signing key (else a random one is kept in /data).
       # SECRET_KEY: ""
