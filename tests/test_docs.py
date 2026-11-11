@@ -64,6 +64,18 @@ class EnvironmentTables(unittest.TestCase):
                 self.assertEqual(set(), {n for n in documented(path) if n.isupper()} - read)
 
 
+class DockerHubLimit(unittest.TestCase):
+    # Docker Hub refuses a full description over 25,000 characters; the
+    # margin leaves room for a few more versions before the page is trimmed.
+    LIMIT = 25_000
+    MARGIN = 3_000
+
+    def test_the_docker_hub_page_fits(self):
+        text = (ROOT / "DOCKERHUB_README.md").read_text(encoding="utf-8")
+        self.assertLessEqual(len(text), self.LIMIT - self.MARGIN,
+                             f"{len(text)} characters: shorten DOCKERHUB_README.md, the README has the details")
+
+
 class Upgrading(unittest.TestCase):
     def section(self):
         text = (ROOT / "README.md").read_text(encoding="utf-8")
