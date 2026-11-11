@@ -3,8 +3,27 @@
 
   <div class="doc-block">
     <h4>Your account</h4>
-    <p>The first visit asks you to create one account, with a password of 8 characters or more, unless <code>APP_USERNAME</code> and <code>APP_PASSWORD</code> are set. Changing the password in <b>Settings → Sign-in and other apps</b> signs out your other browsers.</p>
-    <p><code>DISABLE_AUTH=true</code> turns sign-in off, for setups where a reverse proxy already asks for a login.</p>
+    <p>The first visit asks you to create the first account, the <b>Super-Admin</b>, with a password of 8 characters or more, unless <code>APP_USERNAME</code> and <code>APP_PASSWORD</code> are set. Changing the password in <b>Settings → Sign-in and other apps</b> signs out your other browsers and your devices.</p>
+    <p><code>DISABLE_AUTH=true</code> turns sign-in off, for setups where a reverse proxy already asks for a login: whoever gets in has the whole app.</p>
+  </div>
+
+  <div class="doc-block">
+    <h4>Accounts and privileges</h4>
+    <table>
+      <thead><tr><th>Privilege</th><th>May</th></tr></thead>
+      <tbody>
+        <tr><td><b>Super-Admin</b></td><td>Everything, every account. Made at the first start, never removed</td></tr>
+        <tr><td><b>Admin</b></td><td>The server's settings and Reset data, and the Standard accounts: add, edit, make Admin, remove. Admins do not change each other</td></tr>
+        <tr><td><b>Standard</b></td><td>Their own profiles, Deezer accounts, token and devices; Refresh library, Fix missing metadata, Repair downloads and <b>Clear your profiles</b></td></tr>
+      </tbody>
+    </table>
+    <p><b>Settings → Users</b> adds an account with a temporary password: its user chooses their own at the first sign-in. Removing one gives its Navidrome and Deezer accounts to another account, or removes them with it. Each account sees its own profiles only, in the picker at the top; an Admin manages another account's in <b>Settings → Accounts → Accounts of</b>.</p>
+  </div>
+
+  <div class="doc-block">
+    <h4>Forgot your password</h4>
+    <p>Each account has a <b>recovery code</b>, shown once: at the first sign-in, then each time it is made again, in <b>Sign-in and other apps</b>, by an Admin for a Standard, or by the Super-Admin for an Admin. On the sign-in page, <b>Forgot your password?</b> takes the username, the code and a new password, and gives the next code.</p>
+    <p>The Super-Admin without its code can have the app write a one-time code in <code>recovery-code.txt</code>, in its data folder on the server. It works once, for 15 minutes: only someone who can read the server's files gets it.</p>
   </div>
 
   <div class="doc-block">
@@ -21,7 +40,7 @@
         <tr><td><b>Listening stats token</b></td><td>Navidrome</td><td>Only sending plays</td></tr>
       </tbody>
     </table>
-    <p>Each is created in Settings, or set with <code>API_TOKEN</code> and <code>SCROBBLE_TOKEN</code>. One set in the environment cannot be changed in Settings.</p>
+    <p>Each is created in Settings, or set with <code>API_TOKEN</code> (the Super-Admin's) and <code>SCROBBLE_TOKEN</code>. One set in the environment cannot be changed in Settings. Each account of the app has its own API token: it reads the release feeds of the profiles chosen under <b>Profiles CatBoard reads</b>, as one feed.</p>
   </div>
 
   <div class="doc-block">

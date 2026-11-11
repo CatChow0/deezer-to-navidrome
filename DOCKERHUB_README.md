@@ -2,7 +2,7 @@
 
 **Turn your Deezer playlists into Navidrome `.m3u8` playlists, match them against your local library, and download what is missing straight from Deezer.**
 
-[![Version](https://img.shields.io/badge/version-1.19.0-blue)](https://hub.docker.com/r/catchow/deezer-to-navidrome)
+[![Version](https://img.shields.io/badge/version-1.20.0-blue)](https://hub.docker.com/r/catchow/deezer-to-navidrome)
 [![Python 3.12](https://img.shields.io/badge/python-3.12-blue)](https://www.python.org/)
 [![Flask](https://img.shields.io/badge/flask-web%20app-brightgreen)](https://flask.palletsprojects.com/)
 [![GitHub](https://img.shields.io/badge/GitHub-source%20%26%20full%20docs-black)](https://github.com/CatChow0/deezer-to-navidrome)
@@ -30,6 +30,7 @@ The **New** button keeps the notes of each version, and **Help** is a full guide
 - **Made for you** — Daily Mix, Daily Mix+ and Discover from what you listen to, with a quarantine for what they download
 - **Several Navidrome users and Deezer accounts** — each user gets their own playlists (through Navidrome's API), history, recaps and mixes
 - **Android app** shipped in the image: install it from Settings, it updates itself from your server
+- **Accounts** — a Super-Admin, Admins and Standard accounts, each with its own profiles, and a recovery code for a forgotten password
 - Sign-in, API token, and a webhook for [CatBoard](https://github.com/CatChow0/catboard)
 
 ---
@@ -85,7 +86,7 @@ docker compose up -d
 
 ## Downloads
 
-Downloads use the `arl` cookie of a Deezer account (**Settings → Deezer accounts**, or `DEEZER_ARL`). Several accounts can be added: the one marked **Use for download** fetches the files for everyone, and each Navidrome profile follows the releases and mixes of its own Deezer account, the default one otherwise.
+Downloads use the `arl` cookie of a Deezer account (**Settings → Deezer accounts**, or `DEEZER_ARL`). Several accounts can be added: each account of the app marks the one that fetches its downloads (**Use for download**), and each Navidrome profile follows the releases and mixes of its own Deezer account, the default one otherwise. A Deezer account can be shared with other accounts of the app.
 
 | Account used for downloads | Badge | Format |
 |---|---|---|
@@ -144,8 +145,8 @@ The **Stats** tab keeps its own play history in `stats.db`, one per Navidrome ac
 | `DEEZER_ARL_PREMIUM` | — | Cookie of a Deezer account marked for the downloads |
 | `SECRET_KEY` | random, kept in `secrets.json` | Session key |
 | `D2N_ENCRYPTION_KEY` | random, kept in `encryption.key` | Key the saved credentials are encrypted with |
-| `APP_USERNAME` / `APP_PASSWORD` | — | The sign-in account; else the first visit asks you to create it |
-| `API_TOKEN` | — | Token for other apps (CatBoard); else create one in Settings |
+| `APP_USERNAME` / `APP_PASSWORD` | — | The Super-Admin; else the first visit asks you to create it |
+| `API_TOKEN` | — | The Super-Admin's token for other apps (CatBoard); else create one in Settings |
 | `SCROBBLE_TOKEN` | — | Token Navidrome sends the first account's plays with; else create one in Settings |
 | `SCROBBLE_TOKEN_ND2`… | — | Token of the other Navidrome accounts |
 | `STATS_NAVIDROME_DB` | `/import/navidrome/navidrome.db` | Navidrome's database, for importing your history |
@@ -233,7 +234,8 @@ Similarities use `rapidfuzz` (C++, GIL-releasing), so matching threads run in pa
 | File | Purpose |
 |------|---------|
 | `config.json` | App configuration |
-| `secrets.json` | Password hash, API token, webhook URL, session key, encrypted |
+| `secrets.json` | Session key |
+| `users.json` | The accounts: password and recovery code hashes, API token and webhook URL encrypted |
 | `encryption.key` | The encryption key, when `D2N_ENCRYPTION_KEY` is not set: keep it |
 | `navidrome_accounts.json` / `deezer_accounts.json` | Navidrome and Deezer accounts, passwords and ARLs encrypted |
 | `devices.json` | Devices signed in through the API (a digest of each token) |

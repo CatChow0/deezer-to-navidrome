@@ -72,8 +72,8 @@ class WhatToChange(unittest.TestCase):
     def test_pending_actions_are_those_of_the_versions_not_read(self):
         from core.patch_notes import pending_actions, unread
 
-        self.assertEqual(["1.19.0", "1.18.2", "1.18.1", "1.18.0"], [r["version"] for r in unread("1.17.0")][:4])
-        self.assertEqual({"1.19.0", "1.18.0"}, {a["version"] for a in pending_actions("1.17.0")})
+        self.assertEqual(["1.20.0", "1.19.0", "1.18.2", "1.18.1"], [r["version"] for r in unread("1.17.0")][:4])
+        self.assertEqual({"1.20.0", "1.19.0", "1.18.0"}, {a["version"] for a in pending_actions("1.17.0")})
         self.assertEqual([], pending_actions(RELEASES[0]["version"]))
         self.assertEqual(len(RELEASES), len(unread(None)))
 
@@ -181,10 +181,11 @@ class Pages(unittest.TestCase):
         self.set_config({"notes_seen": "1.17.0"})
         answer = self.client.get("/api/v1/content/notes").get_json()
         self.assertEqual("1.17.0", answer["since"])
-        self.assertEqual({"1.19.0", "1.18.0"}, {a["version"] for a in answer["pending_actions"]})
+        self.assertEqual({"1.20.0", "1.19.0", "1.18.0"}, {a["version"] for a in answer["pending_actions"]})
         newest = answer["notes"][0]
         self.assertTrue(newest["highlights"])
-        self.assertEqual(["TRUSTED_PROXIES=1", "COOKIE_SECURE=true"], newest["actions"][0]["lines"])
+        older = next(n for n in answer["notes"] if n["version"] == "1.19.0")
+        self.assertEqual(["TRUSTED_PROXIES=1", "COOKIE_SECURE=true"], older["actions"][0]["lines"])
 
     def test_live_setup_checks_stay_in_help(self):
         page = self.page()

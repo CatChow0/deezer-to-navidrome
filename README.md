@@ -2,7 +2,7 @@
 
 **A self-hosted web app that turns your Deezer playlists into Navidrome `.m3u8` playlists, matches them against your local library, and downloads what is missing straight from Deezer.**
 
-[![Docker Image Version](https://img.shields.io/badge/version-1.19.0-blue)](https://hub.docker.com/r/catchow/deezer-to-navidrome)
+[![Docker Image Version](https://img.shields.io/badge/version-1.20.0-blue)](https://hub.docker.com/r/catchow/deezer-to-navidrome)
 [![Python 3.12](https://img.shields.io/badge/python-3.12-blue)](https://www.python.org/)
 [![Flask](https://img.shields.io/badge/flask-web%20app-brightgreen)](https://flask.palletsprojects.com/)
 
@@ -97,7 +97,7 @@ Two buttons in the topbar explain the app. **New** keeps the notes of each versi
 - **Built-in Deezer downloader** - Tracks, albums and whole discographies, decrypted and tagged (cover included) by the app itself
 - **Progress on the button** - *Queued*, then `42%` or `3/14`, then *Downloaded*; details in Activity
 - **Retry** - A failed or partly failed download can be started again; files already saved are kept
-- **Several Deezer accounts** - The one marked **Use for download** fetches the files for every profile: mark a premium one for FLAC
+- **Several Deezer accounts** - Each account of the app marks one **Use for download** for its downloads: mark a premium one for FLAC
 
 ### Library
 - **Full rebuild / incremental refresh** of the library index
@@ -111,7 +111,7 @@ Two buttons in the topbar explain the app. **New** keeps the notes of each versi
 - **Quarantine or delete** the files you do not keep
 
 ### Security and integrations
-- **Sign-in** - One account, created on the first visit or set from the environment
+- **Accounts** - A Super-Admin (created on the first visit or set from the environment), Admins and Standard accounts, each with its own profiles, and a recovery code for a forgotten password
 - **API token** - Read-only access for other apps
 - **API v1** - A JSON API for the Android app: each device signs in with its own token, listed and revocable in Settings
 - **Android app** - Shipped inside the image: download it from Settings, and it updates itself from your server
@@ -212,7 +212,7 @@ The app downloads from Deezer itself: it fetches the file, decrypts it and write
 
 ### Accounts and quality
 
-Downloads use the session cookie (`arl`) of a Deezer account, added in **Settings → Deezer accounts**. The account marked **Use for download** fetches the files for every profile; when none is marked, the default account does.
+Downloads use the session cookie (`arl`) of a Deezer account, added in **Settings → Deezer accounts**. Each account of the app marks the one that fetches its downloads (**Use for download**), one of its own or one shared with it; when none is marked, the first it may use does. Made for you and the automatic downloads of a profile use its owner's.
 
 | Account used for the downloads | Badge | Download format |
 |---|---|---|
@@ -406,9 +406,11 @@ Both back up the profile's history first (the last 3, as `stats.db.bak-*` in `DA
 | `stats_covers/` | Cached artist, album and track covers | Survives **Reset data**; can be deleted, it fills again |
 | `covers/` | Playlist artwork | Until cleaned up |
 | `config.json` | App configuration | Survives restarts |
-| `secrets.json` | Password hash, API token, webhook URL, session key, encrypted | Survives restarts |
+| `secrets.json` | Session key; before 1.20, the account's password hash, API token and webhook URL | Survives restarts |
+| `users.json` | The accounts of the app: password and recovery code hashes, API token and webhook URL encrypted, the profiles CatBoard reads | Survives restarts |
+| `recovery-code.txt` | The Super-Admin's one-time code, when asked for on the Forgot page | Deleted once used, or after 15 min |
 | `navidrome_accounts.json` | Navidrome accounts, their passwords encrypted | Survives restarts |
-| `devices.json` | The devices signed in through the API, a digest of each token | Survives restarts |
+| `devices.json` | The devices signed in through the API, each with its account, a digest of each token | Survives restarts |
 | `deezer_accounts.json` | Deezer accounts, their ARLs encrypted | Survives restarts |
 | `releases.json`, `releases-dz2.json`… | Release feed of each Deezer account, with `release_prefs*.json` for the muted artists | Rebuilt by a refresh |
 | `encryption.key` | The encryption key, only when `D2N_ENCRYPTION_KEY` is not set | Keep it: without it, saved credentials must be entered again |
@@ -726,6 +728,11 @@ location / {
 
 Pull the new image and restart: `docker compose pull && docker compose up -d`. Settings, playlists and histories carry over; the app updates what it keeps at its first start. **New**, in the app, shows what changed and starts with what to change, all versions you skipped together. The same list:
 
+#### 1.20.0
+
+- *Recommended*: in **Settings → Stats and sign-in → Sign-in and other apps**, make your recovery code and keep it somewhere safe. Without it, a forgotten Super-Admin password needs the one-time code the app writes in its data folder.
+- At its first start, the app makes your account the Super-Admin, owner of every Navidrome and Deezer account; its devices stay signed in and CatBoard keeps its token. Add the other accounts in **Settings → Users**.
+
 #### 1.19.0
 
 - *Recommended, behind a reverse proxy*: `TRUSTED_PROXIES=1` and `COOKIE_SECURE=true` in `.env` (see [Behind a reverse proxy](#behind-a-reverse-proxy)).
@@ -793,8 +800,8 @@ The folder and performance variables are read **on first start** to create `conf
 | `DEEZER_ARL_PREMIUM` | — | `arl` of a Deezer account marked for the downloads |
 | `SECRET_KEY` | random, kept in `secrets.json` | Session signing key |
 | `D2N_ENCRYPTION_KEY` | random, kept in `encryption.key` | Key the saved credentials are encrypted with: any long random string |
-| `APP_USERNAME` / `APP_PASSWORD` | — | The sign-in account; else the first visit asks you to create it |
-| `API_TOKEN` | — | Token for other apps; else create one in Settings |
+| `APP_USERNAME` / `APP_PASSWORD` | — | The Super-Admin; else the first visit asks you to create it |
+| `API_TOKEN` | — | The Super-Admin's token for other apps; else create one in Settings |
 | `SCROBBLE_TOKEN` | — | Token Navidrome sends the first account's plays with; else create one in Settings |
 | `SCROBBLE_TOKEN_ND2`… | — | Token of the other Navidrome accounts, by their ID |
 | `STATS_NAVIDROME_DB` | `/import/navidrome/navidrome.db` | Navidrome's database, for importing your history |
@@ -842,21 +849,28 @@ Both containers must see the same files under their mapped paths. The downloads 
 - `MATCH_WORKERS` threads run on separate cores (rapidfuzz releases the GIL). Set it to the `cpus` value of your compose file.
 - `DOWNLOAD_WORKERS`: Deezer throttles requests, so a low number is safer.
 
-#### Sign-in
+#### Sign-in and accounts
 
-The web interface asks for a sign-in. On the first visit, the app asks you to create the account (password of 8 characters or more, stored hashed in `data/secrets.json`), unless `APP_USERNAME` and `APP_PASSWORD` are set.
+The web interface asks for a sign-in. On the first visit, the app asks you to create the first account, the **Super-Admin** (password of 8 characters or more, stored hashed in `data/users.json`), unless `APP_USERNAME` and `APP_PASSWORD` are set.
+
+- **Three privileges.** The Super-Admin, never removed, manages everyone. An **Admin** manages the Standard accounts and the server's settings; only the Super-Admin makes an Admin Standard again, and Admins do not change each other. A **Standard** account has its own profiles and settings, and never the server's.
+- **Settings → Users** (Admins) adds an account with a temporary password: its user chooses their own at the first sign-in. It edits an account's username, privilege and password, and removes one: its Navidrome and Deezer accounts go to another account, or with it.
+- **Each account its own profiles.** Its Navidrome accounts, its Deezer accounts, its downloads account, its API token, CatBoard webhook and devices. A Navidrome user belongs to one account of the app only; a Deezer account can be shared (**Share**), and is then used, never changed, by the others. The picker at the top shows your own profiles only, Admins too: an Admin manages another account's in **Settings → Accounts → Accounts of**.
+- **Admins only:** the General settings, Rebuild from scratch, applying duplicates, Made for you's disk limits and Reset data. Everyone: Refresh library, Fix missing metadata, Repair downloads, and **Clear your profiles**.
+- **Forgot your password?** Each account has a **recovery code**, shown once, at the first sign-in, then when made again in **Settings → Sign-in and other apps** (or by an Admin for a Standard, by the Super-Admin for an Admin). On the sign-in page, **Forgot your password?** takes the username, the code and a new password. The Super-Admin without its code can have a one-time code written in `data/recovery-code.txt`, valid 15 minutes.
+- **From an older version.** Your account becomes the Super-Admin and keeps everything: its profiles, Deezer accounts, token, webhook and signed-in devices.
 
 - After 5 failed sign-ins in 15 minutes, the address waits 30 s, then twice as long after each new failure (up to 15 min). Failures on one username from everywhere at once wait after 50, so someone guessing from the internet cannot lock you out. Behind a reverse proxy, set `TRUSTED_PROXIES` so each visitor's own address is counted.
 - Forms and scripts from another site cannot post to the app (browsers say where a request comes from), even with `DISABLE_AUTH`. Requests over 16 MB are refused.
 - Changing the password (**Settings → Sign-in and other apps**) signs out your other browsers and your devices.
-- The API token is sent as `Authorization: Bearer <token>` and only opens `GET /api/releases`, `POST /search/library-check` and `GET /api/version`.
+- The API token is sent as `Authorization: Bearer <token>` and only opens `GET /api/releases`, `POST /search/library-check` and `GET /api/version`. `GET /api/releases` answers the feed of the profiles the account chose for CatBoard, as one.
 - **Devices** (the Android app) sign in through the API and each get their own token. **Settings → Sign-in and other apps** lists them, with when they were last used, and signs one out. See [API v1](#api-v1).
 
 #### Navidrome accounts
 
 **Settings → Navidrome accounts** lists the Navidrome users this app works for: the address of your Navidrome, a user name and its password (Navidrome does not accept API keys yet). **Test** signs in through the Subsonic API and says whether the user is an admin and which libraries it sees; with Navidrome's database mounted, it also finds the user there, so its plays and stars can be told apart.
 
-- Your install becomes the first account and keeps working as before.
+- Your install becomes the first account and keeps working as before. A Navidrome user can belong to one account of this app only.
 - **Profile**, at the top of the page, chooses the Navidrome user of this browser. Each browser, and the phone, keeps its own.
 - Passwords are encrypted with `D2N_ENCRYPTION_KEY`, else with a key generated in `data/encryption.key`. They are never shown again, never sent back by the API, and never written in a log. Requests to Navidrome carry them in a POST body, never in a URL.
 - **Playlists per user.** A playlist goes to the accounts ticked under **In Navidrome** in its drawer. For each, the app creates a private playlist as that user through the Subsonic API and replaces its content at each update, in place (the playlist keeps its ID in every app). Tracks are found by their path in Navidrome's database (mounted at `/import/navidrome`); without it, by their tags. Tracks Navidrome has not scanned yet are added later, and failures are tried again every 10 minutes. Only playlists the app made itself are ever touched.
@@ -871,11 +885,12 @@ The web interface asks for a sign-in. On the first visit, the app asks you to cr
 **Settings → Deezer accounts** lists the Deezer accounts the app reads. **Add an account** takes a name and an ARL, checked by signing in to Deezer, then kept encrypted and never shown again. Each account can be edited, checked again or removed (not the last one).
 
 - **Releases and mixes per profile.** Each Navidrome account follows the releases and the Deezer mixes (Flow, made for you) of the Deezer account chosen in its form, else of the default one (**Make default**). Two profiles on the same Deezer account share its feed and its muted artists.
-- **Use for download.** One account fetches the files for every profile, the default one when none is marked. Mark a premium account for FLAC.
+- **Use for download.** Each account of the app marks the one that fetches its downloads. Mark a premium account for FLAC.
+- **Share.** A Deezer account belongs to the account of the app that added it. **Share** lets other accounts use it for their profiles and downloads; they never see its ARL, and only its owner (or an Admin) changes it.
 - **From an older version.** Your account becomes the first one, the default; the premium account used for downloads becomes a second one, marked for the downloads. `DEEZER_ARL` and `DEEZER_ARL_PREMIUM` keep working: such an account shows the variable, and its ARL is changed there.
 - The mixes followed before keep their ID. A mix of another account carries it in its ID (`mix-dz2-flow-chill`), so two Flows never mix up, and a scan reads it with that account.
 - A removed account takes its feed along, and the profiles that had chosen it go back to the default one.
-- The API token (CatBoard) reads the feed of the default profile.
+- The API token (CatBoard) reads the feeds of the profiles chosen under **Profiles CatBoard reads**, as one; all your profiles when none is chosen.
 
 Generate a `SECRET_KEY`, a `D2N_ENCRYPTION_KEY` or a token with:
 ```bash
@@ -894,15 +909,18 @@ The app then calls the webhook when the release feed is refreshed (or an artist 
 
 ### Settings page
 
-- **Music folders**, **Navidrome paths** (mappings), **Downloads** folder (with the folder actually used and a warning if it is missing)
+Settings has four spaces, chosen at the top (and kept in the address, `#settings/accounts`), with **Maintenance** under each:
+
+- **General** (Admins): **Music folders**, **Navidrome paths** (mappings), **Downloads** folder (with the folder actually used and a warning if it is missing)
 - **Performance**: scan, download and matching threads
 - **Release feed**: refresh interval (6 h to weekly, or manual only)
 - **Data files**: where the app keeps its state
-- **Navidrome accounts**: the users the app works for, and the Deezer account of each
-- **Deezer accounts**: their badges, the default one and the one used for downloads
-- **Sign-in and other apps**: password, API token, CatBoard webhook
-- **Library index**: refresh or rebuild
-- **Reset data**: clear the index, match results, playlists, duplicate report or decisions (two clicks each)
+- **Accounts**: **Navidrome accounts**, the users the app works for, and the Deezer account of each; **Deezer accounts**, their badges, the default one, the one used for your downloads, and sharing
+- **Stats and sign-in**: **Listening stats**; **Sign-in and other apps**, password, recovery code, devices, API token, the profiles CatBoard reads, and its webhook
+- **Users** (Admins): the accounts of the app
+- **Library index**: refresh, or rebuild (Admins)
+- **Clear your profiles**: match results, covers or playlists of your own profiles (two clicks each)
+- **Reset data** (Admins): clear the index, match results, playlists, duplicate report or decisions (two clicks each)
 
 Changes are saved to `config.json` and apply at once.
 
