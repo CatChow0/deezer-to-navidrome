@@ -5,12 +5,12 @@ import uuid
 from collections import defaultdict
 from pathlib import Path
 
+from core import files
 from core.utils import FILES_LOCK
 from core.config import (
     DEDUP_CHOICES_FILE,
     DEDUP_QUARANTINE_DIR,
     DEDUP_REPORT_FILE,
-    ensure_dirs,
     get_paths_from_config,
 )
 from core.library import load_library_cache, rebuild_library_cache_full_with_progress
@@ -53,11 +53,7 @@ def load_dedup_choices():
 
 
 def save_dedup_choices(choices):
-    ensure_dirs()
-    DEDUP_CHOICES_FILE.write_text(
-        json.dumps(choices, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
+    files.write_json(DEDUP_CHOICES_FILE, choices)
 
 
 def dedup_entry_fingerprint(entry):
@@ -151,11 +147,8 @@ def build_dedup_groups(library):
             if not keeper.get("path_str"):
                 continue
 
-            duplicates = [
-                normalize_entry(x)
-                for x in cluster
-                if normalize_entry(x).get("path_str") != keeper.get("path_str")
-            ]
+            duplicates = [entry for entry in map(normalize_entry, cluster)
+                          if entry.get("path_str") != keeper.get("path_str")]
 
             group_identity = normalize_group_identity({
                 "artist": keeper.get("artist_norm_strict") or keeper.get("tag_artist") or keeper.get("artist_dir_norm") or "",
@@ -175,47 +168,15 @@ def build_dedup_groups(library):
                 folders.append({
                     "folder": folder_name,
                     "keep_by_default": any(e.get("path_str") == keeper.get("path_str") for e in folder_entries),
-                    "entries": [
-                        {
-                            "path_str": e.get("path_str", ""),
-                            "tag_artist": e.get("tag_artist", ""),
-                            "tag_title": e.get("tag_title", ""),
-                            "tag_album": e.get("tag_album", ""),
-                            "parsed_artist": e.get("parsed_artist", ""),
-                            "parsed_title": e.get("parsed_title", ""),
-                            "parsed_track_title": e.get("parsed_track_title", ""),
-                            "stem_norm": e.get("stem_norm", ""),
-                            "album_dir_norm": e.get("album_dir_norm", ""),
-                            "artist_dir_norm": e.get("artist_dir_norm", ""),
-                            "track_number": e.get("track_number"),
-                            "duration": e.get("duration"),
-                            "size": e.get("size", 0),
-                            "quality_score": e.get("quality_score", 0),
-                        }
-                        for e in sorted(folder_entries, key=lambda x: x.get("path_str", ""))
-                    ],
+                    # Already normalized (normalize_entry): copies, not the same dicts.
+                    "entries": [dict(e) for e in sorted(folder_entries, key=lambda x: x.get("path_str", ""))],
                 })
 
             groups.append({
                 "group_id": str(uuid.uuid4()),
                 "identity": group_identity,
                 "count": len(cluster),
-                "keeper": {
-                    "path_str": keeper.get("path_str", ""),
-                    "tag_artist": keeper.get("tag_artist", ""),
-                    "tag_title": keeper.get("tag_title", ""),
-                    "tag_album": keeper.get("tag_album", ""),
-                    "parsed_artist": keeper.get("parsed_artist", ""),
-                    "parsed_title": keeper.get("parsed_title", ""),
-                    "parsed_track_title": keeper.get("parsed_track_title", ""),
-                    "stem_norm": keeper.get("stem_norm", ""),
-                    "album_dir_norm": keeper.get("album_dir_norm", ""),
-                    "artist_dir_norm": keeper.get("artist_dir_norm", ""),
-                    "track_number": keeper.get("track_number"),
-                    "duration": keeper.get("duration"),
-                    "quality_score": keeper.get("quality_score", 0),
-                    "version_flags": keeper.get("version_flags", []),
-                },
+                "keeper": dict(keeper),
                 "duplicates": duplicates,
                 "entries": [keeper] + duplicates,
                 "folders": folders,
@@ -285,9 +246,12 @@ def filter_and_preselect_dedup_groups(groups):
 
             if not new_paths:
                 continue
-            else:
-                keeper_hints[group_id] = list(previous_keep_paths)
-                filtered.append(group)
+            # Only the kept files still in the group: one renamed or moved since
+            # would preselect nothing, and applying would remove every copy.
+            still_here = previous_keep_paths & current_paths
+            if still_here:
+                keeper_hints[group_id] = sorted(still_here)
+            filtered.append(group)
         else:
             filtered.append(group)
 
@@ -295,10 +259,7 @@ def filter_and_preselect_dedup_groups(groups):
 
 
 def save_dedup_report(report):
-    ensure_dirs()
-    DEDUP_REPORT_FILE.write_text(
-        json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
+    files.write_json(DEDUP_REPORT_FILE, report)
 
 
 def load_dedup_report():
@@ -367,20 +328,27 @@ def ensure_quarantine_dir():
     DEDUP_QUARANTINE_DIR.mkdir(parents=True, exist_ok=True)
 
 
+# Where each quarantined file came from, one JSON line per file: the
+# quarantine folder is flat, so this is what puts a file back.
+QUARANTINE_MANIFEST = "manifest.jsonl"
+
+
 def quarantine_file(path_str: str):
     ensure_quarantine_dir()
     src = Path(path_str)
-    if not src.exists():
-        return {"path": path_str, "status": "missing"}
-
-    target = DEDUP_QUARANTINE_DIR / src.name
-    suffix = 1
-    while target.exists():
-        target = DEDUP_QUARANTINE_DIR / f"{src.stem}__{suffix}{src.suffix}"
-        suffix += 1
-
     with FILES_LOCK:
+        if not src.exists():
+            return {"path": path_str, "status": "missing"}
+        # Chosen under the lock: two applies at once must not pick one name.
+        target = DEDUP_QUARANTINE_DIR / src.name
+        suffix = 1
+        while target.exists():
+            target = DEDUP_QUARANTINE_DIR / f"{src.stem}__{suffix}{src.suffix}"
+            suffix += 1
         shutil.move(str(src), str(target))
+        with open(DEDUP_QUARANTINE_DIR / QUARANTINE_MANIFEST, "a", encoding="utf-8") as manifest:
+            manifest.write(json.dumps({"from": str(src), "to": str(target), "at": int(time.time())},
+                                      ensure_ascii=False) + "\n")
     return {"path": path_str, "status": "moved", "target": str(target)}
 
 
@@ -395,7 +363,12 @@ def apply_dedup_decisions(decisions, mode="quarantine"):
         if isinstance(g, dict) and g.get("group_id")
     }
 
+    if mode not in ("quarantine", "delete"):
+        raise RuntimeError(f"Mode inconnu: {mode}")
+
     results = []
+    skipped = []
+    existing_choices = load_dedup_choices() or {}
 
     for decision in safe_list(decisions):
         if not isinstance(decision, dict):
@@ -407,11 +380,13 @@ def apply_dedup_decisions(decisions, mode="quarantine"):
         if not isinstance(group, dict):
             continue
 
-        entries = safe_list(group.get("entries"))
-        delete_candidates = [
-            e for e in entries
-            if isinstance(e, dict) and e.get("path_str") and e.get("path_str") not in keep_paths
-        ]
+        entries = [e for e in safe_list(group.get("entries")) if isinstance(e, dict) and e.get("path_str")]
+        if not keep_paths & {e["path_str"] for e in entries}:
+            # Keeping none of the copies is never a duplicate removal: refused,
+            # rather than losing the track.
+            skipped.append(group_id)
+            continue
+        delete_candidates = [e for e in entries if e["path_str"] not in keep_paths]
 
         for entry in delete_candidates:
             path_str = entry.get("path_str")
@@ -428,18 +403,6 @@ def apply_dedup_decisions(decisions, mode="quarantine"):
                     results.append({"path": path_str, "status": "deleted"})
                 else:
                     results.append({"path": path_str, "status": "missing"})
-            else:
-                raise RuntimeError(f"Mode inconnu: {mode}")
-
-    existing_choices = load_dedup_choices() or {}
-    groups_by_id = {g.get("group_id"): g for g in safe_list(report.get("groups"))}
-
-    for decision in safe_list(decisions):
-        group_id = decision.get("group_id")
-        keep_paths = set(str(p) for p in safe_list(decision.get("keep_paths")))
-        group = groups_by_id.get(group_id)
-        if not group:
-            continue
 
         group_key = dedup_group_key(group)
 
@@ -455,4 +418,4 @@ def apply_dedup_decisions(decisions, mode="quarantine"):
 
     save_dedup_choices(existing_choices)
 
-    return {"processed": len(results), "results": results}
+    return {"processed": len(results), "results": results, "skipped": skipped}

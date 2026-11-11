@@ -37,58 +37,35 @@ def cache_rebuild_route():
     return redirect(url_for("system.config_view"))
 
 
-@cache_bp.post("/cache/full/start")
-def cache_full_start():
-    task_id = create_task("Full library rebuild", kind="library", cancellable=True)
+def _library_task(title, name, work, done):
+    """Runs `work(progress_cb)` as a task followed in Activity; `done(result)` is
+    its last message."""
+    task_id = create_task(title, kind="library", cancellable=True)
 
     def runner():
         try:
-            push_task_event(task_id, "Full library cache rebuild in progress", stage="cache", progress=0)
-            result = rebuild_library_cache_full_with_progress(
-                progress_cb=lambda message=None, progress=None, stage=None: push_task_event(
-                    task_id, message=message, progress=progress, stage=stage
-                )
-            )
-            push_task_event(
-                task_id,
-                f"Full rebuild done: {result['count']} entries",
-                stage="done",
-                progress=100,
-                done=True,
-            )
+            push_task_event(task_id, f"{name} in progress", stage="cache", progress=0)
+            result = work(lambda message=None, progress=None, stage=None: push_task_event(
+                task_id, message=message, progress=progress, stage=stage))
+            push_task_event(task_id, done(result), stage="done", progress=100, done=True)
             notify("library.updated", entries=result["count"])
         except Exception as e:
-            push_task_event(task_id, f"Full rebuild error: {e}", stage="error", done=True, error=True)
+            push_task_event(task_id, f"{name} error: {e}", stage="error", done=True, error=True)
 
     threading.Thread(target=runner, daemon=True).start()
     return jsonify({"task_id": task_id})
+
+
+@cache_bp.post("/cache/full/start")
+def cache_full_start():
+    return _library_task("Full library rebuild", "Full library cache rebuild", rebuild_library_cache_full_with_progress,
+                         lambda result: f"Full rebuild done: {result['count']} entries")
 
 
 @cache_bp.post("/cache/incremental/start")
 def cache_incremental_start():
-    task_id = create_task("Library refresh", kind="library", cancellable=True)
-
-    def runner():
-        try:
-            push_task_event(task_id, "Incremental cache refresh in progress", stage="cache", progress=0)
-            result = refresh_library_cache_incremental_with_progress(
-                progress_cb=lambda message=None, progress=None, stage=None: push_task_event(
-                    task_id, message=message, progress=progress, stage=stage
-                )
-            )
-            push_task_event(
-                task_id,
-                f"Incremental refresh done: {result['count']} entries, {result['rebuilt']} rebuilt",
-                stage="done",
-                progress=100,
-                done=True,
-            )
-            notify("library.updated", entries=result["count"])
-        except Exception as e:
-            push_task_event(task_id, f"Incremental refresh error: {e}", stage="error", done=True, error=True)
-
-    threading.Thread(target=runner, daemon=True).start()
-    return jsonify({"task_id": task_id})
+    return _library_task("Library refresh", "Incremental cache refresh", refresh_library_cache_incremental_with_progress,
+                         lambda result: f"Incremental refresh done: {result['count']} entries, {result['rebuilt']} rebuilt")
 
 
 @cache_bp.post("/cache/refresh")

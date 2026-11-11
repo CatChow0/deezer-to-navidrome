@@ -22,6 +22,37 @@ VERSION_KEYWORDS = {
     "remaster": ["remaster", "remastered"],
 }
 
+# Raised when normalize_text changes: the library cache, made with the old one,
+# is then brought up to date at start (core/library.py, renormalize_cache).
+NORMALIZATION_VERSION = 2
+
+def _is_latin(char) -> bool:
+    code = ord(char)
+    return code < 0x250 or 0x1E00 <= code <= 0x1EFF
+
+
+def fold(text) -> str:
+    """Case removed, and accents on Latin letters. Marks stay in other scripts,
+    where they make a different word (ガラス and カラス)."""
+    kept = []
+    after_latin = False
+    for char in unicodedata.normalize("NFKD", str(text or "")):
+        if unicodedata.combining(char):
+            if not after_latin:
+                kept.append(char)
+        else:
+            kept.append(char)
+            after_latin = _is_latin(char)
+    return unicodedata.normalize("NFKC", "".join(kept)).casefold()
+
+
+def _words(s: str) -> str:
+    """Letters, digits and marks of any script, the rest a single space: Кино,
+    宇多田ヒカル and Røyksopp keep their letters (an [a-z0-9] filter left
+    nothing of the first two)."""
+    return " ".join("".join(c if c.isalnum() or unicodedata.category(c)[0] == "M" else " " for c in s).split())
+
+
 def normalize_spaces(s: str) -> str:
     return re.sub(r"\s+", " ", (s or "").strip())
 
@@ -32,40 +63,37 @@ def _normalize_for_flags(s: str) -> str:
     as 'Feather (Live Version)' or 'Title [Radio Edit]'."""
     if not s:
         return ""
-    s = unicodedata.normalize("NFKD", s)
-    s = "".join(c for c in s if not unicodedata.combining(c))
-    s = s.lower().strip()
+    s = fold(s).strip()
     s = s.replace("&", " and ")
-    s = re.sub(r"[^a-z0-9]+", " ", s)
-    return re.sub(r"\s+", " ", s).strip()
+    return _words(s)
 
 
 def normalize_text(s: str) -> str:
     if not s:
         return ""
-    s = unicodedata.normalize("NFKD", s)
-    s = "".join(c for c in s if not unicodedata.combining(c))
-    s = s.lower().strip()
+    s = fold(s).strip()
     s = s.replace("&", " and ")
     s = re.sub(r"\bfeat\.?\b", " feat ", s)
     s = re.sub(r"\bft\.?\b", " feat ", s)
     s = re.sub(r"\bfeaturing\b", " feat ", s)
+    whole = s
     s = re.sub(r"\([^)]*\)", " ", s)
     s = re.sub(r"\[[^\]]*\]", " ", s)
     s = re.sub(
         r"\b(remaster(ed)?|radio edit|explicit|clean|mono|stereo|version)\b", " ", s
     )
-    s = re.sub(r"[^a-z0-9]+", " ", s)
-    s = re.sub(r"\s+", " ", s).strip()
-    return s
+    # A name made only of what is taken out ("Clean", "(Intro)") keeps its
+    # words: an empty key would match every other such name.
+    return _words(s) or _words(whole)
 
 
 # Pre-normalized needles and compiled patterns — computed once at module load.
 # _normalize_for_flags keeps parenthetical content so keywords inside (...) are detectable.
 # strip_version_tokens still uses normalize_text (strips parentheticals) because it works
 # on already-normalized titles used for dedup grouping.
-_VERSION_NEEDLES_NORM: list[tuple[str, str]] = [
-    (key, needle_norm)
+# Whole words: "Alive" is not live, "Demons" not a demo, "Monochrome" not mono.
+_VERSION_NEEDLES_NORM: list[tuple[str, re.Pattern]] = [
+    (key, re.compile(rf"(?<!\w){re.escape(needle_norm)}(?!\w)"))
     for key, needles in VERSION_KEYWORDS.items()
     for needle_norm in (_normalize_for_flags(n) for n in needles)
     if needle_norm
@@ -103,8 +131,8 @@ def extract_version_flags(*values):
     raw = " ".join([v for v in values if v])
     normalized = _normalize_for_flags(raw)
     found = set()
-    for key, needle_norm in _VERSION_NEEDLES_NORM:
-        if needle_norm in normalized:
+    for key, needle in _VERSION_NEEDLES_NORM:
+        if needle.search(normalized):
             found.add(key)
     return sorted(found)
 
@@ -268,6 +296,7 @@ def normalize_entry(entry):
         "artist_dir_norm": entry.get("artist_dir_norm") or "",
         "track_number": entry.get("track_number"),
         "duration": entry.get("duration"),
+        "size": entry.get("size") or 0,
         "quality_score": entry.get("quality_score", 0),
         "version_flags": safe_list(entry.get("version_flags")),
     }

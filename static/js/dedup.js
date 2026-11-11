@@ -222,7 +222,9 @@ async function apply(mode, btn) {
     return;
   }
   const verb = mode === 'delete' ? 'deleted' : 'moved to quarantine';
-  toast(`${plural(data.processed, 'file')} ${verb}`, { tone: 'ok' });
+  const skipped = (data.skipped || []).length;
+  toast(`${plural(data.processed, 'file')} ${verb}`
+    + (skipped ? `; ${plural(skipped, 'group')} left alone, with no copy kept` : ''), { tone: skipped ? 'error' : 'ok' });
   modal.close();
 }
 

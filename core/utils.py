@@ -21,9 +21,16 @@ except ImportError:
 FILES_LOCK = threading.RLock()
 
 
+# Names Windows keeps for devices: a folder called NUL cannot be made there.
+_RESERVED = re.compile(r"^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\..*)?$", re.IGNORECASE)
+
+
 def sanitize_filename(name: str) -> str:
-    name = re.sub(r'[\\/*?:"<>|]+', "_", name)
-    return re.sub(r"\s+", " ", name).strip()
+    """A name safe for one file or folder. Leading and trailing dots go: a
+    playlist called ".." would otherwise write into the parent folder."""
+    name = re.sub(r'[\\/*?:"<>|\x00-\x1f]+', "_", name or "")
+    name = re.sub(r"\s+", " ", name).strip().strip(".").strip()
+    return f"{name}_" if _RESERVED.match(name) else name
 
 
 def extract_playlist_id(text: str):

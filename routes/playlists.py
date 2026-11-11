@@ -25,10 +25,9 @@ from core.deezer import (
     load_playlists,
     mark_preview_rows_downloaded,
     rematch_track,
-    save_playlists,
 )
 from core import account_context, android_app, crossplatform, nd_accounts, publish
-from core.deezer import accounts_for, give_to_account, is_auto_id, set_accounts
+from core.deezer import accounts_for, add_entry, give_to_account, is_auto_id, modify_playlists, remove_entries, set_accounts
 from core.utils import extract_playlist_id
 from core.xp_sources import MAX_CSV_BYTES, SourceError, spotify_playlist_id
 from core import scheduler
@@ -134,8 +133,7 @@ def add_playlist_for(value, account) -> dict:
     pid = extract_playlist_id(value)
     if not pid:
         raise PlaylistError("Invalid ID or URL")
-    playlists = load_playlists()
-    if any(p["id"] == pid for p in playlists):
+    if any(p["id"] == pid for p in load_playlists()):
         return {"id": pid, "added": False, "open": False, "task_id": None,
                 "message": _share_existing(pid, account) if account else "Playlist already saved"}
     try:
@@ -146,8 +144,7 @@ def add_playlist_for(value, account) -> dict:
         raise PlaylistError("Deezer has no playlist with this ID that your Deezer account can read") from e
     if account:
         info["accounts"] = [account]
-    playlists.append(info)
-    save_playlists(playlists)
+    add_entry(info)
     cache_cover(info)
     return {"id": pid, "added": True, "open": False, "task_id": None, "message": "Playlist added"}
 
@@ -226,8 +223,7 @@ def delete_playlist_for(playlist_id, account) -> dict:
         return {"deleted": False, "complete": complete,
                 "message": f"Playlist removed from {_label(account)}." + ("" if complete else left_in_navidrome)}
     complete = publish.remove_from(playlist_id, title, members)
-    playlists = [p for p in load_playlists() if p["id"] != playlist_id]
-    save_playlists(playlists)
+    remove_entries([playlist_id])
     delete_playlist_cache(playlist_id)
     return {"deleted": True, "complete": complete, "message": "Playlist deleted." + ("" if complete else left_in_navidrome)}
 
@@ -346,16 +342,24 @@ def playlist_preview_route(playlist_id):
 @playlists_bp.post("/playlist/<playlist_id>/automation")
 def update_playlist_automation(playlist_id):
     data = request.get_json(silent=True) or {}
-    playlists = load_playlists()
-    pl = next((p for p in playlists if p["id"] == playlist_id), None)
-    if not pl:
+    try:
+        interval = max(1, int(data.get("auto_scan_interval_minutes") or 60))
+    except (TypeError, ValueError, OverflowError):
+        return jsonify({"error": "The interval must be a number of minutes"}), 400
+    pl = {"auto_scan_enabled": bool(data.get("auto_scan_enabled")), "auto_scan_interval_minutes": interval,
+          "auto_download_after_scan": bool(data.get("auto_download_after_scan"))}
+    found = []
+
+    def change(entries):
+        for entry in entries:
+            if str(entry.get("id")) == playlist_id:
+                entry.update(pl)
+                found.append(entry)
+        return entries
+
+    modify_playlists(change)
+    if not found:
         return jsonify({"error": "Playlist not found"}), 404
-
-    pl["auto_scan_enabled"] = bool(data.get("auto_scan_enabled"))
-    pl["auto_scan_interval_minutes"] = max(1, int(data.get("auto_scan_interval_minutes") or 60))
-    pl["auto_download_after_scan"] = bool(data.get("auto_download_after_scan"))
-
-    save_playlists(playlists)
     scheduler.notify_playlist_updated(playlist_id, pl)
 
     sched_state = scheduler.get_status().get(playlist_id, {})

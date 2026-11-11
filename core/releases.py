@@ -10,10 +10,10 @@ import time
 from datetime import date, timedelta
 from pathlib import Path
 
-import requests
 
-from core.config import DATA_DIR, ensure_dirs, load_config
-from core.deezer_account import API_URL, favorite_artists
+from core import files
+from core.config import DATA_DIR, load_config
+from core.deezer_account import favorite_artists
 
 RELEASES_FILE = DATA_DIR / "releases.json"
 PREFS_FILE = DATA_DIR / "release_prefs.json"
@@ -78,28 +78,24 @@ def is_stale(account=None):
 def _artist_releases(artist, since):
     """Recent releases listed in a followed artist's discography. Deezer also
     lists releases the artist only appears on; the album details tell them apart."""
+    # Through the shared pace of the public API: a quota answer was read as
+    # "no release", and the artist dropped out of the feed without a word. An
+    # error is raised now, and the artist counts as failed.
+    from core.deezer import public_pages
+
     found = []
-    index = 0
-    while True:
-        page = requests.get(
-            f"{API_URL}/artist/{artist['id']}/albums", params={"limit": 100, "index": index}, timeout=30
-        ).json()
-        data = page.get("data") or []
-        for album in data:
-            released = album.get("release_date") or ""
-            if released >= since:
-                found.append({
-                    "id": str(album["id"]),
-                    "title": album.get("title") or "",
-                    "cover": album.get("cover_medium") or "",
-                    "release_date": released,
-                    "record_type": album.get("record_type") or "album",
-                    "explicit": bool(album.get("explicit_lyrics")),
-                })
-        index += len(data)
-        if not data or index >= int(page.get("total") or 0) or "next" not in page:
-            return found
-        time.sleep(REQUEST_GAP_SECONDS)
+    for album in public_pages(f"/artist/{artist['id']}/albums"):
+        released = album.get("release_date") or ""
+        if released >= since:
+            found.append({
+                "id": str(album["id"]),
+                "title": album.get("title") or "",
+                "cover": album.get("cover_medium") or "",
+                "release_date": released,
+                "record_type": album.get("record_type") or "album",
+                "explicit": bool(album.get("explicit_lyrics")),
+            })
+    return found
 
 
 def load_prefs(account=None):
@@ -118,8 +114,7 @@ def set_muted(artist_id, name, muted, account=None):
         prefs["muted"][str(artist_id)] = name
     else:
         prefs["muted"].pop(str(artist_id), None)
-    ensure_dirs()
-    _files(account)[1].write_text(json.dumps(prefs, ensure_ascii=False, indent=2), encoding="utf-8")
+    files.write_json(_files(account)[1], prefs)
     return prefs
 
 
@@ -156,7 +151,9 @@ def refresh_releases(progress_cb=None, account=None):
             details = {k: known[k] for k in ("artist", "artist_id", "nb_tracks")}
         else:
             try:
-                album = requests.get(f"{API_URL}/album/{release['id']}", timeout=30).json()
+                from core.deezer import _public_api
+
+                album = _public_api(f"/album/{release['id']}")
                 details = {
                     "artist": (album.get("artist") or {}).get("name") or release["followed"][0]["name"],
                     "artist_id": str((album.get("artist") or {}).get("id") or release["followed"][0]["id"]),
@@ -181,6 +178,5 @@ def refresh_releases(progress_cb=None, account=None):
         ],
         "releases": sorted(releases.values(), key=lambda r: (r["release_date"], r["artist"]), reverse=True),
     }
-    ensure_dirs()
-    _files(account)[0].write_text(json.dumps(feed, ensure_ascii=False, indent=2), encoding="utf-8")
+    files.write_json(_files(account)[0], feed)
     return feed

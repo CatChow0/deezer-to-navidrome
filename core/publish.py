@@ -215,6 +215,15 @@ def publish_api(playlist_id, title, rows, account_id, force=False, now=None) -> 
             message = str(e) if isinstance(e, nd_accounts.AccountError) else "The password of this account must be entered again."
             return _save(conn, playlist_id, account_id, tried_at=now, error=message)
         ids, missing, hidden = resolve(rows, account, client)
+        if not ids and (missing or hidden):
+            # Not one track found: the path mappings or Navidrome's database are
+            # wrong, or the user cannot see the library. Publishing would empty
+            # the playlist in Navidrome; it is left as it is.
+            reason = ("this Navidrome user cannot see the library of these tracks" if hidden and not missing else
+                      "check the path mappings in Settings, and that Navidrome has scanned the library")
+            return _save(conn, playlist_id, account_id, navidrome_id=current["navidrome_id"] if current else "",
+                         missing=missing, hidden=hidden, tried_at=now,
+                         error=f"None of the {missing + hidden} tracks was found in Navidrome: {reason}.")
         digest = hashlib.sha1(json.dumps([title, ids]).encode()).hexdigest()
         navidrome_id = current["navidrome_id"] if current else ""
         if current and navidrome_id and current["content_hash"] == digest and not current["error"] and not force:
@@ -228,7 +237,9 @@ def publish_api(playlist_id, title, rows, account_id, force=False, now=None) -> 
                     if not current["custom_title"] and current["title"] != title:
                         client.call("updatePlaylist", playlistId=navidrome_id, name=title)
                 except subsonic.SubsonicError as e:
-                    if e.code != 70:
+                    # "Not found" is also what a song ID gone stale says: only a
+                    # playlist Navidrome no longer has was deleted by its user.
+                    if e.code != 70 or not _really_gone(client, navidrome_id):
                         raise
                     # Deleted in Navidrome by its user: it leaves this account.
                     conn.close()
@@ -281,9 +292,9 @@ def remove_file(playlist_id, title):
     """The .m3u8 of a playlist, with its report and list of missing tracks: only
     these three files, then their folder if it is empty. Returns the .m3u8 path
     as it was, or None when there was none."""
-    from core.utils import sanitize_filename
+    from core.deezer import playlist_folder_name
 
-    name = sanitize_filename(title) or f"playlist_{playlist_id}"
+    name = playlist_folder_name(playlist_id, title)
     folder = config.get_paths_from_config()[1] / name
     playlist_file = folder / f"{name}.m3u8"
     existed = playlist_file.exists()
@@ -324,7 +335,7 @@ def forget_account(account_id) -> dict:
     Navidrome, while its password is still known. One only it had, its
     generated playlists among them, leaves the app too; the others stay for
     their other accounts. {"left": n, "removed": n}."""
-    from core.deezer import accounts_for, load_playlists, save_playlists, set_accounts
+    from core.deezer import accounts_for, load_playlists, remove_entries, set_accounts
 
     left, removed = 0, []
     for playlist in load_playlists():
@@ -342,7 +353,7 @@ def forget_account(account_id) -> dict:
         else:
             removed.append(playlist["id"])
     if removed:
-        save_playlists([p for p in load_playlists() if p["id"] not in removed])
+        remove_entries(removed)
         for playlist_id in removed:
             config.delete_playlist_cache(playlist_id)
     conn = mixes_db.connect()
@@ -408,7 +419,7 @@ _sync_guard = threading.Lock()
 def deleted_in_navidrome(playlist_id, account_id) -> str:
     """Its user deleted the playlist in Navidrome: it leaves this account. With no
     account left, it leaves the app, as with Delete. Returns its title."""
-    from core.deezer import accounts_for, load_playlists, playlist_title, save_playlists, set_accounts
+    from core.deezer import accounts_for, playlist_title, remove_entries, set_accounts
 
     title = playlist_title(playlist_id)
     remaining = [a for a in accounts_for(playlist_id) if a != account_id]
@@ -421,10 +432,20 @@ def deleted_in_navidrome(playlist_id, account_id) -> str:
     if remaining:
         set_accounts(playlist_id, remaining)
     else:
-        save_playlists([p for p in load_playlists() if p["id"] != playlist_id])
+        remove_entries([playlist_id])
         config.delete_playlist_cache(playlist_id)
     logger.info("Playlist %s deleted in Navidrome by %s: removed from it", title, account_id)
     return title
+
+
+def _really_gone(client, navidrome_id) -> bool:
+    """True only when Navidrome says it has no such playlist. Any other answer,
+    or none, is not proof enough to take the playlist away from the app."""
+    try:
+        client.call("getPlaylist", id=navidrome_id)
+    except subsonic.SubsonicError as e:
+        return e.code == 70
+    return False
 
 
 def _listed(client) -> list:
@@ -488,7 +509,10 @@ def sync_account(account_id, now=None):
                                  "they are published again.")
         else:
             for publication in gone:
-                report["removed"].append(deleted_in_navidrome(publication["playlist_id"], account_id))
+                # Missing from the list may be a list that is wrong (an owner
+                # renamed, a server restored): asked about each one first.
+                if _really_gone(client, publication["navidrome_id"]):
+                    report["removed"].append(deleted_in_navidrome(publication["playlist_id"], account_id))
             conn = mixes_db.connect()
             try:
                 for publication in publications:
@@ -609,15 +633,14 @@ class SwitchError(Exception):
 
 def _our_files(account_id):
     """The playlists of this account, with their .m3u8 when it exists."""
-    from core.deezer import load_playlists
-    from core.utils import sanitize_filename
+    from core.deezer import load_playlists, playlist_folder_name
 
     base = config.get_paths_from_config()[1]
     found = []
     for playlist in load_playlists():
         if account_id not in playlist.get("accounts", []):
             continue
-        name = sanitize_filename(playlist["title"]) or f"playlist_{playlist['id']}"
+        name = playlist_folder_name(playlist["id"], playlist["title"])
         file = base / name / f"{name}.m3u8"
         found.append({"id": playlist["id"], "title": playlist["title"], "file": file if file.exists() else None})
     return found

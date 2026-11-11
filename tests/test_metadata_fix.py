@@ -643,6 +643,37 @@ class InPlace(Base):
                 fix.write_tags(path, 120, "Rap")
         self.assertEqual(path.read_bytes(), before)
 
+    def test_metadata_left_unreadable_is_undone_too(self):
+        path = self.flac()
+        before = path.read_bytes()
+        real = FLAC.save
+
+        def damages_the_blocks(audio, filething=None, *a, **k):
+            real(audio, *a, **k)
+            with open(path, "r+b") as handle:
+                handle.seek(4)
+                handle.write(b"\xff\xff\xff\xff")
+
+        with mock.patch("mutagen.flac.FLAC.save", damages_the_blocks):
+            with self.assertRaises(fix.WriteRefused):
+                fix.write_tags(path, 120, "Rap")
+        self.assertEqual(path.read_bytes(), before)
+        self.assertEqual(list(fix._journal_dir().glob("*.hdr")), [])
+
+    def test_a_write_that_fails_half_way_puts_the_header_back(self):
+        path = self.flac()
+        before = path.read_bytes()
+        real = FLAC.save
+
+        def fails_after_writing(audio, *a, **k):
+            real(audio, *a, **k)
+            raise OSError("disk unplugged")
+
+        with mock.patch("mutagen.flac.FLAC.save", fails_after_writing):
+            with self.assertRaises(OSError):
+                fix._in_place_flac(path, lambda audio: audio.update({"genre": "Rap"}), ["genre"])
+        self.assertEqual(path.read_bytes(), before)
+
     def test_journal_is_gone_after_a_write(self):
         fix.write_tags(self.flac(), 120, "Rap")
         self.assertEqual(list(fix._journal_dir().glob("*.hdr")), [])

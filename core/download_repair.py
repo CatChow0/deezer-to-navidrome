@@ -134,7 +134,9 @@ class _Finder:
                 for song in songs:
                     same_track = tags["track"] and _number(song.get("TRACK_NUMBER")) == tags["track"]
                     same_disc = not tags["disc"] or _number(song.get("DISK_NUMBER")) in (None, tags["disc"])
-                    if (same_track and same_disc) or _same(song.get("SNG_TITLE"), tags["title"]):
+                    # Files tagged since 1.19 carry the version in their title.
+                    if (same_track and same_disc) or _same(song.get("SNG_TITLE"), tags["title"]) \
+                            or _same(deezer_dl.song_title(song), tags["title"]):
                         yield song
         if tags["artist"] and tags["title"]:
             found = _search("track", f'artist:"{tags["artist"]}" track:"{tags["title"]}"') \
