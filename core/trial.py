@@ -96,7 +96,7 @@ def _free_name(folder: Path, name: str) -> Path:
     return target
 
 
-def add_download(conn, account, deezer_id, artist, title, album, path, mix_id, now) -> None:
+def add_download(conn, account, deezer_id, artist, title, album, path, mix_id, now, artist_id="") -> None:
     """Registers a file saved in the trial folder, in this account's quarantine.
     A track already decided keeps its decision, and its owner. Plays carry the
     file's tags, which can differ from Deezer's names ("Blooming" and "Blooming
@@ -107,10 +107,10 @@ def add_download(conn, account, deezer_id, artist, title, album, path, mix_id, n
     title_for_key = tags.get("title") or title
     conn.execute(
         "INSERT OR IGNORE INTO trial_tracks(deezer_id, track_key, artist, title, album, path, size, mix_id,"
-        " downloaded_at, trial_ends_at, state, state_at, account_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        " downloaded_at, trial_ends_at, state, state_at, account_id, artist_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         (str(deezer_id), stats_db.track_key(names, title_for_key), artist, title, album or "", str(path),
          path.stat().st_size if path.exists() else 0, mix_id, int(now), int(now) + TRIAL_DAYS * DAY, ON_TRIAL, int(now),
-         stats_db.checked_account(account)),
+         stats_db.checked_account(account), str(artist_id or "") or None),
     )
     conn.commit()
 
@@ -403,6 +403,52 @@ def remove(conn, deezer_id, account, now, reason="Removed") -> None:
         _drop_from_generated(row["path"], account)
         return
     _settle(conn, deezer_id, now, row["path"])
+
+
+HOMONYM_REASON = "Another artist with the same name"
+UNKNOWN_ARTIST = "-"
+
+
+def drop_homonyms(conn, stats_conn, account, now, api=None) -> int:
+    """Removes from this profile's quarantine the tracks on trial of a namesake
+    of an artist it listens to: another PLK than the rapper, proposed before
+    1.18.2 told them apart. Only an artist a played track identified counts
+    (mix_candidates.artist_ids); the others are checked again on the next run.
+    The track goes to the trash, as with Remove: it can be restored, and it is
+    never proposed again. Returns how many went."""
+    from core import mix_candidates
+
+    api = api or mix_candidates._api
+    known = mix_candidates.artist_ids(stats_conn)
+    dropped = 0
+    for row in active(conn, account):
+        names = stats_db.split_artists(row["artist"])
+        key = stats_db.name_key(names[0]) if names else ""
+        if row["state"] != ON_TRIAL or key not in known:
+            continue
+        artist_id = row["artist_id"]
+        if not artist_id:
+            # Downloaded before the artist's ID was kept: asked once, then kept. A track
+            # Deezer no longer knows is kept as unknown ("-"), not asked every pass.
+            try:
+                track = api(f"/track/{int(row['deezer_id'])}") or {}
+                artist_id = str((track.get("artist") or {}).get("id") or "") or UNKNOWN_ARTIST
+            except RuntimeError as e:
+                logger.info("Deezer has no artist for %s: %s", row["deezer_id"], e)
+                artist_id = UNKNOWN_ARTIST
+            except Exception as e:
+                logger.info("Could not read the artist of %s: %s", row["deezer_id"], e)
+                continue
+            conn.execute("UPDATE trial_tracks SET artist_id = ? WHERE deezer_id = ?", (artist_id, row["deezer_id"]))
+            conn.commit()
+        if artist_id in (UNKNOWN_ARTIST, known[key]):
+            continue
+        try:
+            remove(conn, row["deezer_id"], account, now, reason=HOMONYM_REASON)
+            dropped += 1
+        except (TrialError, OSError) as e:
+            logger.warning("Could not remove %s, by a namesake of %s: %s", row["deezer_id"], row["artist"], e)
+    return dropped
 
 
 def delete_now(conn, deezer_id, account, now, reason) -> None:

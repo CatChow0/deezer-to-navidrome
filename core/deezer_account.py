@@ -203,13 +203,26 @@ def _user_id(account=None):
 
 
 def favorite_artists(account=None):
-    """[{id, name, picture}] from the public API, paginated."""
+    """[{id, name, picture}], read through the gateway with the account's own
+    session: it sees a private profile too, in one call. The public API, which
+    refuses a private profile, stands in should the gateway change."""
     uid = _user_id(account)
+    try:
+        return _gateway_favorite_artists(uid, account)
+    except (DeezerAccountError, requests.RequestException, ValueError) as gateway_error:
+        try:
+            return _public_favorite_artists(uid)
+        except DeezerAccountError as e:
+            raise DeezerAccountError(f"Deezer refused the favorite artists list: {gateway_error}; {e}") from e
+
+
+def _public_favorite_artists(uid):
+    """The public API, paginated: it refuses a private profile."""
     artists, index = [], 0
     while True:
         page = requests.get(f"{API_URL}/user/{uid}/artists", params={"limit": 100, "index": index}, timeout=30).json()
         if "error" in page:
-            raise DeezerAccountError(f"Deezer refused the favorite artists list: {page['error']}")
+            raise DeezerAccountError(f"the public API refused it: {page['error']}")
         data = page.get("data") or []
         artists += [
             {"id": str(a["id"]), "name": a.get("name") or "", "picture": a.get("picture_medium") or ""}
@@ -218,6 +231,24 @@ def favorite_artists(account=None):
         index += len(data)
         if not data or index >= int(page.get("total") or 0):
             return artists
+
+
+# More favorite artists than anyone keeps: the gateway answers them in one page.
+GW_FAVORITES_LIMIT = 10000
+
+
+def _gateway_favorite_artists(uid, account=None):
+    """The profile page the account sees of itself, private or not."""
+    results = _gw("deezer.pageProfile", {"USER_ID": uid, "tab": "artists", "nb": GW_FAVORITES_LIMIT}, account=account) or {}
+    tab = (results.get("TAB") or {}).get("artists")
+    if not isinstance(tab, dict):
+        # An answer of another shape: say so rather than show an empty feed.
+        raise DeezerAccountError("the account's profile page holds no artists list")
+    return [
+        {"id": str(a["ART_ID"]), "name": a.get("ART_NAME") or "", "picture": _cover_url(a.get("ART_PICTURE"), "artist", 250)}
+        for a in tab.get("data") or []
+        if str(a.get("ART_ID") or "").isdigit()
+    ]
 
 
 def _cover_url(md5, kind="cover", size=500):
@@ -285,6 +316,37 @@ def _song_to_track(song, position):
         "norm_album": normalize_text(album),
         "version_flags": extract_version_flags(title, artist),
     }
+
+
+def playlist_info(playlist_id, account=None):
+    """A Deezer playlist as this account sees it, a private one of its own
+    included: {id, title, picture, track_count}."""
+    results = _gw("deezer.pagePlaylist", {"PLAYLIST_ID": str(playlist_id), "lang": "en", "header": True, "tab": 0},
+                  account=account) or {}
+    data = results.get("DATA")
+    if not isinstance(data, dict) or not data.get("TITLE"):
+        raise DeezerAccountError("the playlist page holds no playlist")
+    count = data.get("NB_SONG")
+    return {
+        "id": str(playlist_id),
+        "title": data["TITLE"],
+        "picture": _cover_url(data.get("PLAYLIST_PICTURE"), "playlist", 1000),
+        "track_count": int(count) if str(count or "").isdigit() else 0,
+    }
+
+
+def playlist_tracks(playlist_id, account=None):
+    """Every track of a Deezer playlist as this account sees it, in the shape
+    of the other playlists' tracks: no cap at 400, private ones included."""
+    results = _gw("playlist.getSongs", {"PLAYLIST_ID": str(playlist_id), "nb": -1}, account=account) or {}
+    songs = results.get("data")
+    if not isinstance(songs, list):
+        raise DeezerAccountError("the playlist holds no tracks list")
+    total = results.get("total")
+    if str(total or "").isdigit() and int(total) > len(songs):
+        # A partial answer would cut the playlist without a word: let the caller try another way.
+        raise DeezerAccountError(f"only {len(songs)} of the playlist's {total} tracks came back")
+    return [_song_to_track(song, i) for i, song in enumerate(songs, start=1)]
 
 
 def mix_tracks(kind, source_id, account=None):

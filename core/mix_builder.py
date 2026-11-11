@@ -272,7 +272,7 @@ def download_to_trial(conn, account, candidates, want, mix_id, now, enqueue=None
                 logger.info("Could not download %s: %s", candidate.deezer_id, error)
                 continue
             trial.add_download(conn, account, candidate.deezer_id, candidate.artist, candidate.title, candidate.album,
-                               result["path"], mix_id, now)
+                               result["path"], mix_id, now, artist_id=candidate.artist_id)
             row = trial.get(conn, candidate.deezer_id, account)
             # A track already decided on (it was on disk) does not join the mix.
             if row["state"] == trial.ON_TRIAL:
@@ -314,7 +314,8 @@ class _Run:
         known = {r["deezer_id"] for r in self.conn.execute(
             "SELECT deezer_id FROM trial_tracks WHERE account_id=? OR state=?", (self.account, trial.KEPT))}
         return mix_candidates.Exclusions(self.owned, known_ids=known,
-                                         rejected_keys=trial.rejected(self.conn, self.account)["keys"], **kw)
+                                         rejected_keys=trial.rejected(self.conn, self.account)["keys"],
+                                         artist_ids=self.ids, **kw)
 
     def download_room(self, wanted) -> int:
         """How many tracks may be fetched now, by the limits every profile shares.
@@ -466,6 +467,8 @@ def review_trial(conn, stats_conn, account, now) -> dict:
     Plays come from its history as it is now, so plays a merge brought in count
     too, and stars from its Navidrome user only."""
     rules = trial.rules_from(load_settings(conn, account))
+    # First, the tracks of a namesake of an artist this profile listens to (two PLK).
+    namesakes = trial.drop_homonyms(conn, stats_conn, account, now)
     marks = trial.navidrome_marks(conn, account, now) if rules.auto and rules.marks_count else None
     owned = {}
     if rules.auto:
@@ -477,11 +480,12 @@ def review_trial(conn, stats_conn, account, now) -> dict:
     if migrate:
         mixes_db.set_meta(conn, key(account, "trial_rules_v2"), True)
     report["purged"] = trial.purge(conn, account, now, rules.trash_days)
+    report["namesakes"] = namesakes
     report["navidrome_marks"] = marks is not None
     return report
 
 
-_COUNTS = ("kept", "review", "trashed", "deleted", "gone", "purged")
+_COUNTS = ("kept", "review", "trashed", "deleted", "gone", "purged", "namesakes")
 
 
 def review_quarantine(now=None, accounts=None):
@@ -543,6 +547,8 @@ def generate(account, versions=None, progress=None, now=None) -> dict:
         emit("Checking the tracks on trial")
         with _review_lock:
             report = review_trial(conn, stats_conn, account, now)
+        if report["namesakes"]:
+            emit(f"Removed {report['namesakes']} track(s) on trial by another artist with the same name")
         # Each account draws its own; the install's as it always did.
         seed_text = f"{now // DAY}" if account == stats_db.FIRST_ACCOUNT else f"{account}:{now // DAY}"
         run = _Run(conn, stats_conn, account, now, seed_text)

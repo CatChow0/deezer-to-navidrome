@@ -94,8 +94,11 @@ _ADDED_COLUMNS = (
     ("tracks", "file_path", "TEXT"),
     ("albums", "file_path", "TEXT"),
     ("artists", "lookup_at", "INTEGER"),
+    # Where an artist's Deezer ID comes from: "track" (a played track matched on its
+    # title and artist), "search" (its name alone, which homonyms share), or NULL.
+    ("artists", "deezer_source", "TEXT"),
 )
-_SCHEMA_VERSION = 2
+_SCHEMA_VERSION = 3
 
 _FEAT_BRACKET = re.compile(r"[\(\[]\s*(?:feat\.?|ft\.?|featuring|with)\b[^\)\]]*[\)\]]", re.I)
 _FEAT_INLINE = re.compile(r"\s(?:feat\.?|ft\.?|featuring)\s.*$", re.I)
@@ -148,7 +151,8 @@ def connect(account) -> sqlite3.Connection:
 
 
 def _migrate(conn) -> None:
-    if conn.execute("PRAGMA user_version").fetchone()[0] >= _SCHEMA_VERSION:
+    version = conn.execute("PRAGMA user_version").fetchone()[0]
+    if version >= _SCHEMA_VERSION:
         return
     for table, column, kind in _ADDED_COLUMNS:
         present = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
@@ -159,7 +163,12 @@ def _migrate(conn) -> None:
                 # Another thread opening the database at the same moment got there first.
                 if "duplicate column" not in str(e):
                     raise
+    if version < 3:
+        # Up to 1.18.1 a search by name could replace the artist a played track gave
+        # (another PLK than the rapper): every artist is looked up again.
+        conn.execute("UPDATE artists SET lookup_at = NULL")
     conn.execute(f"PRAGMA user_version = {_SCHEMA_VERSION}")
+    conn.commit()
 
 
 def _is_latin(char) -> bool:

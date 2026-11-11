@@ -278,15 +278,16 @@ class Shared(Base):
         with closing(stats_db.connect("nd1")) as conn:
             conn.execute("UPDATE tracks SET deezer_track_id='77', deezer_album_id='88', cover_url='http://c',"
                          " genre='Rap', genre_source='deezer', duration_sec=200, duration_source='deezer'")
-            conn.execute("UPDATE artists SET picture_url='http://p', deezer_id='99'")
+            # An artist a played track gave: the other history takes it as it is.
+            conn.execute("UPDATE artists SET picture_url='http://p', deezer_id='99', deezer_source='track'")
             conn.commit()
         with mock.patch("core.deezer._public_api", side_effect=AssertionError("no call expected")):
             stats_enrich.enrich_batch("nd2")
         with closing(stats_db.connect("nd2")) as conn:
             track = conn.execute("SELECT deezer_track_id, genre, duration_sec FROM tracks").fetchone()
-            artist = conn.execute("SELECT picture_url FROM artists").fetchone()
+            artist = conn.execute("SELECT picture_url, deezer_id, deezer_source FROM artists").fetchone()
         self.assertEqual(tuple(track), ("77", "Rap", 200))
-        self.assertEqual(artist[0], "http://p")
+        self.assertEqual(tuple(artist), ("http://p", "99", "track"))
 
     def test_a_cover_found_for_one_history_serves_the_other(self):
         stats_ingest.record_listens("nd1", [listen(1, "Shared")])

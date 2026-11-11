@@ -137,7 +137,7 @@ class Playlists(Profiles):
         config.save_preview_state({})
         patches = (
             mock.patch("routes.playlists.fetch_deezer_playlist_info",
-                       side_effect=lambda pid: {"id": pid, "title": f"Deezer {pid}", "picture": ""}),
+                       side_effect=lambda pid, profiles=None: {"id": pid, "title": f"Deezer {pid}", "picture": ""}),
             mock.patch("routes.playlists.cache_cover", return_value=None),
             mock.patch("core.publish.custom_titles", return_value={}),
             mock.patch("core.publish.handmade", return_value=[]),
@@ -196,8 +196,8 @@ class Playlists(Profiles):
                 self.client.post("/playlist/add", data={"playlist_input": "9104"})
                 page = self.client.get("/", headers={"Accept": "text/html"}).get_data(as_text=True)
         self.assertEqual((unknown.status_code, unknown.get_json()["error"]["message"]),
-                         (400, "Deezer has no public playlist with this ID"))
-        self.assertIn("Deezer has no public playlist with this ID", page)
+                         (400, "Deezer has no playlist with this ID that your Deezer account can read"))
+        self.assertIn("Deezer has no playlist with this ID that your Deezer account can read", page)
         self.assertEqual(load_playlists(), [])
 
     def test_another_profiles_playlist_is_never_deleted_from_here(self):
