@@ -3,6 +3,7 @@ templates/notes/<version>.html; a test fails if VERSION has none, so a release
 cannot ship without one."""
 
 RELEASES = [
+    {"version": "1.19.0", "date": "2026-11-11", "title": "Safer files, sign-in and downloads"},
     {"version": "1.18.2", "date": "2026-11-11", "title": "Namesakes, private Deezer profiles, big playlists"},
     {"version": "1.18.1", "date": "2026-11-10", "title": "The whole web interface in the Android app"},
     {"version": "1.18.0", "date": "2026-11-09", "title": "The Android app"},

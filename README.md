@@ -2,7 +2,7 @@
 
 **A self-hosted web app that turns your Deezer playlists into Navidrome `.m3u8` playlists, matches them against your local library, and downloads what is missing straight from Deezer.**
 
-[![Docker Image Version](https://img.shields.io/badge/version-1.18.2-blue)](https://hub.docker.com/r/catchow/deezer-to-navidrome)
+[![Docker Image Version](https://img.shields.io/badge/version-1.19.0-blue)](https://hub.docker.com/r/catchow/deezer-to-navidrome)
 [![Python 3](https://img.shields.io/badge/python-3-blue)](https://www.python.org/)
 [![Flask](https://img.shields.io/badge/flask-web%20app-brightgreen)](https://flask.palletsprojects.com/)
 
@@ -679,6 +679,10 @@ The folder and performance variables are read **on first start** to create `conf
 | `STATS_MALOJA_DB` | `/import/maloja/malojadb.sqlite` | Maloja's database, for importing your history |
 | `DISABLE_AUTH` | `false` | `true` turns sign-in off (a reverse proxy already asks for a login) |
 | `COOKIE_SECURE` | `false` | `true` makes the session cookie HTTPS-only |
+| `TRUSTED_PROXIES` | `0` | How many reverse proxies stand in front of the app. Set it (usually `1`) behind a proxy, so the limit on failed sign-ins counts each visitor's own address rather than the proxy's. Leave it at `0` otherwise: anyone could then pretend to be another address |
+| `PUID` / `PGID` | — | Run the app as this user and group instead of root. The data folder is given to them at start; the music and playlist folders must already be writable by them |
+
+Only `DEEZER_ARL`, `DEEZER_ARL_PREMIUM`, `API_TOKEN`, `SCROBBLE_TOKEN` and `SCROBBLE_TOKEN_ND2`… replace a saved credential. The files named in Settings (library cache, scan state, playlists list) stay inside `DATA_DIR`: a path elsewhere is replaced by the default one.
 
 #### Folders
 
