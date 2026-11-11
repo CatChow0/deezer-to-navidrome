@@ -119,6 +119,8 @@ import io.github.catchow0.d2n.ui.settings.SecurityScreen
 import io.github.catchow0.d2n.ui.settings.SecurityViewModel
 import io.github.catchow0.d2n.ui.settings.SettingsHome
 import io.github.catchow0.d2n.ui.settings.SettingsPage
+import io.github.catchow0.d2n.ui.settings.UsersScreen
+import io.github.catchow0.d2n.ui.settings.UsersViewModel
 import io.github.catchow0.d2n.ui.share.resolveShared
 import io.github.catchow0.d2n.ui.stats.RecapStory
 import io.github.catchow0.d2n.ui.stats.RecapViewModel
@@ -270,7 +272,7 @@ private fun NavHostController.openTab(tab: Tab, current: Tab?) {
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun MainScaffold(graph: AppGraph, onSignedOut: (notice: String?) -> Unit, onOtherServer: () -> Unit) {
+fun MainScaffold(graph: AppGraph, onSignedOut: (notice: String?) -> Unit, onOtherServer: () -> Unit, onMustChange: () -> Unit = {}) {
     val session: SessionViewModel = viewModel { SessionViewModel(graph::requireApi, graph.store) }
     val updates: UpdateViewModel = viewModel {
         UpdateViewModel(
@@ -299,6 +301,7 @@ fun MainScaffold(graph: AppGraph, onSignedOut: (notice: String?) -> Unit, onOthe
     // A 401 from any call: this phone was signed out on the server.
     LaunchedEffect(Unit) { graph.unauthorized.collect { session.onUnauthorized() } }
     LaunchedEffect(sessionState.signedOutMessage) { sessionState.signedOutMessage?.let(onSignedOut) }
+    LaunchedEffect(sessionState.mustChange) { if (sessionState.mustChange) onMustChange() }
     // Back in front: look for an update, and finish one waiting for the permission.
     LifecycleEventEffect(Lifecycle.Event.ON_START) {
         // Also the first time: profiles may have changed on the web meanwhile.
@@ -511,7 +514,7 @@ private fun Tabs(
                     unseenNotes = unseenNotes,
                 )
             }
-            composable<SettingsRoute> { SettingsHome(onBack = back, onPage = openSettings) }
+            composable<SettingsRoute> { SettingsHome(sessionState.isAdmin, onBack = back, onPage = openSettings) }
             composable<SettingsPageRoute> { entry ->
                 when (SettingsPage.valueOf(entry.toRoute<SettingsPageRoute>().page)) {
                     SettingsPage.Music -> MusicSettingsScreen(viewModel { MusicSettingsViewModel(deps) }, onBack = back)
@@ -519,7 +522,8 @@ private fun Tabs(
                     SettingsPage.Deezer -> DeezerAccountsScreen(viewModel { DeezerAccountsViewModel(deps) }, onBack = back)
                     SettingsPage.Listening -> ListeningStatsScreen(viewModel { ListeningStatsViewModel(deps) }, onBack = back)
                     SettingsPage.Security -> SecurityScreen(viewModel { SecurityViewModel(deps) }, onBack = back)
-                    SettingsPage.Maintenance -> MaintenanceScreen(viewModel { MaintenanceViewModel(deps) }, onBack = back, onDuplicates = { inner.navigate(DuplicatesRoute) })
+                    SettingsPage.Maintenance -> MaintenanceScreen(viewModel { MaintenanceViewModel(deps) }, sessionState.isAdmin, onBack = back, onDuplicates = { inner.navigate(DuplicatesRoute) })
+                    SettingsPage.Users -> UsersScreen(viewModel { UsersViewModel(deps) }, onBack = back)
                     SettingsPage.Reset -> ResetScreen(viewModel { MaintenanceViewModel(deps) }, onBack = back)
                 }
             }

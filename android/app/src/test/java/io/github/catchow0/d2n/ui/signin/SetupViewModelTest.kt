@@ -21,8 +21,8 @@ class SetupViewModelTest {
     private val store = FakeSettingsStore(StoredSession(ready = true, serverUrl = "https://music.example/"))
 
     @Test
-    fun `creating the account signs this phone in`() {
-        api.onSetup = { SignedIn("d2n_first", DeviceInfo("d1", it.device), it.username) }
+    fun `creating the account signs this phone in and shows its recovery code first`() {
+        api.onSetup = { SignedIn("d2n_first", DeviceInfo("d1", it.device), it.username, recoveryCode = "AAAA-BBBB") }
         val vm = SetupViewModel({ api }, store, defaultDevice = "Pixel 8")
         vm.onUsername("me")
         vm.onPassword("long-test-password")
@@ -30,6 +30,9 @@ class SetupViewModelTest {
         vm.submit()
         assertEquals(Credentials("me", "long-test-password", "Pixel 8"), api.sent.single())
         assertEquals("d2n_first", store.state.value.token)
+        assertEquals("AAAA-BBBB", vm.state.value.recoveryCode)
+        assertNull(vm.state.value.next)
+        vm.goIn()
         assertEquals(SetupViewModel.Next.Main, vm.state.value.next)
     }
 

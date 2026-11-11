@@ -30,6 +30,8 @@ class SetupViewModel(
         val busy: Boolean = false,
         val error: String? = null,
         val next: Next? = null,
+        /** Shown once the account exists, before going in. */
+        val recoveryCode: String? = null,
     ) {
         val canSubmit: Boolean get() = !busy && username.isNotBlank() && password.isNotEmpty() && confirm.isNotEmpty()
     }
@@ -54,12 +56,14 @@ class SetupViewModel(
                 val signed = apiCall { api().setup(Credentials(current.username.trim(), current.password, device)) }
                 store.setDeviceName(device)
                 store.setToken(signed.token)
-                _state.update { it.copy(busy = false, password = "", confirm = "", next = Next.Main) }
+                _state.update { it.copy(busy = false, password = "", confirm = "", recoveryCode = signed.recoveryCode.orEmpty()) }
             } catch (e: ApiFailure) {
                 _state.update { it.copy(busy = false, error = e.describe()) }
             }
         }
     }
+
+    fun goIn() = _state.update { it.copy(next = Next.Main) }
 
     fun consumed() = _state.update { it.copy(next = null) }
 }

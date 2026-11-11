@@ -34,6 +34,7 @@ import io.github.catchow0.d2n.data.DeezerProfile
 import io.github.catchow0.d2n.data.DeezerProfilesAnswer
 import io.github.catchow0.d2n.data.NavidromeProfile
 import io.github.catchow0.d2n.data.NavidromeProfileFields
+import io.github.catchow0.d2n.data.UserName
 import io.github.catchow0.d2n.ui.common.ago
 import io.github.catchow0.d2n.ui.components.Banner
 import io.github.catchow0.d2n.ui.components.BannerTone
@@ -48,6 +49,7 @@ import io.github.catchow0.d2n.ui.components.GlassCard
 import io.github.catchow0.d2n.ui.components.IconAction
 import io.github.catchow0.d2n.ui.components.LocalOnline
 import io.github.catchow0.d2n.ui.components.ScreenScaffold
+import io.github.catchow0.d2n.ui.components.ToggleRow
 import io.github.catchow0.d2n.ui.components.plural
 import io.github.catchow0.d2n.ui.components.remote
 import io.github.catchow0.d2n.ui.theme.D2nColors
@@ -283,9 +285,12 @@ fun DeezerAccountsScreen(vm: DeezerAccountsViewModel, onBack: () -> Unit) {
     var editing by remember { mutableStateOf<DeezerProfile?>(null) }
     var adding by remember { mutableStateOf(false) }
     var removing by remember { mutableStateOf<DeezerProfile?>(null) }
+    var sharing by remember { mutableStateOf<DeezerProfile?>(null) }
+    val people by vm.people.collectAsStateWithLifecycle()
     LaunchedEffect(formDone) {
         editing = null
         adding = false
+        sharing = null
     }
     ScreenScaffold(
         title = "Deezer accounts",
@@ -295,7 +300,7 @@ fun DeezerAccountsScreen(vm: DeezerAccountsViewModel, onBack: () -> Unit) {
         onRefresh = vm::refresh,
     ) {
         item(key = "lead") {
-            Note("Each Navidrome profile follows the releases and mixes of one of them, the default one unless it chose another. The one marked for the downloads fetches the files for everyone.")
+            Note("Each profile follows the releases and mixes of one of them, the default one unless it chose another. The one marked for your downloads fetches the files you ask for. Share one to let another account of this app use it.")
         }
         remote(state, onRetry = vm::refresh, skeletons = 2, skeletonHeight = 140.dp) { answer ->
             item(key = "downloads") {
@@ -304,7 +309,7 @@ fun DeezerAccountsScreen(vm: DeezerAccountsViewModel, onBack: () -> Unit) {
                     when {
                         downloads?.account == null -> "Add a Deezer account to download what is missing."
                         !downloads.connected -> "The downloads use ${downloads.label}, which cannot sign in: ${downloads.error ?: "check its ARL"}."
-                        else -> "The downloads use ${downloads.label}, in ${FORMAT_LABEL[downloads.format] ?: downloads.format ?: "the best quality it allows"}, for every profile." +
+                        else -> "Your downloads use ${downloads.label}, in ${FORMAT_LABEL[downloads.format] ?: downloads.format ?: "the best quality it allows"}." +
                             if (downloads.premium) "" else " A free account only downloads MP3 128: mark a premium one with Use for download for FLAC."
                     },
                     if (downloads?.connected == true) BannerTone.Info else BannerTone.Warn,
@@ -319,7 +324,9 @@ fun DeezerAccountsScreen(vm: DeezerAccountsViewModel, onBack: () -> Unit) {
                     if (account.name.isNotBlank()) Note("Signed in as ${account.name}")
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         if (account.isDefault) Chip("Default", tone = ChipTone.Ok)
-                        if (account.isDownload) Chip("Downloads", tone = ChipTone.Partial)
+                        if (!account.mine) Chip("Shared with you", tone = ChipTone.Info)
+                        if (account.isDownload) Chip("Your downloads", tone = ChipTone.Partial)
+                        if (account.sharedWith.isNotEmpty()) Chip("Shared with ${account.sharedWith.size}", tone = ChipTone.Idle)
                         when {
                             account.error.isNotBlank() -> Chip("Cannot sign in", tone = ChipTone.Miss)
                             account.checkedAt > 0 -> Chip(if (account.premium) "Premium account" else "Free account", tone = if (account.premium) ChipTone.Ok else ChipTone.Idle)
@@ -329,11 +336,17 @@ fun DeezerAccountsScreen(vm: DeezerAccountsViewModel, onBack: () -> Unit) {
                     if (account.fromEnv.isNotBlank()) Note("Set by the ${account.fromEnv} environment variable: change the ARL there.")
                     if (account.error.isNotBlank()) Note(account.error, D2nColors.Partial)
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        D2nButton(if ("check-${account.id}" in busy) "Checking…" else "Check", { vm.check(account.id) }, kind = ButtonKind.Ghost, small = true, enabled = online && "check-${account.id}" !in busy)
-                        D2nButton("Edit", { editing = account }, kind = ButtonKind.Ghost, small = true, enabled = online)
-                        if (!account.isDefault) D2nButton("Make default", { vm.makeDefault(account.id) }, kind = ButtonKind.Ghost, small = true, enabled = online)
+                        if (account.mine) {
+                            D2nButton(if ("check-${account.id}" in busy) "Checking…" else "Check", { vm.check(account.id) }, kind = ButtonKind.Ghost, small = true, enabled = online && "check-${account.id}" !in busy)
+                            D2nButton("Edit", { editing = account }, kind = ButtonKind.Ghost, small = true, enabled = online)
+                            D2nButton("Share", {
+                                sharing = account
+                                vm.loadPeople()
+                            }, kind = ButtonKind.Ghost, small = true, enabled = online)
+                            if (!account.isDefault) D2nButton("Make default", { vm.makeDefault(account.id) }, kind = ButtonKind.Ghost, small = true, enabled = online)
+                        }
                         if (!account.isDownload) D2nButton("Use for download", { vm.useForDownloads(account.id) }, kind = ButtonKind.Ghost, small = true, enabled = online)
-                        if (answer.accounts.size > 1) D2nButton("Remove", { removing = account }, kind = ButtonKind.Danger, small = true, enabled = online)
+                        if (account.mine && answer.accounts.size > 1) D2nButton("Remove", { removing = account }, kind = ButtonKind.Danger, small = true, enabled = online)
                     }
                 }
             }
@@ -345,6 +358,9 @@ fun DeezerAccountsScreen(vm: DeezerAccountsViewModel, onBack: () -> Unit) {
             adding = false
         })
     }
+    sharing?.let { account ->
+        ShareSheet(account, people.filter { it.id != account.owner }, "share-${account.id}" in busy, { sharing = null }) { vm.share(account.id, it) }
+    }
     removing?.let { account ->
         ConfirmDialog(
             "Remove ${account.label}?",
@@ -353,6 +369,32 @@ fun DeezerAccountsScreen(vm: DeezerAccountsViewModel, onBack: () -> Unit) {
             onConfirm = { vm.delete(account.id, account.label) },
             onDismiss = { removing = null },
         )
+    }
+}
+
+/** Who else in the app may use this Deezer account: they never see its ARL. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ShareSheet(account: DeezerProfile, people: List<UserName>, busy: Boolean, onDismiss: () -> Unit, onSave: (List<String>) -> Unit) {
+    var chosen by remember(account.sharedWith) { mutableStateOf(account.sharedWith.toSet()) }
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        containerColor = D2nColors.Ink2,
+        contentColor = D2nColors.Text,
+    ) {
+        Column(
+            Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 24.dp).padding(bottom = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Text("Share ${account.label}", Modifier.semantics { heading() }, style = MaterialTheme.typography.titleMedium)
+            Note("They may use it for their profiles and downloads, never see its ARL.")
+            if (people.isEmpty()) Note("There is no other account in the app to share it with.")
+            people.forEach { person ->
+                ToggleRow(person.username, person.id in chosen, { on -> chosen = if (on) chosen + person.id else chosen - person.id })
+            }
+            D2nButton(if (busy) "Saving…" else "Save", { onSave(people.map { it.id }.filter { it in chosen }) }, Modifier.fillMaxWidth(), enabled = !busy && people.isNotEmpty())
+        }
     }
 }
 

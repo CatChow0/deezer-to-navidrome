@@ -78,6 +78,20 @@ import io.github.catchow0.d2n.data.TokenAnswer
 import io.github.catchow0.d2n.data.WebhookAnswer
 import io.github.catchow0.d2n.data.WebhookRequest
 import io.github.catchow0.d2n.data.WebhookTestAnswer
+import io.github.catchow0.d2n.data.CatboardAnswer
+import io.github.catchow0.d2n.data.CodeAnswer
+import io.github.catchow0.d2n.data.ForgotAnswer
+import io.github.catchow0.d2n.data.ForgotRequest
+import io.github.catchow0.d2n.data.HeirRequest
+import io.github.catchow0.d2n.data.NewPassword
+import io.github.catchow0.d2n.data.NewUser
+import io.github.catchow0.d2n.data.ProfilesCleared
+import io.github.catchow0.d2n.data.ProfilesRequest
+import io.github.catchow0.d2n.data.SuperAdminCode
+import io.github.catchow0.d2n.data.UserChange
+import io.github.catchow0.d2n.data.UserNamesAnswer
+import io.github.catchow0.d2n.data.UsersAnswer
+import io.github.catchow0.d2n.data.UsersRequest
 import okhttp3.MultipartBody
 
 /** A D2nApi whose answers each test sets; a call nobody set fails the test.
@@ -199,4 +213,18 @@ class FakeD2nApi : D2nApi {
     override suspend fun muteArtist(body: MuteRequest): MutedAnswer = reply("muteArtist", body)
     override suspend fun deezerMixes(): DeezerMixesAnswer = reply("deezerMixes")
     override suspend fun followMix(body: FollowMixRequest): FollowAnswer = reply("followMix", body)
+    override suspend fun firstPassword(body: NewPassword): SignedIn = reply("firstPassword", body)
+    override suspend fun forgot(body: ForgotRequest): ForgotAnswer = reply("forgot", body)
+    override suspend fun forgotSuperAdmin(): SuperAdminCode = reply("forgotSuperAdmin")
+    override suspend fun shareDeezerProfile(id: String, body: UsersRequest): DeezerProfilesAnswer = reply("shareDeezerProfile", id, body)
+    override suspend fun userNames(): UserNamesAnswer = reply("userNames")
+    override suspend fun newRecoveryCode(): CodeAnswer = reply("newRecoveryCode")
+    override suspend fun setCatboardProfiles(body: ProfilesRequest): CatboardAnswer = reply("setCatboardProfiles", body)
+    override suspend fun clearProfiles(what: String): ProfilesCleared = reply("clearProfiles", what)
+    override suspend fun users(): UsersAnswer = reply("users")
+    override suspend fun createUser(body: NewUser): UsersAnswer = reply("createUser", body)
+    override suspend fun updateUser(id: String, body: UserChange): UsersAnswer = reply("updateUser", id, body)
+    override suspend fun deleteUser(id: String, body: HeirRequest): UsersAnswer = reply("deleteUser", id, body)
+    override suspend fun setUserPassword(id: String, body: NewPassword): UsersAnswer = reply("setUserPassword", id, body)
+    override suspend fun newUserRecoveryCode(id: String): CodeAnswer = reply("newUserRecoveryCode", id)
 }

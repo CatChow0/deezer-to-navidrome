@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import io.github.catchow0.d2n.data.ApiError
 import io.github.catchow0.d2n.data.ApiFailure
+import io.github.catchow0.d2n.data.AppUser
 import io.github.catchow0.d2n.data.D2nApi
 import io.github.catchow0.d2n.data.Profile
 import io.github.catchow0.d2n.data.SettingsStore
@@ -29,6 +30,11 @@ class SessionViewModel(
         val loading: Boolean = true,
         val error: String? = null,
         val signedOutMessage: String? = null,
+        /** The account signed in, and whether it is an Admin (Settings → Users). */
+        val user: AppUser? = null,
+        val isAdmin: Boolean = false,
+        /** Its password is a temporary one: the server answers nothing else until it is changed. */
+        val mustChange: Boolean = false,
     )
 
     private val _state = MutableStateFlow(UiState())
@@ -48,12 +54,13 @@ class SessionViewModel(
                 _state.update {
                     it.copy(
                         profiles = info.profiles, selected = chosen, serverVersion = info.version,
-                        apiVersion = info.api, loading = false, error = null,
+                        apiVersion = info.api, loading = false, error = null, user = info.user, isAdmin = info.isAdmin,
                     )
                 }
             } catch (e: ApiError) {
                 // A 401 is handled by onUnauthorized, from the client itself.
-                _state.update { it.copy(loading = false, error = if (e.status == 401) null else e.message) }
+                val mustChange = e.code == "password_change_needed"
+                _state.update { it.copy(loading = false, error = if (e.status == 401 || mustChange) null else e.message, mustChange = mustChange) }
             } catch (e: ApiFailure) {
                 _state.update { it.copy(loading = false, error = e.message) }
             }

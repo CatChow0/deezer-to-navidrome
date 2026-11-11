@@ -35,6 +35,7 @@ import io.github.catchow0.d2n.ui.common.ago
 import io.github.catchow0.d2n.ui.components.Banner
 import io.github.catchow0.d2n.ui.components.BannerTone
 import io.github.catchow0.d2n.ui.components.ButtonKind
+import io.github.catchow0.d2n.ui.components.ToggleRow
 import io.github.catchow0.d2n.ui.components.Chip
 import io.github.catchow0.d2n.ui.components.ChipTone
 import io.github.catchow0.d2n.ui.components.ConfirmDialog
@@ -81,6 +82,7 @@ fun SecurityScreen(vm: SecurityViewModel, onBack: () -> Unit) {
     val devices by vm.devices.collectAsStateWithLifecycle()
     val busy by vm.busy.collectAsStateWithLifecycle()
     val passwordDone by vm.passwordDone.collectAsStateWithLifecycle()
+    val recoveryCode by vm.recoveryCode.collectAsStateWithLifecycle()
     val online = LocalOnline.current
     var current by remember { mutableStateOf("") }
     var new by remember { mutableStateOf("") }
@@ -113,6 +115,15 @@ fun SecurityScreen(vm: SecurityViewModel, onBack: () -> Unit) {
                     }
                 }
             }
+            if (!s.disabled && !s.accountFromEnv) {
+                item(key = "recovery") {
+                    SectionHeader("Recovery code", subtitle = "With it, you choose a new password on the sign-in screen if you forget yours. A new one stops the old one; it is shown only once.")
+                    GlassCard(Modifier.fillMaxWidth()) {
+                        recoveryCode?.let { SecretRow("Recovery code", it) }
+                        D2nButton("Make a new recovery code", { ask = "recovery" }, kind = ButtonKind.Ghost, small = true, enabled = online && "recovery" !in busy)
+                    }
+                }
+            }
             item(key = "devices") {
                 SectionHeader("Devices", subtitle = "Phones and other apps signed in with your account, each with its own token. Sign one out here if you lose it.")
             }
@@ -139,6 +150,19 @@ fun SecurityScreen(vm: SecurityViewModel, onBack: () -> Unit) {
                     }
                 }
             }
+            if (s.profiles.size > 1) {
+                item(key = "catboard") {
+                    SectionHeader("Profiles CatBoard reads", subtitle = "The API token and the webhook are about the releases of these profiles, as one feed.")
+                    GlassCard(Modifier.fillMaxWidth()) {
+                        var chosen by remember(s.catboardProfiles) { mutableStateOf(s.catboardProfiles.toSet()) }
+                        s.profiles.forEach { profile ->
+                            ToggleRow(profile.label, profile.id in chosen, { on -> chosen = if (on) chosen + profile.id else chosen - profile.id })
+                        }
+                        D2nButton("Save", { vm.setCatboardProfiles(s.profiles.map { it.id }.filter { it in chosen }) }, small = true,
+                            enabled = online && chosen.isNotEmpty() && chosen != s.catboardProfiles.toSet() && "catboard" !in busy)
+                    }
+                }
+            }
             item(key = "webhook") {
                 SectionHeader("CatBoard webhook", subtitle = "Called when the release feed or the library index is refreshed, so CatBoard updates at once.")
                 GlassCard(Modifier.fillMaxWidth()) {
@@ -156,6 +180,7 @@ fun SecurityScreen(vm: SecurityViewModel, onBack: () -> Unit) {
     }
     when (ask) {
         "password" -> ConfirmDialog("Change the password?", "Every browser and device is signed out, this phone too: you will sign in again with the new password.", "Change", { vm.changePassword(current, new) }, { ask = null })
+        "recovery" -> ConfirmDialog("Make a new recovery code?", "The old one stops working. Write the new one down: it is shown only once.", "Make a new one", vm::newRecoveryCode, { ask = null }, danger = false)
         "token" -> ConfirmDialog("Make a new token?", "The old one stops working: CatBoard will need the new one.", "Make a new one", vm::newToken, { ask = null })
         "webhook" -> ConfirmDialog("Remove the webhook?", "CatBoard is no longer told when something changes.", "Remove", vm::removeWebhook, { ask = null })
     }

@@ -27,6 +27,7 @@ fun SignInScreen(
     notice: String?,
     onNext: (SignInViewModel.Next) -> Unit,
     onOtherServer: () -> Unit,
+    onForgot: () -> Unit,
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
     LaunchedEffect(state.next) {
@@ -51,6 +52,7 @@ fun SignInScreen(
         )
         state.error?.let { Banner(it, if (state.waitSeconds > 0) BannerTone.Warn else BannerTone.Error) }
         D2nButton(if (state.busy) "Signing in…" else "Sign in", vm::submit, Modifier.fillMaxWidth(), enabled = state.canSubmit)
+        D2nButton("Forgot your password?", onForgot, Modifier.align(Alignment.CenterHorizontally), kind = ButtonKind.Link)
         D2nButton("Use another server", onOtherServer, Modifier.align(Alignment.CenterHorizontally), kind = ButtonKind.Link)
     }
 }
