@@ -31,6 +31,7 @@ CREATE TABLE IF NOT EXISTS trial_tracks (
     state_at INTEGER NOT NULL,
     reason TEXT NOT NULL DEFAULT '',
     account_id TEXT NOT NULL DEFAULT 'nd1',
+    artist_id TEXT,
     PRIMARY KEY (deezer_id, account_id)
 )"""
 _TRIAL_COLUMNS = ("deezer_id, track_key, artist, title, album, path, size, mix_id, downloaded_at, trial_ends_at,"
@@ -115,7 +116,9 @@ _ADDED_COLUMNS = {
     "publications": {"custom_title": "TEXT NOT NULL DEFAULT ''"},
     # Whose quarantine the track is in: the tracks from before profiles are the
     # install's account's.
-    "trial_tracks": {"account_id": "TEXT NOT NULL DEFAULT 'nd1'"},
+    "trial_tracks": {"account_id": "TEXT NOT NULL DEFAULT 'nd1'",
+                     # Deezer's ID of the track's artist: tells a namesake apart (core/trial.py).
+                     "artist_id": "TEXT"},
 }
 
 

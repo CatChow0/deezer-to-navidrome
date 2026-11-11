@@ -36,6 +36,7 @@ class Candidate:
     explicit: bool
     rank: int = 0
     bpm: float = None
+    artist_id: str = ""     # Deezer's: two artists can share a name.
 
 
 def _api(path, params=None):
@@ -55,6 +56,7 @@ def parse(item, album=""):
         album=(item.get("album") or {}).get("title") or album, key=stats_db.track_key(names, title),
         base=f"{stats_db.name_key(names[0])}|{base_title(title)}", preview=item.get("preview") or "",
         explicit=bool(item.get("explicit_lyrics")), rank=int(item.get("rank") or 0),
+        artist_id=str((item.get("artist") or {}).get("id") or ""),
     )
 
 
@@ -90,8 +92,10 @@ def preview_tempo(candidate):
 class Exclusions:
     """What may not be proposed: what you own, what is on trial or was refused."""
 
-    def __init__(self, owned, known_ids=(), rejected_keys=(), played=None, never_played_only=False):
+    def __init__(self, owned, known_ids=(), rejected_keys=(), played=None, never_played_only=False, artist_ids=None):
         self.keys = {t.key for t in owned} | set(rejected_keys)
+        # artist key -> the Deezer ID of the artist you listen to (artist_ids()).
+        self.artist_ids = artist_ids or {}
         self.bases = {f"{t.artist_key}|{base_title(t.title)}" for t in owned}
         self.ids = {str(i) for i in known_ids}
         self.played = played or {}
@@ -101,6 +105,9 @@ class Exclusions:
         if candidate.deezer_id in self.ids or candidate.key in self.keys or candidate.base in self.bases:
             return False
         if _FILLER.search(candidate.title):
+            return False
+        if candidate.artist_id and self.artist_ids.get(candidate.artist_key, candidate.artist_id) != candidate.artist_id:
+            # Same name as an artist you listen to, another artist on Deezer (two PLK).
             return False
         return not (self.never_played_only and candidate.key in self.played)
 
@@ -140,8 +147,11 @@ def select(candidates, exclusions, want, per_artist, rng, seed_tempos=None, temp
 
 
 def artist_ids(stats_conn) -> dict:
-    """artist key -> Deezer id, from the lookups the history already made."""
-    return {r["key"]: r["deezer_id"] for r in stats_conn.execute("SELECT key, deezer_id FROM artists WHERE deezer_id IS NOT NULL")}
+    """artist key -> Deezer id, for the artists a played track identified. One
+    found by its name alone may be a namesake (Deezer lists four "PLK"), so it
+    is left out until a track confirms it (core/stats_enrich.py)."""
+    return {r["key"]: r["deezer_id"] for r in stats_conn.execute(
+        "SELECT key, deezer_id FROM artists WHERE deezer_id IS NOT NULL AND deezer_source = 'track'")}
 
 
 def seed_pool(conn, seed, ids, now, api=_api) -> list:

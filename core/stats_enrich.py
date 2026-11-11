@@ -112,11 +112,20 @@ def _save(account, track_id, key, match, genre) -> None:
         if saved:
             stats_covers.forget(conn, "track", key)
             stats_covers.forget_albums_of(conn, track_id)
-        if saved and artist.get("name"):
-            conn.execute(
-                "UPDATE artists SET deezer_id = COALESCE(deezer_id, ?), picture_url = COALESCE(picture_url, ?) WHERE key = ?",
-                (str(artist.get("id") or "") or None, artist.get("picture_medium"), name_key(artist["name"])),
-            )
+        if saved and artist.get("name") and artist.get("id"):
+            # The artist of a played track that matched on its title and artist: it wins
+            # over a search by name, which homonyms share. The most played track comes
+            # first (_pending), so the first track's artist stays. A new artist gets its
+            # own picture, looked up again if this answer has none.
+            artist_id, artist_key = str(artist["id"]), name_key(artist["name"])
+            changed = conn.execute(
+                "UPDATE artists SET picture_url = CASE WHEN deezer_id IS ? THEN COALESCE(picture_url, ?) ELSE ? END,"
+                " lookup_at = CASE WHEN deezer_id IS ? THEN lookup_at ELSE NULL END,"
+                " deezer_id = ?, deezer_source = 'track' WHERE key = ? AND deezer_source IS NOT 'track'",
+                (artist_id, artist.get("picture_medium"), artist.get("picture_medium"), artist_id, artist_id, artist_key),
+            ).rowcount
+            if changed:
+                stats_covers.forget(conn, "artist", artist_key)
         conn.commit()
 
 
@@ -151,44 +160,96 @@ def enrich_batch(account, limit=40) -> int:
 
 
 def _borrowed_artist(account, key):
+    """What another account's history knows of the same artist, with where its ID
+    came from: one a played track gave first."""
     for other in stats_db.accounts_with_history():
         if other == account:
             continue
         try:
             with closing(stats_db.connect(other)) as conn:
-                row = conn.execute("SELECT deezer_id, picture_url FROM artists WHERE key = ? AND picture_url IS NOT NULL",
-                                   (key,)).fetchone()
+                row = conn.execute(
+                    "SELECT deezer_id, picture_url, deezer_source FROM artists WHERE key = ? AND deezer_id IS NOT NULL"
+                    " AND (deezer_source = 'track' OR picture_url IS NOT NULL)"
+                    " ORDER BY deezer_source = 'track' DESC LIMIT 1", (key,)).fetchone()
         except sqlite3.Error:
             continue
         if row:
-            return {"id": row["deezer_id"], "picture_big": row["picture_url"]}
+            return {"id": row["deezer_id"], "picture_big": row["picture_url"]}, row["deezer_source"] or "search"
     return None
 
 
+def _played_track_id(account, artist_id):
+    """The Deezer ID of this artist's most played track that matched, the ones
+    where it comes first before those where it is featured."""
+    with closing(stats_db.connect(account)) as conn:
+        row = conn.execute(
+            "SELECT t.deezer_track_id FROM tracks t JOIN track_artists ta ON ta.track_id = t.id"
+            " JOIN plays p ON p.track_id = t.id WHERE ta.artist_id = ? AND t.deezer_track_id IS NOT NULL"
+            " GROUP BY t.id ORDER BY MIN(ta.position), COUNT(*) DESC LIMIT 1", (artist_id,)).fetchone()
+    return row["deezer_track_id"] if row else None
+
+
+def _identify(account, artist):
+    """(Deezer artist, "track" | "search") or (None, None). Homonyms share a name
+    (Deezer lists four "PLK"), so a name is the last resort."""
+    key = artist["key"]
+    if artist["deezer_source"] == "track" and artist["deezer_id"]:
+        # Known from a played track: only its photo may be missing.
+        if artist["picture_url"]:
+            return {"id": artist["deezer_id"]}, "track"
+        found = deezer._public_api(f"/artist/{artist['deezer_id']}")
+        return {**(found or {}), "id": artist["deezer_id"]}, "track"
+    borrowed = _borrowed_artist(account, key)
+    if borrowed and borrowed[1] == "track":
+        return borrowed
+    track_id = _played_track_id(account, artist["id"])
+    if track_id:
+        # The artist credited on a track this profile played: the right one.
+        track = deezer._public_api(f"/track/{track_id}") or {}
+        credited = [track.get("artist") or {}, *(track.get("contributors") or [])]
+        same = next((a for a in credited if a.get("id") and name_key(a.get("name") or "") == key), None)
+        if same:
+            return same, "track"
+    if borrowed:
+        return borrowed
+    found = deezer._public_api("/search/artist", {"q": artist["name"], "limit": 10})
+    named = [i for i in (found or {}).get("data") or [] if i.get("id") and name_key(i.get("name") or "") == key]
+    if not named:
+        return None, None
+    # Of the artists with this name, the one most people follow; only for its photo.
+    return max(named, key=lambda i: int(i.get("nb_fan") or 0)), "search"
+
+
 def _look_up_artists(account, limit) -> None:
-    """Asks Deezer for each artist's photo by name, once; only the same name counts."""
+    """Finds each artist on Deezer, for its photo and for the mixes: through a
+    track this profile played when it can, by its name otherwise."""
     with closing(stats_db.connect(account)) as conn:
         artists = conn.execute(
-            "SELECT a.id, a.key, a.name FROM artists a JOIN track_artists ta ON ta.artist_id = a.id"
+            "SELECT a.id, a.key, a.name, a.deezer_id, a.deezer_source, a.picture_url FROM artists a"
+            " JOIN track_artists ta ON ta.artist_id = a.id"
             " JOIN plays p ON p.track_id = ta.track_id WHERE a.lookup_at IS NULL OR a.lookup_at <= ?"
             " GROUP BY a.id ORDER BY COUNT(*) DESC, a.id LIMIT ?",
             (int(time.time()), limit),
         ).fetchall()
     for artist in artists:
-        match, delay = _borrowed_artist(account, artist["key"]), RETRY_NO_MATCH
-        if match is None:
-            try:
-                found = deezer._public_api("/search/artist", {"q": artist["name"], "limit": 10})
-                match = next((i for i in (found or {}).get("data") or [] if name_key(i.get("name") or "") == artist["key"]), None)
-            except Exception as e:
-                logger.info("Deezer lookup failed for %s: %s", artist["name"], e)
-                delay = RETRY_ERROR
+        match, source, delay = None, None, RETRY_NO_MATCH
+        try:
+            match, source = _identify(account, artist)
+        except Exception as e:
+            logger.info("Deezer lookup failed for %s: %s", artist["name"], e)
+            delay = RETRY_ERROR
         picture = (match or {}).get("picture_big") or (match or {}).get("picture_medium")
+        found_id = str((match or {}).get("id") or "") or None
         with closing(stats_db.connect(account)) as conn:
-            if picture:
+            if found_id:
+                # A search by name never replaces an artist a played track gave.
+                # Another artist than before drops the old one's photo.
                 conn.execute(
-                    "UPDATE artists SET deezer_id = ?, picture_url = ?, lookup_at = ? WHERE id = ? AND key = ?",
-                    (str(match.get("id") or "") or None, picture, int(time.time()) + RETRY_INCOMPLETE, artist["id"], artist["key"]),
+                    "UPDATE artists SET picture_url = CASE WHEN deezer_id IS ? THEN COALESCE(?, picture_url) ELSE ? END,"
+                    " deezer_id = ?, deezer_source = ?, lookup_at = ?"
+                    " WHERE id = ? AND key = ? AND (deezer_source IS NOT 'track' OR ? = 'track')",
+                    (found_id, picture, picture, found_id, source, int(time.time()) + RETRY_INCOMPLETE,
+                     artist["id"], artist["key"], source),
                 )
                 stats_covers.forget(conn, "artist", artist["key"])
             else:
