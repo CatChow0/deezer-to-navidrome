@@ -105,7 +105,50 @@ def playlist_kind(pid: str) -> str:
     return "playlist"
 
 
-def fetch_deezer_playlist_info(playlist_id: str):
+def _saved_profiles(playlist_id: str) -> list:
+    """The Navidrome profiles a saved playlist belongs to, without calling Deezer."""
+    try:
+        data = json.loads(PLAYLIST_IDS_FILE.read_text(encoding="utf-8"))
+        for item in data.get("playlists") or []:
+            if str(item.get("id")) == str(playlist_id):
+                return [str(a) for a in item.get("accounts") or [] if a]
+    except Exception:
+        pass
+    return []
+
+
+def _reading_accounts(playlist_id: str, profiles=None) -> list:
+    """The Deezer accounts to read a playlist with: those of its profiles, then
+    the default one. A private playlist is readable by its owner's account only."""
+    from core import account_context, deezer_accounts
+
+    profiles = _saved_profiles(playlist_id) if profiles is None else profiles
+    ids = [account_context.deezer_account_of(p) for p in profiles] + [deezer_accounts.default_id()]
+    return [a for i, a in enumerate(ids) if a and a not in ids[:i]]
+
+
+def _through_accounts(read, playlist_id: str, profiles=None):
+    """`read(account)` with the first Deezer account that can, else None."""
+    from core.deezer_account import DeezerAccountError
+
+    for account in _reading_accounts(playlist_id, profiles):
+        try:
+            result = read(account)
+        except (DeezerAccountError, requests.RequestException, ValueError):
+            continue
+        if result:
+            return result
+    return None
+
+
+def fetch_deezer_playlist_info(playlist_id: str, profiles=None):
+    """A Deezer playlist's title, cover and size. Read with a Deezer account
+    first, which sees a private playlist of its own; else the public API."""
+    from core import deezer_account
+
+    found = _through_accounts(lambda account: deezer_account.playlist_info(playlist_id, account), playlist_id, profiles)
+    if found:
+        return found
     url = f"https://api.deezer.com/playlist/{playlist_id}"
     r = requests.get(url, timeout=20)
     r.raise_for_status()
@@ -331,13 +374,32 @@ def fetch_deezer_playlist_tracks(playlist_id: str, refresh=False, full=False, pr
 
         return playlist_title(playlist_id), mix_tracks(*mix, account=mix_deezer_account(playlist_id))
 
-    info = fetch_deezer_playlist_info(playlist_id)
-    url = f"https://api.deezer.com/playlist/{playlist_id}"
-    r = requests.get(url, timeout=30)
-    r.raise_for_status()
-    payload = r.json()
+    from core import deezer_account
 
-    tracks = payload.get("tracks", {}).get("data", [])
+    # With a Deezer account: every track in one call, a private playlist of its own too.
+    found = _through_accounts(
+        lambda account: (deezer_account.playlist_info(playlist_id, account)["title"],
+                         deezer_account.playlist_tracks(playlist_id, account)),
+        playlist_id,
+    )
+    if found and found[1]:
+        return found
+
+    info = fetch_deezer_playlist_info(playlist_id)
+    return info["title"], _public_playlist_tracks(playlist_id)
+
+
+def _public_playlist_tracks(playlist_id: str):
+    """Every track from the public API. /playlist/{id} lists at most 400 of
+    them, so the paginated /playlist/{id}/tracks is read instead."""
+    tracks, index = [], 0
+    while True:
+        page = _public_api(f"/playlist/{playlist_id}/tracks", {"limit": 100, "index": index})
+        data = page.get("data") or []
+        tracks += data
+        index += len(data)
+        if not data or index >= int(page.get("total") or 0):
+            break
     parsed = []
 
     for idx, t in enumerate(tracks, start=1):
@@ -360,7 +422,7 @@ def fetch_deezer_playlist_tracks(playlist_id: str, refresh=False, full=False, pr
             }
         )
 
-    return info["title"], parsed
+    return parsed
 
 
 def follow_mix(kind: str, source_id: str, title: str, accounts=None, deezer_account=None):

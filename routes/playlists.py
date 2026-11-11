@@ -139,10 +139,11 @@ def add_playlist_for(value, account) -> dict:
         return {"id": pid, "added": False, "open": False, "task_id": None,
                 "message": _share_existing(pid, account) if account else "Playlist already saved"}
     try:
-        info = fetch_deezer_playlist_info(pid)
+        # Read with this profile's Deezer account first: a private playlist of its own works.
+        info = fetch_deezer_playlist_info(pid, profiles=[account] if account else None)
     except RuntimeError as e:
-        # Deezer answered with an error: no such playlist, or a private one.
-        raise PlaylistError("Deezer has no public playlist with this ID") from e
+        # Deezer answered with an error: no such playlist, or a private one of another account.
+        raise PlaylistError("Deezer has no playlist with this ID that your Deezer account can read") from e
     if account:
         info["accounts"] = [account]
     playlists.append(info)

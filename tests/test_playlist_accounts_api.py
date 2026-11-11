@@ -25,7 +25,7 @@ class Api(unittest.TestCase):
         patches = [mock.patch.dict(os.environ, {"DISABLE_AUTH": "true",
                                                 "STATS_NAVIDROME_DB": str(Path(config.DATA_DIR) / "absent.db")}),
                    mock.patch("routes.playlists.fetch_deezer_playlist_info",
-                              side_effect=lambda pid: {"id": pid, "title": f"Deezer {pid}", "picture": ""}),
+                              side_effect=lambda pid, profiles=None: {"id": pid, "title": f"Deezer {pid}", "picture": ""}),
                    mock.patch("core.deezer.cache_cover", return_value=None)]
         for patch in patches:
             patch.start()
@@ -56,6 +56,14 @@ class Api(unittest.TestCase):
         other = self.app.test_client()
         self.assertEqual(self.dashboard_ids(), {"9001"})
         self.assertEqual(self.dashboard_ids(other), set())
+
+    def test_a_new_playlist_is_read_with_this_browsers_profile(self):
+        # Its Deezer account may own the playlist and keep it private.
+        self.use(self.alice)
+        with mock.patch("routes.playlists.fetch_deezer_playlist_info",
+                        side_effect=lambda pid, profiles=None: {"id": pid, "title": "Mine", "picture": ""}) as fetch:
+            self.add("9003")
+        self.assertEqual([self.alice], fetch.call_args.kwargs["profiles"])
 
     def test_adding_a_saved_playlist_shares_it(self):
         self.add("9002")

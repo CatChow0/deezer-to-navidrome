@@ -122,8 +122,8 @@ Two buttons in the topbar explain the app. **New** keeps the notes of each versi
 ```
 ┌─────────────────────────┐
 │  Deezer                 │
-│  • Public API           │  playlists, search, artists, releases
-│  • Private gateway      │  mixes, favorites, download links (needs the ARL)
+│  • Public API           │  search, artists, albums; playlists and favorites as a fallback
+│  • Private gateway      │  playlists, favorites, mixes, download links (needs the ARL)
 │  • Media servers        │  encrypted audio files
 └───────────┬─────────────┘
             │
@@ -237,7 +237,7 @@ Files are tagged with artist, title, album, track and disc number, date and the 
 - When some tracks of an album fail, the button shows `saved/total saved` and lists the missing ones; clicking it again only fetches those.
 - In a playlist, **Download missing** queues every missing track and marks the rows as *Downloaded* as they finish. Run **Refresh library** and a **Quick scan** afterwards so they count as *In library*. With automation, the next automatic scan picks them up.
 
-> Deezer's private gateway is undocumented. If Deezer changes it, downloads and mixes may stop working until the app is updated; search, playlists and the release feed use the public API and are not affected.
+> Deezer's private gateway is undocumented. If Deezer changes it, downloads and mixes may stop working until the app is updated. Search uses the public API and is not affected. Playlists and the release feed are read through the gateway first, with the Deezer account (private playlists and profiles, playlists of any size); if it fails they fall back to the public API, which only reads public playlists and profiles.
 
 ---
 
