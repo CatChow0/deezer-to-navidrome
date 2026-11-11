@@ -3,7 +3,7 @@
 **Turn your Deezer playlists into Navidrome `.m3u8` playlists, match them against your local library, and download what is missing straight from Deezer.**
 
 [![Version](https://img.shields.io/badge/version-1.19.0-blue)](https://hub.docker.com/r/catchow/deezer-to-navidrome)
-[![Python 3](https://img.shields.io/badge/python-3-blue)](https://www.python.org/)
+[![Python 3.12](https://img.shields.io/badge/python-3.12-blue)](https://www.python.org/)
 [![Flask](https://img.shields.io/badge/flask-web%20app-brightgreen)](https://flask.palletsprojects.com/)
 [![GitHub](https://img.shields.io/badge/GitHub-source%20%26%20full%20docs-black)](https://github.com/CatChow0/deezer-to-navidrome)
 
@@ -27,11 +27,16 @@ The **New** button keeps the notes of each version, and **Help** is a full guide
 - **Library check** — see which tracks, albums and artists you own while browsing Deezer
 - **Manual matching** — fix a wrong match by picking the file yourself
 - Finds library duplicates (remix, live, remaster…) and quarantines or deletes them
+- **Made for you** — Daily Mix, Daily Mix+ and Discover from what you listen to, with a quarantine for what they download
+- **Several Navidrome users and Deezer accounts** — each user gets their own playlists (through Navidrome's API), history, recaps and mixes
+- **Android app** shipped in the image: install it from Settings, it updates itself from your server
 - Sign-in, API token, and a webhook for [CatBoard](https://github.com/CatChow0/catboard)
 
 ---
 
 ## Quick Start
+
+`docker-compose.yml`:
 
 ```yaml
 services:
@@ -41,21 +46,34 @@ services:
     restart: unless-stopped
     cpus: "4.0"       # set to your actual core count
     cpu_shares: 1024
+    env_file: .env
     ports:
-      - "8080:8080"
-    environment:
-      DATA_DIR: "/data"
-      SCAN_DIRS: "/music/deezer-dl,/music/library"
-      PLAYLISTS_BASE_DIR: "/music/playlists"
-      HOST_TO_NAVIDROME_ROOT: "/music/deezer-dl:/deezer-dl,/music/library:/music"
-      LIBRARY_WORKERS_PER_DIR: "2"   # 2=HDD  4=RAID  8=SSD
-      MATCH_WORKERS: "4"             # set to your Docker CPU count
-      # DEEZER_ARL: ""               # or add it in Settings
+      - "8080:8080"   # not needed behind a reverse proxy on a shared network
     volumes:
       - ./data:/data
       - /path/on/host/deezer-dl:/music/deezer-dl   # downloads land here (writable)
       - /path/on/host/library:/music/library
       - /path/on/host/playlists:/music/playlists
+      # - /path/to/navidrome/data:/import/navidrome:ro   # optional: Stats history
+      # - /path/to/Maloja:/import/maloja:ro
+```
+
+`.env`:
+
+```env
+DATA_DIR=/data
+SCAN_DIRS=/music/deezer-dl,/music/library
+PLAYLISTS_BASE_DIR=/music/playlists
+HOST_TO_NAVIDROME_ROOT=/music/deezer-dl:/deezer-dl,/music/library:/music
+LIBRARY_WORKERS_PER_DIR=2    # 2=HDD  4=RAID  8=SSD (first start only)
+MATCH_WORKERS=4              # your Docker CPU count (first start only)
+D2N_ENCRYPTION_KEY=          # any long random string
+# Behind a reverse proxy (Traefik, nginx…):
+# TRUSTED_PROXIES=1
+# COOKIE_SECURE=true
+# Run as your user instead of root:
+# PUID=1000
+# PGID=1000
 ```
 
 ```bash
@@ -133,7 +151,19 @@ The **Stats** tab keeps its own play history in `stats.db`, one per Navidrome ac
 | `STATS_NAVIDROME_DB` | `/import/navidrome/navidrome.db` | Navidrome's database, for importing your history |
 | `STATS_MALOJA_DB` | `/import/maloja/malojadb.sqlite` | Maloja's database, for importing your history |
 | `DISABLE_AUTH` | `false` | `true` turns sign-in off (a reverse proxy already asks for a login) |
-| `COOKIE_SECURE` | `false` | `true` makes the session cookie HTTPS-only |
+| `COOKIE_SECURE` | `false` | `true` makes the session cookie HTTPS-only: set it behind an HTTPS proxy |
+| `TRUSTED_PROXIES` | `0` | Reverse proxies in front of the app (usually `1`), so failed sign-ins count each visitor's address. Keep `0` without a proxy |
+| `PUID` / `PGID` | — | Run as this user and group instead of root; the music folders must be writable by them |
+
+Only `DEEZER_ARL`, `DEEZER_ARL_PREMIUM`, `API_TOKEN` and the `SCROBBLE_TOKEN…` variables replace a saved credential.
+
+### Behind a reverse proxy
+
+Set `TRUSTED_PROXIES=1` and `COOKIE_SECURE=true`, drop `ports:` when the proxy shares the container's network, and let the task streams (Server-Sent Events) through without buffering or compression (nginx: `proxy_buffering off`). Behind Authelia, let `/api/v1/` through for the Android app. Examples for Traefik and nginx: [README → Behind a reverse proxy](https://github.com/CatChow0/deezer-to-navidrome#behind-a-reverse-proxy).
+
+### Upgrading
+
+`docker compose pull && docker compose up -d`. The **New** button in the app starts with what to change for each version you skipped; the same list is in the [README → Upgrading](https://github.com/CatChow0/deezer-to-navidrome#upgrading).
 
 ### Path Mapping (`HOST_TO_NAVIDROME_ROOT`)
 
@@ -154,7 +184,7 @@ M3U8 contains:  /deezer-dl/songs/Artist - Song.mp3   ← what Navidrome sees
 |----------------|---------|-------|
 | `/data` | Config, index, secrets, dedup choices | ✅ Persistent and private (holds your Deezer cookies) |
 | `/music/deezer-dl` | Downloads | ✅ Writable, shared with Navidrome |
-| `/music/*` | Your music library | Read-only is fine unless you delete duplicates |
+| `/music/*` | Your music library | Writable for Fix missing metadata (tags) and to delete duplicates; read-only otherwise |
 | `/music/playlists` | Generated M3U8 output | ✅ Writable, shared with Navidrome |
 | `/import/navidrome`, `/import/maloja` | Optional: history to import into Stats | Read-only is enough |
 
@@ -203,19 +233,29 @@ Similarities use `rapidfuzz` (C++, GIL-releasing), so matching threads run in pa
 | File | Purpose |
 |------|---------|
 | `config.json` | App configuration |
-| `secrets.json` | Password hash, API token, Deezer cookies, webhook URL |
+| `secrets.json` | Password hash, API token, webhook URL, session key, encrypted |
+| `encryption.key` | The encryption key, when `D2N_ENCRYPTION_KEY` is not set: keep it |
+| `navidrome_accounts.json` / `deezer_accounts.json` | Navidrome and Deezer accounts, passwords and ARLs encrypted |
+| `devices.json` | Devices signed in through the API (a digest of each token) |
 | `music_library_cache.json` | Library index |
-| `deezer_playlist_ids.json` | Playlists, mixes and their automation settings |
+| `deezer_playlist_ids.json` | Playlists, mixes, their accounts and automation settings |
 | `playlist_preview_state.json` | Per-playlist match results (enables Quick scan) |
-| `releases.json` / `release_prefs.json` | Release feed / muted artists |
+| `crossplatform.json` | Imported Spotify / CSV playlists and their Deezer picks |
+| `scheduler.json` | When each playlist was last scanned automatically |
+| `releases*.json` / `release_prefs*.json` | Release feed / muted artists, per Deezer account |
 | `dedup_report.json` / `dedup_choices.json` | Latest duplicate analysis / persistent decisions |
+| `dedup_quarantine/` | Quarantined duplicate files, with `manifest.jsonl` saying where each came from |
+| `mixes.db` | Made for you of every profile, its quarantine, and the playlists published in Navidrome |
+| `trial_trash/` | Tracks removed from the quarantine of Made for you |
 | `stats.db`, `stats/*.db`, their `.bak-*` | Listening history of each Navidrome account and the last 3 backups |
 | `stats_sources/` | Saved copy of Maloja's database |
 | `stats_covers/` | Cached artist, album and track covers |
 | `covers/` | Playlist artwork |
-| `dedup_quarantine/` | Quarantined duplicate files |
+| `*.corrupt-<time>` | A file that could not be read, set aside instead of overwritten |
 
 ## Key API Endpoints
+
+The Android app uses the JSON API under `/api/v1/` (a token per device); the [README](https://github.com/CatChow0/deezer-to-navidrome#api-v1) lists it.
 
 | Endpoint | Description |
 |----------|-------------|
