@@ -44,9 +44,9 @@
         </nav>
         <button type="button" class="btn btn--ghost btn--sm new-btn" data-action="new" aria-haspopup="dialog"{% if whats_new and whats_new.show %} aria-label="What's new, unread notes"{% else %} aria-label="What's new"{% endif %}>New{% if whats_new and whats_new.show %}<span class="new-dot"></span>{% endif %}</button>
         <button type="button" class="btn btn--ghost btn--sm" data-action="help" aria-haspopup="dialog">Help</button>
-        {% if session.get('user') %}
+        {% if session.get('user_id') %}
         <form method="post" action="{{ url_for('auth.logout') }}">
-          <button type="submit" class="btn btn--ghost btn--sm" title="Signed in as {{ session.get('user') }}">Sign out</button>
+          <button type="submit" class="btn btn--ghost btn--sm" title="Signed in as {{ me.username if me }}">Sign out</button>
         </form>
         {% endif %}
       </div>

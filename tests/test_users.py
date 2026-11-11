@@ -173,6 +173,7 @@ class Pages(Base):
         self.sign_in("admin")
         page = self.client.get("/config").get_data(as_text=True)
         self.assertIn('data-space-tab="users"', page)
+        self.assertIn('title="Signed in as admin">Sign out', page)
         self.assertNotIn('class="set-fieldset" disabled', page)
 
     def test_each_one_sees_and_picks_only_their_profiles(self):
