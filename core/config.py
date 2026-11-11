@@ -379,12 +379,21 @@ def _raw_config():
 def whats_new_state():
     """Whether the New button shows its dot, and if the install still used the
     separate downloader."""
+    from core.patch_notes import pending_actions, unread
+
     raw = _raw_config()
     legacy = LEGACY_DOWNLOADER_KEY in raw
+    since = raw.get("notes_seen") or None
+    show = legacy or since != WHATS_NEW_ID
+    # What to change since the notes read last, every version together: shown
+    # only while the dot is, so it goes once the notes are opened.
     return {
         "id": WHATS_NEW_ID,
         "legacy": legacy,
-        "show": legacy or raw.get("notes_seen") != WHATS_NEW_ID,
+        "show": show,
+        "since": since,
+        "unread": [r["version"] for r in unread(since)] if show else [],
+        "pending": pending_actions(since) if show else [],
     }
 
 

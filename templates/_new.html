@@ -1,5 +1,28 @@
 {# New: what changed, one tab per version, so a version's notes stay readable
-   after later ones. Nothing opens by itself: the button shows a dot instead. #}
+   after later ones. Nothing opens by itself: the button shows a dot instead.
+   Each version starts with what to change for it (core/patch_notes.py), and
+   when several were not read, the panel starts with all of it together. #}
+{% macro action_lines(action) %}
+  {% if action.lines %}
+  <div class="note-lines">
+    {% for line in action.lines %}
+    <div class="note-line"><code>{{ line }}</code><button type="button" class="btn btn--ghost btn--sm" data-copy-line="{{ line }}" aria-label="Copy {{ line }}">Copy</button></div>
+    {% endfor %}
+  </div>
+  {% endif %}
+{% endmacro %}
+{% macro action_item(action, version=None) %}
+  <li class="note-action note-action--{{ action.level }}">
+    <p class="note-action-head">
+      <span class="chip {{ 'chip--miss' if action.level == 'required' else 'chip--partial' if action.level == 'recommended' else 'chip--info' }}">{{ action.level|capitalize }}</span>
+      {% if version %}<span class="chip">{{ version }}</span>{% endif %}
+      <strong>{{ action.when }}</strong>
+      <span class="note-file">{{ action.file }}</span>
+    </p>
+    <p>{{ action.do }}</p>
+    {{ action_lines(action) }}
+  </li>
+{% endmacro %}
 <div id="new-modal" class="overlay modal new-modal" aria-hidden="true">
   <div class="overlay-backdrop" data-overlay-close></div>
   <section class="overlay-panel cell" role="dialog" aria-modal="true" aria-labelledby="new-title" tabindex="-1">
@@ -7,11 +30,23 @@
     <header class="doc-head">
       <h2 class="detail-title" id="new-title">What's new</h2>
     </header>
+    {% set pending = whats_new.pending if whats_new else [] %}
+    {% if pending and whats_new.unread|length > 1 %}
+    <details class="note-since" open>
+      <summary>
+        <strong>Since {{ whats_new.since or 'your version' }}: {{ whats_new.unread|length }} versions, {{ pending|length }} thing{{ 's' if pending|length != 1 }} to check</strong>
+      </summary>
+      <ul class="note-actions">
+        {% for action in pending %}{{ action_item(action, action.version) }}{% endfor %}
+      </ul>
+    </details>
+    {% endif %}
     <div class="doc-body" data-overlay-content>
       <div class="new-tabs" role="tablist" aria-label="Versions" aria-orientation="vertical">
         {% for release in releases %}
+        {% set levels = release.actions|default([])|map(attribute='level')|list %}
         <button type="button" role="tab" id="new-tab-{{ loop.index }}" class="new-tab" data-new-tab="{{ release.version }}" aria-selected="{{ 'true' if loop.first else 'false' }}" aria-controls="new-panel-{{ loop.index }}" {% if not loop.first %}tabindex="-1"{% endif %}>
-          <strong>{{ release.version }}</strong>
+          <strong>{{ release.version }}{% if levels %} <span class="note-flag{{ ' note-flag--required' if 'required' in levels }}" title="Something to change for this version" aria-label="something to change">⚙</span>{% endif %}</strong>
           <span>{{ release.date }}</span>
         </button>
         {% endfor %}
@@ -21,7 +56,22 @@
         <article id="new-panel-{{ loop.index }}" class="new-note help-body" role="tabpanel" aria-labelledby="new-tab-{{ loop.index }}" tabindex="0" data-new-panel="{{ release.version }}" {% if not loop.first %}hidden{% endif %}>
           <p class="help-eyebrow">Version {{ release.version }}</p>
           <h3 class="doc-title">{{ release.title }}</h3>
-          {% include 'notes/' ~ release.version ~ '.html' %}
+          {% if release.actions %}
+          <section class="note-todo" aria-label="To do for this version">
+            <h4 class="note-todo-title">To do</h4>
+            <ul class="note-actions">{% for action in release.actions %}{{ action_item(action) }}{% endfor %}</ul>
+          </section>
+          {% else %}
+          <p class="note-nothing"><span class="chip chip--ok">Nothing to change</span> Update and keep your settings as they are.</p>
+          {% endif %}
+          {% if release.highlights %}
+          <ul class="note-highlights">
+            {% for line in release.highlights %}<li>{{ line }}</li>{% endfor %}
+          </ul>
+          {% endif %}
+          <div class="note-details" data-note-details>
+            {% include 'notes/' ~ release.version ~ '.html' %}
+          </div>
         </article>
         {% endfor %}
       </div>

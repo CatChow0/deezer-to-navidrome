@@ -65,9 +65,12 @@ COVERED.add(system.version_route)
 
 @api_v1_bp.get("/content/notes")
 def content_notes():
-    """The notes of each version, the newest first; `unseen` while the New
-    button shows its dot."""
-    return ok({"notes": content.release_notes(), "unseen": whats_new_state()["show"]}, cache=True)
+    """The notes of each version, the newest first, each with its highlights and
+    what to change for it; `unseen` while the New button shows its dot, then
+    `since` (the version read last) and `pending_actions`, what to change since."""
+    state = whats_new_state()
+    return ok({"notes": content.release_notes(), "unseen": state["show"], "since": state["since"],
+               "pending_actions": state["pending"]}, cache=True)
 
 
 expose("/content/notes/seen", system.whats_new_seen_route, ("POST",), name="content_notes_seen")
