@@ -26,10 +26,14 @@ function initSpaces() {
 async function initSubject() {
   const select = document.querySelector('[data-subject]');
   if (!select) return;
+  const fill = data => {
+    select.innerHTML = data.users.filter(u => u.can.edit).map(u =>
+      `<option value="${u.id === data.me ? '' : escapeHtml(u.id)}">${u.id === data.me ? 'You' : escapeHtml(u.username)}</option>`).join('');
+    select.value = subject();
+  };
   const { ok, data } = await fetchJSON('/api/users');
-  if (!ok) return;
-  select.innerHTML = data.users.filter(u => u.can.edit).map(u =>
-    `<option value="${u.id === data.me ? '' : escapeHtml(u.id)}">${u.id === data.me ? 'You' : escapeHtml(u.username)}</option>`).join('');
+  if (ok) fill(data);
+  document.addEventListener('d2n:users', event => fill(event.detail));
   select.addEventListener('change', () => setSubject(select.value));
   document.addEventListener('d2n:subject', () => { select.value = subject(); });
 }

@@ -104,6 +104,9 @@ export function initUsers() {
       state = data;
       open = null;
       render();
+      // Accounts shows them at once: who owns what, and the names in "Accounts of".
+      document.dispatchEvent(new CustomEvent('d2n:users', { detail: data }));
+      setSubject('');
     }
     if (message) toast(message, { tone: 'ok' });
     return data;
