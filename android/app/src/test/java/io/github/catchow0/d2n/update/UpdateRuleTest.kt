@@ -16,8 +16,16 @@ class UpdateRuleTest {
     fun `a higher version code is offered`() = assertTrue(UpdateRule.shouldOffer(own, server(11801)))
 
     @Test
-    fun `the same version from another commit is offered`() =
-        assertTrue(UpdateRule.shouldOffer(own, server(11800, commit = "def5678")))
+    fun `the same version from a later commit is offered`() =
+        assertTrue(UpdateRule.shouldOffer(own, server(11800, commit = "def5678", builtAt = "2026-11-09T18:00:00Z")))
+
+    @Test
+    fun `an older build of the same version is never offered`() =
+        assertFalse(UpdateRule.shouldOffer(own, server(11800, commit = "0ld0000", builtAt = "2026-11-08T09:00:00Z")))
+
+    @Test
+    fun `a build without its time is not offered`() =
+        assertFalse(UpdateRule.shouldOffer(own, server(11800, commit = "def5678", builtAt = "")))
 
     @Test
     fun `the same commit rebuilt later is offered`() =

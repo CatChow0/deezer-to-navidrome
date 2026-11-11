@@ -7,11 +7,13 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 
 /** What the app remembers. `ready` turns true once it has been read. */
@@ -76,13 +78,16 @@ class DataStoreSettingsStore(
     }
 
     override suspend fun setToken(token: String?) {
+        // The first seal makes the Keystore key: up to seconds, never on the main thread.
         val sealed = token?.let {
-            try {
-                box.seal(it)
-            } catch (e: Exception) {
-                // A keyset moved from another phone: a new key, then the token.
-                box.reset()
-                box.seal(it)
+            withContext(Dispatchers.IO) {
+                try {
+                    box.seal(it)
+                } catch (e: Exception) {
+                    // A keyset moved from another phone: a new key, then the token.
+                    box.reset()
+                    box.seal(it)
+                }
             }
         }
         dataStore.edit { prefs -> if (sealed == null) prefs.remove(TOKEN) else prefs[TOKEN] = sealed }

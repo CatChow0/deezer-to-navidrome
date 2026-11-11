@@ -27,6 +27,7 @@ import io.github.catchow0.d2n.update.BuildIdentity
 import io.github.catchow0.d2n.update.PackageInstallerApkInstaller
 import io.github.catchow0.d2n.update.UpdateChecker
 import java.io.File
+import java.io.IOException
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -37,9 +38,11 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.OkHttpClient
@@ -138,4 +141,21 @@ class AppGraph(context: Context) {
 
     /** A debug build has another package: the server's app would install beside it. */
     val updatesEnabled = !BuildConfig.DEBUG
+
+    init {
+        // Signed out (here, from the web, or by a new password): what this phone
+        // read from the server goes too, saved screens and downloaded updates.
+        scope.launch(Dispatchers.IO) {
+            store.state.filter { it.ready }.map { it.token != null }.distinctUntilChanged()
+                .drop(1).filter { signedIn -> !signedIn }
+                .collect {
+                    try {
+                        client.cache?.evictAll()
+                    } catch (e: IOException) {
+                        // A cache that cannot be emptied is emptied by Android in time.
+                    }
+                    updatesDir.deleteRecursively()
+                }
+        }
+    }
 }

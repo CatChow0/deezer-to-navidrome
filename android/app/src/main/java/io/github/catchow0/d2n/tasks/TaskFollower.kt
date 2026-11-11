@@ -102,6 +102,7 @@ class TaskFollower(
         // The stream does not get through: wait for the events instead.
         var attempt = 0
         while (true) {
+            val asked = System.nanoTime()
             val answer = try {
                 apiCall { api(base).taskEvents(taskId, after = last, wait = WAIT_SECONDS) }
             } catch (e: NotThisServer) {
@@ -122,6 +123,11 @@ class TaskFollower(
                 continue
             }
             attempt = 0
+            if (answer.events.isEmpty() && !answer.task.done && System.nanoTime() - asked < QUICK_ANSWER_NANOS) {
+                // Answered at once with nothing new: something in between
+                // ignores the wait. A pause, rather than asking in a loop.
+                pause(BACKOFF[0])
+            }
             for (event in answer.events) {
                 last = event.index
                 send(TaskUpdate.Event(event))
@@ -164,6 +170,8 @@ class TaskFollower(
         const val SERVER_RETRY = 1_500L
         const val STREAM_FAILURES = 3
         const val WAIT_SECONDS = 25
+        /** An empty answer quicker than this did not wait on the server. */
+        const val QUICK_ANSWER_NANOS = 2_000_000_000L
         val BACKOFF = listOf(1_000L, 2_000L, 5_000L, 10_000L)
     }
 }
