@@ -1,10 +1,12 @@
-Flask
-requests
-mutagen
-pycryptodome
-gunicorn
-rapidfuzz
-tzdata
-Pillow
-numpy
-soundfile
+# Exact versions, tested together (the test suite passes with them): a new
+# release no longer reaches the image without a test run. Bump them here.
+Flask==3.1.3
+requests==2.34.2
+mutagen==1.48.1
+pycryptodome==4.4.0
+gunicorn==27.0.0
+rapidfuzz==3.14.6
+tzdata==2026.6
+Pillow==13.0.0
+numpy==2.5.4
+soundfile==0.14.0

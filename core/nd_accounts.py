@@ -10,14 +10,13 @@ Kept in DATA_DIR/navidrome_accounts.json. The password or API key is encrypted
 public() never includes it."""
 import json
 import logging
-import os
 import re
 import threading
 import time
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from core import config, crypto
+from core import config, crypto, files
 
 logger = logging.getLogger(__name__)
 
@@ -52,15 +51,7 @@ def _read() -> dict:
 
 
 def _write(data: dict) -> None:
-    path = _path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    partial = path.with_name(f".{path.name}.part")
-    partial.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
-    try:
-        partial.chmod(0o600)
-    except OSError:
-        pass
-    os.replace(partial, path)
+    files.write_json(_path(), data, private=True)
 
 
 def clean_url(value) -> str:
@@ -141,6 +132,20 @@ def credentials(account_id) -> dict:
 
 # --- Changes ---------------------------------------------------------------------
 
+def same_server(a, b) -> bool:
+    """Same host and port: http to https, or another path, is still the same
+    server; another host may be anyone's, and must not get a saved password."""
+    def where(url):
+        parts = urlsplit(url or "")
+        return (parts.hostname or "").lower(), parts.port or {"http": 80, "https": 443}.get(parts.scheme)
+
+    first, second = where(a), where(b)
+    if first[0] != second[0]:
+        return False
+    # http and https on their default ports: the same server.
+    return first[1] == second[1] or {first[1], second[1]} == {80, 443}
+
+
 def _check_unique(data, username, url, ignore=None):
     for account in data["accounts"]:
         if account["id"] != ignore and username and account["username"].lower() == username.lower() \
@@ -216,6 +221,9 @@ def update(account_id, fields: dict, now=None) -> dict:
             url = clean_url(fields["url"])
             if not url:
                 raise AccountError("Enter the address of your Navidrome.")
+            if account.get("secret") and not same_server(url, account["url"]) and not fields.get("secret"):
+                # The saved password would otherwise be sent to the new address.
+                raise AccountError("The address is another server: enter the password again.")
             changed_identity |= url != account["url"]
             account["url"] = url
         if "username" in fields:
@@ -245,6 +253,9 @@ def update(account_id, fields: dict, now=None) -> dict:
         return dict(account)
 
 
+_removing = set()
+
+
 def delete(account_id) -> None:
     """Removes an account. Its playlists first leave its Navidrome, while its
     password is still known, and its tracks in quarantine go to the install's
@@ -253,15 +264,24 @@ def delete(account_id) -> None:
         data = _read()
         if not any(a["id"] == account_id for a in data["accounts"]):
             raise AccountError("Unknown Navidrome account.")
-        if len(data["accounts"]) == 1:
+        if account_id in _removing:
+            raise AccountError("This Navidrome account is being removed already.")
+        # Those being removed at this moment count as gone: two removals at once
+        # must not leave no account at all.
+        if len([a for a in data["accounts"] if a["id"] not in _removing]) <= 1:
             raise AccountError("The last Navidrome account cannot be removed.")
-    _before_removal(account_id)
-    with _lock:
-        data = _read()
-        data["accounts"] = [a for a in data["accounts"] if a["id"] != account_id]
-        if data["accounts"] and data.get("default") == account_id:
-            data["default"] = data["accounts"][0]["id"]
-        _write(data)
+        _removing.add(account_id)
+    try:
+        _before_removal(account_id)
+        with _lock:
+            data = _read()
+            data["accounts"] = [a for a in data["accounts"] if a["id"] != account_id]
+            if data["accounts"] and data.get("default") == account_id:
+                data["default"] = data["accounts"][0]["id"]
+            _write(data)
+    finally:
+        with _lock:
+            _removing.discard(account_id)
     _after_removal(account_id)
 
 

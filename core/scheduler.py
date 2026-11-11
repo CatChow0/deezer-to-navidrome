@@ -9,9 +9,46 @@ _lock = threading.Lock()
 _stop_event = threading.Event()
 _scheduler_thread = None
 
-# Per-playlist runtime state (in memory, lost on restart)
-# {playlist_id: {"next_run_at": int, "last_run_at": int|None}}
+# Per-playlist schedule: {playlist_id: {"next_run_at": int, "last_run_at": int|None}}.
+# The last runs are also kept on disk, so a daily scan still runs when the
+# container restarts every night.
 _state: dict = {}
+# Playlists being scanned: a scheduler restarted meanwhile does not scan them twice.
+_running: set = set()
+
+
+def _last_runs_file():
+    from core.config import DATA_DIR
+
+    return DATA_DIR / "scheduler.json"
+
+
+def _load_last_runs() -> dict:
+    from core import files
+
+    try:
+        data = files.read_json(_last_runs_file(), {})
+    except OSError:
+        return {}
+    return {str(k): int(v) for k, v in data.items() if isinstance(v, (int, float))} if isinstance(data, dict) else {}
+
+
+def _save_last_run(playlist_id, at) -> None:
+    from core import files
+
+    try:
+        runs = _load_last_runs()
+        runs[str(playlist_id)] = int(at)
+        files.write_json(_last_runs_file(), runs)
+    except OSError as e:
+        logger.warning("[auto-scan] Could not save when %s was scanned: %s", playlist_id, e)
+
+
+def _interval(pl) -> int:
+    try:
+        return max(1, int(pl.get("auto_scan_interval_minutes") or 60)) * 60
+    except (TypeError, ValueError):
+        return 3600
 
 
 def get_status() -> dict:
@@ -26,37 +63,30 @@ def notify_playlist_updated(playlist_id: str, pl: dict):
         if not pl.get("auto_scan_enabled"):
             _state.pop(playlist_id, None)
         else:
-            interval_secs = max(1, int(pl.get("auto_scan_interval_minutes") or 60)) * 60
             prev_last = (_state.get(playlist_id) or {}).get("last_run_at")
             _state[playlist_id] = {
-                "next_run_at": int(time.time()) + interval_secs,
+                "next_run_at": int(time.time()) + _interval(pl),
                 "last_run_at": prev_last,
             }
 
 
-def _sync_state_from_playlists(playlists):
+def _sync_state_from_playlists(playlists, last_runs=None):
     """Ensure _state is consistent with current playlist list (adds new, removes deleted)."""
     now = int(time.time())
+    enabled = {pl["id"]: pl for pl in playlists if pl.get("auto_scan_enabled")}
     with _lock:
-        current_ids = {pl["id"] for pl in playlists}
-
-        # Remove playlists that no longer exist or have auto-scan disabled
-        for pid in list(_state.keys()):
-            pl = next((p for p in playlists if p["id"] == pid), None)
-            if pl is None or not pl.get("auto_scan_enabled"):
+        for pid in list(_state):
+            if pid not in enabled:
                 del _state[pid]
-
-        # Add newly enabled playlists that aren't tracked yet
-        for pl in playlists:
-            pid = pl["id"]
-            if pl.get("auto_scan_enabled") and pid not in _state:
-                interval_secs = max(1, int(pl.get("auto_scan_interval_minutes") or 60)) * 60
-                _state[pid] = {
-                    "next_run_at": now + interval_secs,
-                    "last_run_at": None,
-                }
-
-        _ = current_ids  # used implicitly above
+        for pid, pl in enabled.items():
+            if pid in _state:
+                continue
+            if last_runs is None:
+                last_runs = _load_last_runs()
+            last = last_runs.get(pid)
+            # Known from before a restart: due when it would have been, else at once.
+            _state[pid] = {"next_run_at": max(now, last + _interval(pl)) if last else now + _interval(pl),
+                           "last_run_at": last}
 
 
 def _run_playlist(pl, cfg):
@@ -145,85 +175,108 @@ def _refresh_releases_if_stale():
         logger.error(f"[releases] Automatic refresh failed to start: {e}")
 
 
-def _scheduler_loop():
-    while not _stop_event.is_set():
-        if _stop_event.wait(timeout=30):
-            break
-
-        from core.deezer import load_playlists
-        from core.config import load_config
-        from core.stats_enrich import start_background_batch
-
+def _scheduler_loop(stop):
+    """`stop` is this thread's own event: after a restart, a pass still running
+    ends the old thread instead of going on next to the new one."""
+    while not stop.wait(timeout=30):
         try:
-            start_background_batch()
+            _one_pass(stop)
+        except Exception:
+            # Never the end of the scheduler: the next pass tries again.
+            logger.exception("[auto-scan] A scheduler pass failed")
+
+
+def _one_pass(stop):
+    from core.deezer import load_playlists
+    from core.config import load_config
+    from core.stats_enrich import start_background_batch
+
+    try:
+        start_background_batch()
+    except Exception as e:
+        logger.error(f"[stats] Could not start the lookups: {e}")
+
+    playlists = load_playlists()
+    _sync_state_from_playlists(playlists)
+
+    _refresh_releases_if_stale()
+
+    # Reading the library index is not free: every few minutes is plenty.
+    global _last_mix_check
+    if time.time() - _last_mix_check >= MIX_CHECK_SECONDS:
+        _last_mix_check = time.time()
+        try:
+            from core import mix_builder
+
+            mix_builder.tick()
         except Exception as e:
-            logger.error(f"[stats] Could not start the lookups: {e}")
+            logger.error(f"[mixes] Could not check the generated playlists: {e}")
+        try:
+            from core import publish
 
-        playlists = load_playlists()
-        _sync_state_from_playlists(playlists)
+            publish.sync_all()
+            publish.retry_pending()
+        except Exception as e:
+            logger.error(f"[navidrome] Could not sync the playlists with Navidrome: {e}")
 
-        _refresh_releases_if_stale()
+    now = int(time.time())
+    with _lock:
+        due = [pl for pl in playlists
+               if pl["id"] in _state and _state[pl["id"]]["next_run_at"] <= now and pl["id"] not in _running]
+        _running.update(pl["id"] for pl in due)
 
-        # Reading the library index is not free: every few minutes is plenty.
-        global _last_mix_check
-        if time.time() - _last_mix_check >= MIX_CHECK_SECONDS:
-            _last_mix_check = time.time()
-            try:
-                from core import mix_builder
+    if not due:
+        return
 
-                mix_builder.tick()
-            except Exception as e:
-                logger.error(f"[mixes] Could not check the generated playlists: {e}")
-            try:
-                from core import publish
-
-                publish.sync_all()
-                publish.retry_pending()
-            except Exception as e:
-                logger.error(f"[navidrome] Could not sync the playlists with Navidrome: {e}")
-
-        now = int(time.time())
-        due = []
-        with _lock:
-            for pl in playlists:
-                pid = pl["id"]
-                s = _state.get(pid)
-                if s and s["next_run_at"] <= now:
-                    due.append(pl)
-
-        if not due:
-            continue
-
-        cfg = load_config()
+    cfg = load_config()
+    try:
         for pl in due:
-            _run_playlist(pl, cfg)
+            if stop.is_set():
+                break
             pid = pl["id"]
-            interval_secs = max(1, int(pl.get("auto_scan_interval_minutes") or 60)) * 60
-            with _lock:
-                if pid in _state:
-                    _state[pid]["last_run_at"] = int(time.time())
-                    _state[pid]["next_run_at"] = int(time.time()) + interval_secs
+            try:
+                _run_playlist(pl, cfg)
+            finally:
+                finished = int(time.time())
+                with _lock:
+                    _running.discard(pid)
+                    if pid in _state:
+                        _state[pid]["last_run_at"] = finished
+                        _state[pid]["next_run_at"] = finished + _interval(pl)
+                _save_last_run(pid, finished)
+    finally:
+        with _lock:
+            _running.difference_update(pl["id"] for pl in due)
 
-        # After all playlist scans/downloads are done, refresh cache to pick up new downloads
-        _refresh_library_after_scans(len(due))
+    # Picks up what the scans found in the library. Downloads they queued
+    # refresh the library themselves when they finish.
+    _refresh_library_after_scans(len(due))
+
+
+_recovered = False
 
 
 def start():
-    global _scheduler_thread, _stop_event
+    global _scheduler_thread, _stop_event, _recovered
     # The tests import the app: a real scheduler would open their databases while
     # they delete them.
     if os.environ.get("D2N_SCHEDULER") == "off":
         logger.info("[auto-scan] Scheduler not started (D2N_SCHEDULER=off)")
         return
-    try:
-        from core.metadata_fix import recover_at_start
+    if not _recovered:
+        # Once per process: a restart after saving Settings must not touch the
+        # files a metadata pass is writing at that moment.
+        _recovered = True
+        try:
+            from core.metadata_fix import recover_at_start
 
-        recover_at_start()
-    except Exception as e:
-        logger.error(f"[metadata] Could not clear temporary files: {e}")
-    _stop_event = threading.Event()
+            recover_at_start()
+        except Exception as e:
+            logger.error(f"[metadata] Could not clear temporary files: {e}")
+    stop = threading.Event()
+    _stop_event = stop
     _scheduler_thread = threading.Thread(
-        target=_scheduler_loop, daemon=True, name="auto-scan-scheduler"
+        target=_scheduler_loop, args=(stop,), daemon=True, name="auto-scan-scheduler"
     )
     _scheduler_thread.start()
     logger.info("[auto-scan] Scheduler started")

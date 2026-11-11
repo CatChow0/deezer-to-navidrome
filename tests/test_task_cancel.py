@@ -105,7 +105,8 @@ class Routes(unittest.TestCase):
     def test_every_long_task_can_be_cancelled(self):
         from pathlib import Path as P
         root = P(__file__).resolve().parent.parent
-        for path, marker in (("routes/cache.py", "Full library rebuild"), ("routes/cache.py", "Library refresh"),
+        # The library rebuild and refresh share routes/cache.py's _library_task.
+        for path, marker in (("routes/cache.py", "create_task(title"),
                              ("routes/dedup.py", "Duplicate scan"), ("routes/system.py", "Repair downloads"),
                              ("routes/account.py", "create_task(title"), ("routes/mixes.py", "Fix missing metadata"),
                              ("routes/mixes.py", "Undo metadata fix"), ("core/mix_builder.py", "create_task(title"),

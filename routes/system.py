@@ -24,6 +24,7 @@ from core.config import (
     clear_playlists_and_covers,
     clear_preview_state_file,
     create_task,
+    data_file,
     follow_task,
     kept_config_keys,
     load_config,
@@ -167,15 +168,19 @@ def save_settings_values(values: dict) -> dict:
     for key, (default, lowest) in _NUMBERS.items():
         raw = values.get(key)
         try:
-            numbers[key] = max(lowest, int(raw if raw not in (None, "") else default))
-        except (TypeError, ValueError):
+            number = max(lowest, int(raw if raw not in (None, "") else default))
+        except (TypeError, ValueError, OverflowError):
             raise ValueError(f"{key} must be a number") from None
+        # No more than the menu offers, from the form as from the API: each
+        # worker is a thread.
+        numbers[key] = min(number, max(SETTING_CHOICES[key]))
     cfg = {
         "scan_dirs": [str(x).strip() for x in values.get("scan_dirs") or [] if str(x).strip()],
         "playlists_base_dir": str(values.get("playlists_base_dir") or "").strip(),
-        "playlist_ids_file": str(values.get("playlist_ids_file") or "").strip() or str(PLAYLIST_IDS_FILE),
-        "library_cache_file": str(values.get("library_cache_file") or "").strip() or str(LIBRARY_CACHE_FILE),
-        "preview_state_file": str(values.get("preview_state_file") or "").strip() or str(PREVIEW_STATE_FILE),
+        # Inside DATA_DIR only: the app rewrites and deletes these files.
+        "playlist_ids_file": str(data_file(str(values.get("playlist_ids_file") or "").strip(), PLAYLIST_IDS_FILE)),
+        "library_cache_file": str(data_file(str(values.get("library_cache_file") or "").strip(), LIBRARY_CACHE_FILE)),
+        "preview_state_file": str(data_file(str(values.get("preview_state_file") or "").strip(), PREVIEW_STATE_FILE)),
         "host_to_navidrome_roots": mappings,
         "deezer_dl_dir": deezer_dl_dir,
         **numbers,

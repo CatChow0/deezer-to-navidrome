@@ -55,9 +55,9 @@ class Client:
     def _clean(self, text) -> str:
         return redact(text, self.secret)
 
-    def call(self, endpoint: str, **params) -> dict:
-        """The body of the "subsonic-response" for this call. List values are
-        sent as repeated parameters (songId=1&songId=2)."""
+    def _send(self, endpoint: str, params: dict):
+        """The HTTP answer to this call. Credentials go in a form POST, never in
+        the URL, where proxies and Navidrome's own log would keep them."""
         if not self.url:
             raise SubsonicError(0, "No server address.")
         data = {"v": API_VERSION, "c": CLIENT_NAME, "f": "json", **self._auth()}
@@ -65,13 +65,21 @@ class Client:
         target = f"{self.url}/rest/{endpoint}"
         try:
             response = self.session.post(target, data=data, timeout=self.timeout)
-            if response.status_code == 405:
-                # A server without form POST: the parameters go in the URL. They are
-                # never logged here, and errors below are redacted.
+            if response.status_code == 405 and self.auth_type != "apikey":
+                # An old server without form POST: the parameters go in the URL.
+                # Only with a password, which travels there as a salted digest
+                # used once; an API key is long-lived. (Servers with API keys
+                # all take form POST.)
                 response = self.session.get(target, params=data, timeout=self.timeout)
         except requests.RequestException as e:
             host = urlsplit(self.url).netloc or self.url
             raise SubsonicError(0, self._clean(f"Could not reach {host}: {type(e).__name__}")) from None
+        return response
+
+    def call(self, endpoint: str, **params) -> dict:
+        """The body of the "subsonic-response" for this call. List values are
+        sent as repeated parameters (songId=1&songId=2)."""
+        response = self._send(endpoint, params)
         if response.status_code in (401, 403):
             raise SubsonicError(40, "The server refused the credentials (HTTP %s)." % response.status_code)
         if response.status_code == 404:
@@ -91,13 +99,7 @@ class Client:
     def binary(self, endpoint: str, **params):
         """(bytes, content type) for a call that answers a file, like getCoverArt.
         An error answer is raised as a SubsonicError, as with call()."""
-        data = {"v": API_VERSION, "c": CLIENT_NAME, "f": "json", **self._auth()}
-        data.update({key: value for key, value in params.items() if value is not None})
-        try:
-            response = self.session.post(f"{self.url}/rest/{endpoint}", data=data, timeout=self.timeout)
-        except requests.RequestException as e:
-            host = urlsplit(self.url).netloc or self.url
-            raise SubsonicError(0, self._clean(f"Could not reach {host}: {type(e).__name__}")) from None
+        response = self._send(endpoint, params)
         kind = response.headers.get("Content-Type", "")
         if response.status_code >= 400 or "json" in kind or "xml" in kind:
             message = "Not found."

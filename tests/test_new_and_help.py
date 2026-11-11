@@ -51,6 +51,33 @@ class Notes(unittest.TestCase):
                 self.assertLessEqual(version_key(found), version_key(release["version"]), (release["version"], found))
 
 
+class WhatToChange(unittest.TestCase):
+    """Each version says what matters most and what to change for it."""
+
+    def test_every_release_has_its_highlights(self):
+        for release in RELEASES:
+            self.assertTrue(1 <= len(release.get("highlights", [])) <= 3, release["version"])
+
+    def test_actions_are_well_formed(self):
+        from core.patch_notes import FILES, LEVELS
+
+        for release in RELEASES:
+            self.assertIsInstance(release.get("actions"), list, release["version"])
+            for action in release["actions"]:
+                self.assertIn(action["level"], LEVELS, release["version"])
+                self.assertIn(action["file"], FILES, release["version"])
+                self.assertTrue(action["when"] and action["do"], release["version"])
+                self.assertIsInstance(action["lines"], list, release["version"])
+
+    def test_pending_actions_are_those_of_the_versions_not_read(self):
+        from core.patch_notes import pending_actions, unread
+
+        self.assertEqual(["1.19.0", "1.18.2", "1.18.1", "1.18.0"], [r["version"] for r in unread("1.17.0")][:4])
+        self.assertEqual({"1.19.0", "1.18.0"}, {a["version"] for a in pending_actions("1.17.0")})
+        self.assertEqual([], pending_actions(RELEASES[0]["version"]))
+        self.assertEqual(len(RELEASES), len(unread(None)))
+
+
 class Pages(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -128,6 +155,36 @@ class Pages(unittest.TestCase):
         form = {"scan_dirs": "/music/library", "playlists_base_dir": "/music/playlists"}
         self.client.post("/config", data=form)
         self.assertNotIn('class="new-dot"', self.page())
+
+    def test_a_version_starts_with_what_to_change(self):
+        self.set_config({"notes_seen": config.WHATS_NEW_ID})
+        page = self.page()
+        panel = page[page.index('id="new-modal"'):page.index('id="help-modal"')]
+        newest = panel[panel.index(f'data-new-panel="{RELEASES[0]["version"]}"'):]
+        self.assertIn("To do", newest[:newest.index("note-details")])
+        self.assertIn('data-copy-line="TRUSTED_PROXIES=1"', panel)
+        self.assertIn("Nothing to change", panel)
+        self.assertIn("note-flag", panel)
+        # Up to date: no summary of the versions not read.
+        self.assertNotIn("note-since", panel)
+
+    def test_jumping_versions_shows_everything_to_change_since(self):
+        self.set_config({"notes_seen": "1.17.0"})
+        page = self.page()
+        panel = page[page.index('id="new-modal"'):page.index('id="help-modal"')]
+        since = panel[panel.index("note-since"):panel.index("doc-body")]
+        self.assertIn("Since 1.17.0", since)
+        self.assertIn("TRUSTED_PROXIES=1", since)
+        self.assertIn("^/api/v1/", since)
+
+    def test_the_api_says_what_to_change_since(self):
+        self.set_config({"notes_seen": "1.17.0"})
+        answer = self.client.get("/api/v1/content/notes").get_json()
+        self.assertEqual("1.17.0", answer["since"])
+        self.assertEqual({"1.19.0", "1.18.0"}, {a["version"] for a in answer["pending_actions"]})
+        newest = answer["notes"][0]
+        self.assertTrue(newest["highlights"])
+        self.assertEqual(["TRUSTED_PROXIES=1", "COOKIE_SECURE=true"], newest["actions"][0]["lines"])
 
     def test_live_setup_checks_stay_in_help(self):
         page = self.page()

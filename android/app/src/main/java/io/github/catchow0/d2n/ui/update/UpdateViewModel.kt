@@ -102,6 +102,8 @@ class UpdateViewModel(
 
     /** Downloads the offer, checks it, and hands it to Android at once. */
     fun download() {
+        // A second tap before the banner changes: two downloads would write one file.
+        if (_state.value.progress != null) return
         val offer = _state.value.offer ?: return
         val sha256 = offer.sha256 ?: return
         val url = base()?.resolve("api/v1/app/apk") ?: return

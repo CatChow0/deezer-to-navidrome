@@ -1,0 +1,40 @@
+<p>A full review of the app: files that can no longer be lost, a safer sign-in, and many fixes in downloads, mixes and stats.</p>
+
+<h4 class="help-h note-h">Your data</h4>
+<ul class="help-list">
+  <li><strong>Nothing lost when two things save at once.</strong> The playlists list, the scan results and the settings could be wiped when a scan, a mix and a page saved at the same moment. Every file is now written in one step, under a lock, and a damaged file is set aside (<code>name.corrupt-…</code>) instead of being replaced by an empty one.</li>
+  <li><strong>Duplicates.</strong> Applying could remove every copy of a track when the file kept last time had been moved: a group where you keep nothing is now left alone. The quarantine notes where each file came from (<code>manifest.jsonl</code>), and the sizes show again.</li>
+  <li><strong>Navidrome playlists kept.</strong> With wrong path mappings, a publication emptied your playlists in Navidrome: they are left as they are, with the reason in Settings. A playlist is only taken away from the app once Navidrome confirms it was deleted.</li>
+  <li><strong>Unmounted disks.</strong> A music disk missing for a moment no longer drops its tracks from the library index.</li>
+</ul>
+
+<h4 class="help-h note-h">Sign-in and security</h4>
+<ul class="help-list">
+  <li><strong>Sign-in.</strong> A username with accents can sign in. The page after sign-in always stays on this site. Failed attempts from the internet no longer lock you out: set <code>TRUSTED_PROXIES</code> behind a reverse proxy.</li>
+  <li><strong>Other sites.</strong> Forms posted from another site are refused, even with <code>DISABLE_AUTH</code>, and requests over 16 MB are refused before they are read.</li>
+  <li><strong>Saved passwords stay home.</strong> Testing a Navidrome account only uses its saved password with its own server; moving an account to another server asks for the password again. API keys are never put in an address.</li>
+  <li><strong>Settings files.</strong> The files named in Settings stay inside the data folder: a path elsewhere is replaced by the default one.</li>
+</ul>
+
+<h4 class="help-h note-h">Library, downloads and playlists</h4>
+<ul class="help-list">
+  <li><strong>Names in every script.</strong> Artists and titles in Cyrillic, Japanese, Korean… (Кино, 宇多田ヒカル) now match your library; before, they were never found and downloaded again at every scan. The library's keys are updated at the first start.</li>
+  <li><strong>Downloads.</strong> A remix and its original, or track 3 of each disc, get their own file. A discography no longer brings whole compilations along. A track asked twice is downloaded once, and automatic downloads stop asking again for tracks already fetched. A very long title fits the disk.</li>
+  <li><strong>Playlist files.</strong> Two playlists with the same name each keep their own .m3u8, a title changed on Deezer keeps its file, and one track outside the path mappings no longer stops the whole playlist.</li>
+  <li><strong>Scheduler.</strong> Saving Settings during a scan no longer starts a second scheduler, a daily scan still runs when the container restarts every night, and one error no longer stops the automatic scans until a restart.</li>
+</ul>
+
+<h4 class="help-h note-h">Made for you and stats</h4>
+<ul class="help-list">
+  <li><strong>Mixes keep coming.</strong> When downloads are not possible, Daily Mix+ and Discover wait an hour instead of retrying every 10 minutes, and the other profiles get their turn again. Few seeds no longer give a day without Daily Mix.</li>
+  <li><strong>Better mixes.</strong> New tracks are spread through Daily Mix+, and Discover holds one third of new releases, as meant. With automatic decisions off, nothing moves by itself.</li>
+  <li><strong>Quarantine.</strong> A decision taken while the review runs is no longer overwritten, and a trial copy is only replaced by a library copy that really exists.</li>
+  <li><strong>Stats.</strong> The yearly recap of a long history opens in seconds, not half a minute. A track renamed in Maloja is counted once. A Deezer match needs whole words ("Intro" is not "Introspection").</li>
+</ul>
+
+<h4 class="help-h note-h">Docker and the Android app</h4>
+<ul class="help-list">
+  <li><strong>Docker.</strong> <code>PUID</code> / <code>PGID</code> run the app as your user instead of root. The image uses a fixed Python and fixed library versions.</li>
+  <li><strong>Android app.</strong> Signing out clears what the phone saved from the server; tokens are never written to its cache. An update must be this app, signed with the same key and newer: an older build of the same version is never offered.</li>
+  <li><strong>This panel.</strong> Each version now starts with what to change for it, if anything, and its highlights; the full list folds away.</li>
+</ul>

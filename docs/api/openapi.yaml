@@ -1217,6 +1217,13 @@ paths:
   /api/v1/content/notes:
     get:
       summary: The notes of each version (HTML), the newest first
+      description: >-
+        Each note carries `highlights` (what matters most, three lines at most)
+        and `actions`, what to change for that version: `level` (required,
+        recommended or optional), `when`, `do`, `lines` to copy and `file`.
+        `since` is the version whose notes were read last, and
+        `pending_actions` the actions of every version not read yet, each with
+        its `version`.
       responses:
         "200": {$ref: "#/components/responses/Object"}
         "304": {$ref: "#/components/responses/NotModified"}

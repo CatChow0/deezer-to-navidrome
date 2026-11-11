@@ -6,8 +6,14 @@ auth_bp = Blueprint("auth", __name__)
 
 
 def _safe_next(target):
-    """Only local paths, so the login page cannot send you to another site."""
-    return target if target and target.startswith("/") and not target.startswith("//") else url_for("playlists.home")
+    """Only local paths, so the login page cannot send you to another site.
+    Browsers read a backslash as a slash and drop tabs, so a path starting
+    with a slash then a backslash, or a slash then a tab, means another host."""
+    if not target or not target.startswith("/") or target.startswith("//"):
+        return url_for("playlists.home")
+    if "\\" in target or any(ord(c) < 32 or ord(c) == 127 for c in target):
+        return url_for("playlists.home")
+    return target
 
 
 def _sign_in(name):
@@ -44,19 +50,14 @@ def login():
         return redirect(url_for("auth.setup"))
     error, status = None, 200
     if request.method == "POST":
-        name = (request.form.get("username") or "").strip()
-        keys = [f"user:{name.lower()}", f"ip:{request.remote_addr}"]
-        wait = max(auth.limiter.retry_after(k) for k in keys)
+        signed_in, wait = auth.attempt_login(request.form.get("username"), request.form.get("password"),
+                                             request.remote_addr)
         if wait:
             error, status = f"Too many attempts, try again in {wait} s.", 429
-        elif auth.check_credentials(name, request.form.get("password") or ""):
-            for k in keys:
-                auth.limiter.success(k)
+        elif signed_in:
             _sign_in(auth.username())
             return redirect(_safe_next(request.form.get("next")))
         else:
-            for k in keys:
-                auth.limiter.failure(k)
             error, status = "Wrong username or password.", 401
     return render_template("login.html", mode="login", error=error, next=request.values.get("next", "")), status
 

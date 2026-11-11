@@ -2,6 +2,7 @@
 the profile of this browser. Each profile has its own."""
 import logging
 import time
+from contextlib import contextmanager
 
 from flask import Blueprint, Response, jsonify, request, session
 
@@ -99,7 +100,7 @@ def settings():
     try:
         try:
             mix_builder.save_settings(conn, account, body)
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
             return jsonify({"ok": False, "error": "Limits must be numbers"}), 400
         if mode is not None:
             mix_builder.set_mix_mode(conn, account, mode)
@@ -171,7 +172,38 @@ def _update_trial_playlists(conn, profiles=None) -> None:
     mix_builder.refresh_trial_playlists(conn, profiles)
 
 
+# The review moves files on its own (core/mix_builder.py): a decision taken
+# meanwhile would be overwritten by its older view of the quarantine.
+QUARANTINE_WAIT = 30
+
+
+class _Busy(Exception):
+    pass
+
+
+@contextmanager
+def _quarantine_held():
+    if not mix_builder._review_lock.acquire(timeout=QUARANTINE_WAIT):
+        raise _Busy()
+    try:
+        yield
+    finally:
+        mix_builder._review_lock.release()
+
+
+def _busy():
+    return jsonify({"ok": False, "error": "The quarantine is being reviewed: try again in a moment"}), 409
+
+
 def _decide(action, deezer_id):
+    try:
+        with _quarantine_held():
+            return _decide_now(action, deezer_id)
+    except _Busy:
+        return _busy()
+
+
+def _decide_now(action, deezer_id):
     account = _profile()
     conn = mixes_db.connect()
     try:
@@ -239,34 +271,46 @@ def keep_pending():
     if not isinstance(ids, list):
         return jsonify({"ok": False, "error": "Expected the tracks to keep"}), 400
     account = _profile()
-    conn = mixes_db.connect()
     try:
-        kept = trial.keep_all_pending(conn, account, int(time.time()), [str(i) for i in ids])
-        _update_trial_playlists(conn)
-        return jsonify({"ok": True, "kept": kept, **_state(conn, account)})
-    finally:
-        conn.close()
+        with _quarantine_held():
+            conn = mixes_db.connect()
+            try:
+                kept = trial.keep_all_pending(conn, account, int(time.time()), [str(i) for i in ids])
+                _update_trial_playlists(conn)
+                return jsonify({"ok": True, "kept": kept, **_state(conn, account)})
+            finally:
+                conn.close()
+    except _Busy:
+        return _busy()
 
 
 @mixes_bp.post("/api/mixes/trial/empty-trash")
 def empty_trash():
     account = _profile()
-    conn = mixes_db.connect()
     try:
-        deleted = trial.empty_trash(conn, account, int(time.time()))
-        _update_trial_playlists(conn)
-        return jsonify({"ok": True, "deleted": deleted, **_state(conn, account)})
-    finally:
-        conn.close()
+        with _quarantine_held():
+            conn = mixes_db.connect()
+            try:
+                deleted = trial.empty_trash(conn, account, int(time.time()))
+                _update_trial_playlists(conn)
+                return jsonify({"ok": True, "deleted": deleted, **_state(conn, account)})
+            finally:
+                conn.close()
+    except _Busy:
+        return _busy()
 
 
 @mixes_bp.post("/api/mixes/trial/remove-pending")
 def remove_pending():
     account = _profile()
-    conn = mixes_db.connect()
     try:
-        removed = trial.remove_all_pending(conn, account, int(time.time()))
-        _update_trial_playlists(conn)
-        return jsonify({"ok": True, "removed": removed, **_state(conn, account)})
-    finally:
-        conn.close()
+        with _quarantine_held():
+            conn = mixes_db.connect()
+            try:
+                removed = trial.remove_all_pending(conn, account, int(time.time()))
+                _update_trial_playlists(conn)
+                return jsonify({"ok": True, "removed": removed, **_state(conn, account)})
+            finally:
+                conn.close()
+    except _Busy:
+        return _busy()

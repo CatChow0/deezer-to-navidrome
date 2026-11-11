@@ -74,11 +74,9 @@ def get_latest_available_version():
     now = time.time()
     cache_duration = 3600
 
-    if (
-        VERSION_CHECK_CACHE["cached_at"]
-        and now - VERSION_CHECK_CACHE["cached_at"] < cache_duration
-        and VERSION_CHECK_CACHE["latest_version"]
-    ):
+    # "Up to date" is cached too: otherwise an install with nothing newer asked
+    # GitHub and Docker Hub on every page, past GitHub's 60 calls an hour.
+    if VERSION_CHECK_CACHE["cached_at"] and now - VERSION_CHECK_CACHE["cached_at"] < cache_duration:
         return {
             "version": VERSION_CHECK_CACHE["latest_version"],
             "url": VERSION_CHECK_CACHE["latest_url"],

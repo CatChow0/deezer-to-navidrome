@@ -203,13 +203,22 @@ def choose_seeds(seeds, recent_ids=frozenset(), rng=None, count=MIX_COUNT) -> li
         pool.remove(seed)
         return True
 
+    def fill():
+        while len(chosen) < count:
+            options = [pool for pool in pools.values() if any(s.artist_key not in used_artists for s in pool)]
+            if not options:
+                break
+            take(rng.choice(options))
+
     for kind in ("track", "album", "artist"):
         take(pools.get(kind, []))
-    while len(chosen) < count:
-        options = [pool for pool in pools.values() if any(s.artist_key not in used_artists for s in pool)]
-        if not options:
-            break
-        take(rng.choice(options))
+    fill()
+    if len(chosen) < count and recent_ids:
+        # Too few seeds for a new set every day: the last run's come back,
+        # rather than a day with fewer mixes, or none.
+        taken = {s.id for s in chosen}
+        pools = {kind: [s for s in found if s.id not in taken][:SEED_POOL] for kind, found in seeds.items()}
+        fill()
     return chosen[:count]
 
 

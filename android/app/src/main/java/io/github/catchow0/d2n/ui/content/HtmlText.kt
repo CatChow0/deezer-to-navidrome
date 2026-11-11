@@ -48,11 +48,15 @@ private val ENTITIES = mapOf(
 )
 private val BLOCKS = setOf("p", "div", "section", "figure", "figcaption", "h1", "h2", "h3", "h4", "h5", "li", "ul", "ol", "table", "tr", "pre", "header")
 
+/** Null past the last code point (&#x110000;), which would throw. */
+private fun codePoint(value: Int): String? =
+    if (Character.isValidCodePoint(value)) String(Character.toChars(value)) else null
+
 fun decodeEntities(text: String): String = Regex("""&(#x?[0-9a-fA-F]+|[a-zA-Z]+);""").replace(text) { match ->
     val name = match.groupValues[1]
     when {
-        name.startsWith("#x") || name.startsWith("#X") -> name.drop(2).toIntOrNull(16)?.let { String(Character.toChars(it)) }
-        name.startsWith("#") -> name.drop(1).toIntOrNull()?.let { String(Character.toChars(it)) }
+        name.startsWith("#x") || name.startsWith("#X") -> name.drop(2).toIntOrNull(16)?.let(::codePoint)
+        name.startsWith("#") -> name.drop(1).toIntOrNull()?.let(::codePoint)
         else -> ENTITIES[name]
     } ?: match.value
 }
@@ -105,7 +109,9 @@ fun parseHtml(html: String): List<HtmlBlock> {
         }
         val target = target()
         var text = decodeEntities(raw).replace(Regex("\\s+"), " ")
-        if (target.length == 0 || target.toAnnotatedString().text.endsWith(" ") || target.toAnnotatedString().text.endsWith("\n")) text = text.trimStart()
+        // Read once: each read copies the whole text so far.
+        val last = if (target.length == 0) null else target.toAnnotatedString().text.last()
+        if (last == null || last == ' ' || last == '\n') text = text.trimStart()
         if (text.isNotEmpty()) target.append(text)
     }
 

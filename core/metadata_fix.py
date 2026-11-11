@@ -331,6 +331,9 @@ def _in_place_flac(path, change, keys) -> None:
         return info.padding
 
     backup = _save_header(path, before[0], header)
+    # The backup goes once the file is known good, or known to be as it was: a
+    # failed restore keeps it, for recover() at the next start.
+    settled = False
     try:
         with FILES_LOCK:
             try:
@@ -338,8 +341,14 @@ def _in_place_flac(path, change, keys) -> None:
             except OSError:
                 unchanged = False
             if not unchanged:
+                settled = True
                 raise FileChanged("The file changed during the write")
-            audio.save(padding=exact_fit)
+            try:
+                audio.save(padding=exact_fit)
+            except NoRoom:
+                # Refused before anything was written.
+                settled = True
+                raise
         _sync(path)
         try:
             with open(path, "rb") as handle:
@@ -349,15 +358,22 @@ def _in_place_flac(path, change, keys) -> None:
             after = FLAC(path)
             good = good and all(list(after.get(k) or []) == v for k, v in tags.items() if k not in keys)
             good = good and _pictures(after) == pictures
-        except WriteRefused:
-            raise
         except Exception:
+            # Damaged metadata blocks included (WriteRefused from
+            # _flac_audio_start): every failed check puts the header back.
             good = False
         if not good:
-            _restore_header(path, header)
             raise WriteRefused("The file differed after writing the tags")
+        settled = True
+    except BaseException:
+        if not settled:
+            # Written, maybe in part: the old header goes back.
+            _restore_header(path, header)
+            settled = True
+        raise
     finally:
-        backup.unlink(missing_ok=True)
+        if settled:
+            backup.unlink(missing_ok=True)
 
 
 def _rewrite(path, change, keys, conn=None) -> None:

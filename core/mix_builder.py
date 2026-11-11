@@ -18,6 +18,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from core import account_context, config, deezer_dl, mix_candidates, metadata_fix, mix_taste, mixes_db, stats_db, trial
+from core.utils import FILES_LOCK
 from core.library import load_library_cache
 from core.mix_taste import MIN_MIX_SIZE, MIX_COUNT, MIX_SIZE
 
@@ -49,14 +50,19 @@ DEFAULTS = {
     "trial_plays": trial.KEEP_PLAYS,
     "trial_marks": True,
 }
+# (lowest, highest): a number past these is brought back to them. Every
+# limit has a top, so a typing slip cannot ask for a million tracks.
 BOUNDS = {"mix_size": (MIN_MIX_SIZE, 100), "blend_new_percent": (1, 90), "trial_days": (1, 365),
-          "trash_days": (1, 365), "trial_plays": (1, 50)}
+          "trash_days": (1, 365), "trial_plays": (1, 50), "daily_hours": (1, 24 * 7), "discover_days": (1, 90),
+          "discover_size": (1, 200), "max_unheard": (1, 10000), "max_trial_gb": (1, 10000)}
 SWITCHES = {"discover", "trial_auto", "trial_delete", "trial_bypass", "trial_marks"}
 # One disk for every profile: the same limits for all.
 SHARED = {"max_unheard", "max_trial_gb"}
 # What each profile keeps in mixes.db's meta table, under its own keys.
 PER_PROFILE_KEYS = ("settings", "last_run", "seeds_today", "seeds_daily", "seeds_blend", "last_daily", "last_blend",
-                    "last_discover", "trial_rules_v2")
+                    "last_discover", "trial_rules_v2", "last_attempt")
+# A version that cannot download is tried again after this long.
+BLOCKED_RETRY = 3600
 TRIAL_KEYS = {"trial_auto", "trial_days", "trash_days", "trial_delete", "trial_bypass", "trial_plays", "trial_marks"}
 _run_lock = threading.Lock()
 _review_lock = threading.Lock()
@@ -96,9 +102,10 @@ def save_settings(conn, account, changes) -> dict:
         elif name in SWITCHES:
             settings[name] = bool(value)
         elif name in DEFAULTS:
-            low, high = BOUNDS.get(name, (1, None))
-            number = max(low, int(value))
-            settings[name] = min(high, number) if high else number
+            low, high = BOUNDS[name]
+            if isinstance(value, float) and value != value:
+                raise ValueError(f"{name} must be a number")
+            settings[name] = min(high, max(low, int(value)))
     mixes_db.set_meta(conn, key(account, "settings"), {k: v for k, v in settings.items() if k not in SHARED})
     mixes_db.set_meta(conn, "shared_settings", {k: settings[k] for k in SHARED})
     return settings
@@ -185,12 +192,10 @@ def publish(account, playlist_id, title, subtitle, tracks, cover=None) -> None:
     (core/publish.py). The title never changes: Navidrome keeps one playlist per
     file, so a new name each day would pile them up."""
     from core import publish as navidrome
-    from core.deezer import load_playlists, save_playlists
+    from core.deezer import put_entry
 
     rows = _rows(tracks)
-    playlists = [p for p in load_playlists() if p["id"] != playlist_id]
-    save_playlists([*playlists, {"id": playlist_id, "title": title, "picture": "", "subtitle": subtitle,
-                                 "accounts": [account]}])
+    put_entry({"id": playlist_id, "title": title, "picture": "", "subtitle": subtitle, "accounts": [account]})
     navidrome.publish(playlist_id, title, rows)
     _set_cover(playlist_id, cover)
     config.update_preview_state(playlist_id, {
@@ -205,7 +210,7 @@ def unpublish(playlist_id) -> None:
     for the others, nothing is deleted by name, since another profile's mix has
     the same title."""
     from core import publish as navidrome
-    from core.deezer import accounts_for, is_auto_id, load_playlists, playlist_title, save_playlists
+    from core.deezer import accounts_for, is_auto_id, playlist_title, remove_entries
 
     if not is_auto_id(playlist_id):
         raise ValueError(f"Not a generated playlist: {playlist_id}")
@@ -213,7 +218,7 @@ def unpublish(playlist_id) -> None:
     navidrome.remove_from(playlist_id, title, accounts_for(playlist_id))
     navidrome.unpublish(playlist_id)
     config.delete_playlist_cache(playlist_id)
-    save_playlists([p for p in load_playlists() if p["id"] != playlist_id])
+    remove_entries([playlist_id])
 
 
 def _subtitle(seed) -> str:
@@ -254,22 +259,37 @@ def download_to_trial(conn, account, candidates, want, mix_id, now, enqueue=None
         done, results = threading.Event(), {}
         left = [len(batch)]
         lock = threading.Lock()
+        closed = [False]
 
-        def finished(task, result, error, left=left, done=done, results=results, lock=lock):
-            results[str(task.music_id)] = (result, error)
+        def finished(task, result, error, left=left, done=done, results=results, lock=lock, closed=closed):
             with lock:
-                left[0] -= 1
-                if left[0] <= 0:
-                    done.set()
+                late = closed[0]
+                if not late:
+                    results[str(task.music_id)] = (result, error)
+                    left[0] -= 1
+                    if left[0] <= 0:
+                        done.set()
+            if late:
+                _drop_late_download(result)
 
         for candidate in batch:
             enqueue("track", candidate.deezer_id, on_done=finished, base_dir=str(target))
         if not done.wait(DOWNLOAD_TIMEOUT):
             logger.warning("Downloads for %s took too long", mix_id)
+        with lock:
+            # Those arriving from now on are not in this mix: their file goes.
+            closed[0] = True
         for candidate in batch:
             result, error = results.get(candidate.deezer_id, (None, "No answer"))
             if error or not result or not result.get("path"):
                 logger.info("Could not download %s: %s", candidate.deezer_id, error)
+                continue
+            # "Already there": the file of another Deezer track with the same
+            # name. It belongs to that one; this one is left out.
+            holder = conn.execute("SELECT deezer_id FROM trial_tracks WHERE path=? AND deezer_id != ? LIMIT 1",
+                                  (str(result["path"]), str(candidate.deezer_id))).fetchone()
+            if holder:
+                logger.info("%s has the file of %s: left out", candidate.deezer_id, holder["deezer_id"])
                 continue
             trial.add_download(conn, account, candidate.deezer_id, candidate.artist, candidate.title, candidate.album,
                                result["path"], mix_id, now, artist_id=candidate.artist_id)
@@ -279,6 +299,38 @@ def download_to_trial(conn, account, candidates, want, mix_id, now, enqueue=None
                 saved.append({"deezer_id": candidate.deezer_id, "artist": candidate.artist, "title": candidate.title,
                               "album": candidate.album, "path": result["path"]})
     return saved
+
+
+def _drop_late_download(result) -> None:
+    """A download finished after its mix gave up waiting: nothing registers it,
+    so it would stay in trial/ for good, outside every count and limit."""
+    path = (result or {}).get("path")
+    if not path:
+        return
+    try:
+        real = trial._inside(path, trial.trial_dir())
+    except trial.TrialError:
+        return
+    conn = mixes_db.connect()
+    try:
+        registered = conn.execute("SELECT 1 FROM trial_tracks WHERE path=? LIMIT 1", (str(path),)).fetchone()
+    finally:
+        conn.close()
+    if not registered:
+        with FILES_LOCK:
+            real.unlink(missing_ok=True)
+        logger.info("Late download dropped: %s", path)
+
+
+def _interleave(base, extra) -> list:
+    """`extra` spaced out evenly through `base`, which keeps its order."""
+    result = list(base)
+    if not extra:
+        return result
+    step = (len(base) + len(extra)) / len(extra)
+    for index, track in enumerate(extra):
+        result.insert(min(len(result), round(index * step + step / 2)), track)
+    return result
 
 
 def _trial_track(row) -> dict:
@@ -313,8 +365,15 @@ class _Run:
         # profile may be proposed: its file is shared, not downloaded again.
         known = {r["deezer_id"] for r in self.conn.execute(
             "SELECT deezer_id FROM trial_tracks WHERE account_id=? OR state=?", (self.account, trial.KEPT))}
+        # Another version of a track this profile has on trial (the single and
+        # the album's): the same title, so the same file name. Proposing it
+        # would point two rows at one file, and deciding on one would take the
+        # other's file away.
+        on_trial = [r["track_key"] for r in self.conn.execute(
+            "SELECT track_key FROM trial_tracks WHERE account_id=? AND state IN (?, ?)",
+            (self.account, trial.ON_TRIAL, trial.PENDING)) if r["track_key"]]
         return mix_candidates.Exclusions(self.owned, known_ids=known,
-                                         rejected_keys=trial.rejected(self.conn, self.account)["keys"],
+                                         rejected_keys=[*trial.rejected(self.conn, self.account)["keys"], *on_trial],
                                          artist_ids=self.ids, **kw)
 
     def download_room(self, wanted) -> int:
@@ -406,8 +465,12 @@ def build_blend(run) -> list:
             run.downloaded += len(new_tracks)
         # Nothing new to fetch, or a disk limit reached: your own tracks take those places.
         picks += spare[:new_slots - len(trial_tracks) - len(new_tracks)]
-        tracks = [_as_track(p) for p in picks] + trial_tracks + new_tracks
-        run.rng.shuffle(tracks)
+        extra = trial_tracks + new_tracks
+        run.rng.shuffle(extra)
+        # Your tracks keep their order, where one artist's tracks are already
+        # apart; the new ones are spaced out among them. A plain shuffle put
+        # the same artist back to back.
+        tracks = _interleave([_as_track(p) for p in picks], extra)
         publish(run.account, slot, f"Daily Mix+ {len(built) + 1}", _subtitle(seed), tracks, cover=seed_cover(run.stats, seed))
         run.remember("blend", [p.key for p in picks])
         built.append(slot)
@@ -433,7 +496,11 @@ def build_discover(run) -> list:
     around = mix_candidates.select(mix_candidates.habit_pool(run.conn, run.taste, run.ids, run.now),
                                    rules, size, mix_taste.PER_ARTIST, run.rng)
     taken, chosen = set(), []
-    for candidate in [*newest, *around]:
+    # The spares of each kind come last: downloads take the candidates in this
+    # order, so the releases' spares came before any track around your habits,
+    # and new releases filled two thirds of Discover instead of one.
+    habits = size - len(newest[:new_share])
+    for candidate in [*newest[:new_share], *around[:habits], *newest[new_share:], *around[habits:]]:
         if candidate.base not in taken:
             taken.add(candidate.base)
             chosen.append(candidate)
@@ -467,8 +534,9 @@ def review_trial(conn, stats_conn, account, now) -> dict:
     Plays come from its history as it is now, so plays a merge brought in count
     too, and stars from its Navidrome user only."""
     rules = trial.rules_from(load_settings(conn, account))
-    # First, the tracks of a namesake of an artist this profile listens to (two PLK).
-    namesakes = trial.drop_homonyms(conn, stats_conn, account, now)
+    # First, the tracks of a namesake of an artist this profile listens to (two
+    # PLK). Only with automatic decisions on: off, nothing moves by itself.
+    namesakes = trial.drop_homonyms(conn, stats_conn, account, now) if rules.auto else 0
     marks = trial.navidrome_marks(conn, account, now) if rules.auto and rules.marks_count else None
     owned = {}
     if rules.auto:
@@ -543,6 +611,8 @@ def generate(account, versions=None, progress=None, now=None) -> dict:
     try:
         settings = load_settings(conn, account)
         wanted = versions if versions is not None else enabled_versions(settings)
+        # Before anything can fail: the profile tried last waits behind the others.
+        mixes_db.set_meta(conn, key(account, "last_attempt"), now)
         mixes_db.set_meta(conn, key(account, "seeds_today"), [])
         emit("Checking the tracks on trial")
         with _review_lock:
@@ -561,6 +631,11 @@ def generate(account, versions=None, progress=None, now=None) -> dict:
                 continue
             if downloads and blocked:
                 run.notes.append(f"{name}: {blocked}")
+                # Tried again in an hour, not at every check: that would start a
+                # task every 10 minutes, and the profiles after this one would
+                # never get their turn.
+                mixes_db.set_meta(conn, key(account, f"last_{name}"),
+                                  max(0, now - _periods(settings)[name] + BLOCKED_RETRY))
                 continue
             emit(f"Building {name}")
             built[name] = build(run)
@@ -633,10 +708,18 @@ def set_discover(conn, account, enabled) -> None:
         mixes_db.set_meta(conn, key(account, "last_discover"), 0)
 
 
+def _last_attempt(conn, account) -> int:
+    return int(mixes_db.get_meta(conn, key(account, "last_attempt"), 0) or 0)
+
+
+def _periods(settings) -> dict:
+    return {"daily": settings["daily_hours"] * 3600, "blend": settings["daily_hours"] * 3600,
+            "discover": settings["discover_days"] * DAY}
+
+
 def due_versions(conn, account, now) -> list:
     settings = load_settings(conn, account)
-    every = {"daily": settings["daily_hours"] * 3600, "blend": settings["daily_hours"] * 3600,
-             "discover": settings["discover_days"] * DAY}
+    every = _periods(settings)
     return [name for name in enabled_versions(settings)
             if now - mixes_db.get_meta(conn, key(account, f"last_{name}"), 0) >= every[name]]
 
@@ -650,15 +733,18 @@ def forget_account(account_id, heir) -> None:
 
     conn = mixes_db.connect()
     try:
-        tracks = [r["deezer_id"] for r in conn.execute("SELECT deezer_id FROM trial_tracks WHERE account_id=?", (account_id,))]
+        # With their file: a row the heir already has is dropped below, and
+        # its file must still be settled, or it stays in trial/ for good.
+        tracks = [(r["deezer_id"], r["path"]) for r in conn.execute(
+            "SELECT deezer_id, path FROM trial_tracks WHERE account_id=?", (account_id,))]
         conn.execute("UPDATE OR IGNORE trial_tracks SET account_id=? WHERE account_id=?", (heir, account_id))
         conn.execute("DELETE FROM trial_tracks WHERE account_id=?", (account_id,))
         conn.executemany("DELETE FROM meta WHERE key=?", [(key(account_id, name),) for name in PER_PROFILE_KEYS])
         conn.executemany("DELETE FROM mix_history WHERE mix_id=?", [(auto_id(account_id, n),) for n in ("daily", "blend")])
         conn.commit()
-        for deezer_id in tracks:
+        for deezer_id, path in tracks:
             try:
-                trial._settle(conn, deezer_id, int(time.time()))
+                trial._settle(conn, deezer_id, int(time.time()), path)
             except (trial.TrialError, OSError) as e:
                 logger.warning("Could not settle %s: %s", deezer_id, e)
         refresh_trial_playlists(conn, [heir])
@@ -705,11 +791,16 @@ def tick(now=None) -> None:
         analysed = 1 - state["left"] / state["total"] if state["total"] else 1
         due = None
         if analysed >= MIN_ANALYSED_SHARE:
+            # The profile due the longest goes first: one that keeps failing
+            # does not hold back the others.
+            waiting = []
             for account in profiles:
                 versions = due_versions(conn, account, now) if wanted[account] else []
                 if versions:
-                    due = (account, versions)
-                    break
+                    waiting.append((_last_attempt(conn, account), account, versions))
+            if waiting:
+                _, account, versions = min(waiting, key=lambda w: w[0])
+                due = (account, versions)
     finally:
         conn.close()
     if due:

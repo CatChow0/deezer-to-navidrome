@@ -35,8 +35,11 @@ class DownloadTask:
         self.progress = 0
         self.progress_maximum = 0
         self.finished_at = 0
-        # Called with (task, result, error) once the download is over.
+        # Called with (task, result, error) once the download is over; `joined`
+        # for the callers who asked for the same download while it was queued.
         self.on_done = on_done
+        self.joined = []
+        self.settled = False
         self.on_progress = on_progress
 
     @property
@@ -93,6 +96,14 @@ class DownloadQueue:
     def enqueue(self, description, kind, music_id, on_done=None, on_progress=None, base_dir=None):
         task = DownloadTask(description, kind, music_id, on_done=on_done, on_progress=on_progress, base_dir=base_dir)
         with self.lock:
+            # The same download already waiting or running: joined, not made
+            # twice (the automatic downloads ask again at every scan).
+            same = next((t for t in self.tasks if t.state in (WAITING, ACTIVE) and not t.settled
+                         and (t.kind, t.music_id, t.base_dir) == (task.kind, task.music_id, base_dir)), None)
+            if same is not None:
+                if on_done:
+                    same.joined.append(on_done)
+                return same
             active = sum(1 for t in self.tasks if t.state == ACTIVE)
             ahead = len(self.queue)
             # Said before the task is visible to the workers, so "Queued"
@@ -129,9 +140,13 @@ class DownloadQueue:
             task.exception = e
             task.state = FAILED
         task.finished_at = 1
-        if task.on_done:
+        with self.lock:
+            # Read under the lock: a caller joining from now on gets a new task.
+            task.settled = True
+            callbacks = [c for c in (task.on_done, *task.joined) if c]
+        for callback in callbacks:
             try:
-                task.on_done(task, task.result, task.exception)
+                callback(task, task.result, task.exception)
             except Exception:
                 print(traceback.format_exc(), flush=True)
 
@@ -213,8 +228,15 @@ class DownloadQueue:
         albums = deezer_dl.artist_albums(task.music_id)
         if not albums:
             raise deezer_dl.DeezerDownloadError("Deezer lists no release for this artist")
-        summary = {"label": "", "saved": 0, "total": 0, "failed": [], "replaced": [], "albums": len(albums)}
+        summary = {"label": "", "saved": 0, "total": 0, "failed": [], "replaced": [], "albums": len(albums),
+                   "skipped": []}
         for index, album in enumerate(albums):
+            # Deezer lists the releases the artist only appears on too: a
+            # compilation would bring every other artist's tracks with it.
+            main = deezer_dl.album_artist_id(album["id"])
+            if main and main != str(task.music_id):
+                summary["skipped"].append(album["title"])
+                continue
             def on_track_done(done, total, song, index=index, album=album):
                 share = (index + (done / total if total else 1)) / len(albums)
                 task.report(

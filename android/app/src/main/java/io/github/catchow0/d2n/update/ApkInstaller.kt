@@ -4,11 +4,14 @@ import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageInfo
 import android.content.pm.PackageInstaller
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
 import java.io.File
+import java.io.IOException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 
@@ -63,7 +66,36 @@ class PackageInstallerApkInstaller(private val context: Context) : ApkInstaller 
         )
     }
 
+    /**
+     * The file must be this app, signed with the same key, and not older. The
+     * SHA-256 checked before comes from the same server, so it only proves the
+     * file arrived whole: a rogue server, or someone between, could hand any
+     * APK. Android would refuse most of these; refused here, the reason is clear.
+     */
+    private fun check(apk: File) {
+        val manager = context.packageManager
+        @Suppress("DEPRECATION")
+        val flags = if (Build.VERSION.SDK_INT >= 28) PackageManager.GET_SIGNING_CERTIFICATES else PackageManager.GET_SIGNATURES
+        val update = manager.getPackageArchiveInfo(apk.path, flags) ?: throw IOException("the file is not an Android app")
+        val own = manager.getPackageInfo(context.packageName, flags)
+        if (update.packageName != context.packageName) throw IOException("the file is another app (${update.packageName})")
+        if (versionCode(update) < versionCode(own)) throw IOException("the file is an older version")
+        val signers = signers(update)
+        if (signers.isEmpty() || signers != signers(own)) throw IOException("the file is not signed with this app's key")
+    }
+
+    @Suppress("DEPRECATION")
+    private fun versionCode(info: PackageInfo): Long =
+        if (Build.VERSION.SDK_INT >= 28) info.longVersionCode else info.versionCode.toLong()
+
+    @Suppress("DEPRECATION")
+    private fun signers(info: PackageInfo): Set<String> {
+        val signatures = if (Build.VERSION.SDK_INT >= 28) info.signingInfo?.apkContentsSigners else info.signatures
+        return signatures.orEmpty().map { it.toCharsString() }.toSet()
+    }
+
     override fun install(apk: File) {
+        check(apk)
         val installer = context.packageManager.packageInstaller
         val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL)
         params.setAppPackageName(context.packageName)

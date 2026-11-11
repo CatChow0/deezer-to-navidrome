@@ -11,6 +11,7 @@ a valid ARL and the account's rights: a free account only gets MP3_128.
 import hashlib
 import os
 import re
+import tempfile
 import threading
 from binascii import a2b_hex, b2a_hex
 from pathlib import Path
@@ -21,7 +22,7 @@ from mutagen.flac import FLAC, Picture
 from mutagen.id3 import APIC, TALB, TCON, TDRC, TIT2, TPE1, TPE2, TPOS, TRCK, TXXX, PictureType
 from mutagen.mp3 import MP3
 
-from core.deezer_account import API_URL, USER_AGENT, DeezerAccountError, DeezerSession
+from core.deezer_account import USER_AGENT, DeezerSession
 
 MEDIA_URL = "https://media.deezer.com/v1/get_url"
 COVER_URL = "https://e-cdns-images.dzcdn.net/images/cover/{md5}/1200x1200.jpg"
@@ -83,8 +84,6 @@ def account_info():
             "country": s.country,
             "error": None,
         }
-    except DeezerAccountError as e:
-        return {"connected": False, "premium": False, "quality": {}, "format": None, "error": str(e)}
     except Exception as e:
         return {"connected": False, "premium": False, "quality": {}, "format": None, "error": str(e)}
 
@@ -101,19 +100,45 @@ def _clean_filename(name):
     return re.sub(r"\s+", " ", name).strip()
 
 
+# Below the 255 bytes most file systems allow for a name, with room for the
+# extension and a temporary suffix.
+MAX_NAME_BYTES = 200
+
+
+def _fit(name: str) -> str:
+    data = name.encode("utf-8")
+    if len(data) <= MAX_NAME_BYTES:
+        return name
+    return data[:MAX_NAME_BYTES].decode("utf-8", "ignore").rstrip(" .")
+
+
+def song_title(song) -> str:
+    """The title with its version, as Deezer shows it: "Song (Remix)". Without
+    it, the remix and the original share a file name, and the second is never
+    downloaded ("Already there")."""
+    title = (song.get("SNG_TITLE") or "").strip()
+    version = (song.get("VERSION") or "").strip()
+    if version and version.casefold() not in title.casefold():
+        title = f"{title} {version}"
+    return title
+
+
 def track_filename(song, extension, with_number=False):
     artist = _clean_filename(song.get("ART_NAME") or "Unknown artist")
-    title = _clean_filename(song.get("SNG_TITLE") or "Unknown title")
+    title = _clean_filename(song_title(song) or "Unknown title")
     if with_number:
         number = int(song.get("TRACK_NUMBER") or 0)
-        return f"{number:02d} - {artist} {title}.{extension}"
-    return f"{artist} - {title}.{extension}"
+        disc = int(song.get("DISK_NUMBER") or 1)
+        # Track 3 of the second disc is not track 3 of the first.
+        prefix = f"{disc}-{number:02d}" if disc > 1 else f"{number:02d}"
+        return f"{_fit(f'{prefix} - {artist} {title}')}.{extension}"
+    return f"{_fit(f'{artist} - {title}')}.{extension}"
 
 
 def album_folder(song):
     artist = _clean_filename(song.get("ALB_ART_NAME") or song.get("ART_NAME") or "Unknown artist")
     album = _clean_filename(song.get("ALB_TITLE") or "Unknown album")
-    return f"{artist} - {album}"
+    return _fit(f"{artist} - {album}")
 
 
 # ── Cipher ────────────────────────────────────────────────────────────────────
@@ -170,7 +195,7 @@ def _album_genre(song):
 def _write_tags(path, song, is_flac):
     cover = _cover(song)
     artist = song.get("ART_NAME")
-    title = song.get("SNG_TITLE")
+    title = song_title(song)
     album = song.get("ALB_TITLE")
     album_artist = song.get("ALB_ART_NAME") or artist
     track_number = song.get("TRACK_NUMBER")
@@ -361,14 +386,22 @@ def download_song(song, target, on_bytes=None, on_note=None):
     payload = _decrypt(b"".join(chunks), _cipher_key(source["SNG_ID"]))
 
     target.parent.mkdir(parents=True, exist_ok=True)
-    temporary = target.with_suffix(target.suffix + ".part")
-    temporary.write_bytes(payload)
-    os.replace(temporary, target)
-
+    # A name of its own: two downloads of one track at once must not share a
+    # file. Tagged before it takes its place, so the library never reads it
+    # without its tags.
+    fd, temporary = tempfile.mkstemp(dir=target.parent, prefix=".", suffix=".part")
     try:
-        _write_tags(target, song, sound_format == "FLAC")
-    except Exception as e:
-        _log(f"Could not write the tags of {target.name}: {e}")
+        with os.fdopen(fd, "wb") as handle:
+            handle.write(payload)
+        os.chmod(temporary, 0o644)
+        try:
+            _write_tags(Path(temporary), song, sound_format == "FLAC")
+        except Exception as e:
+            _log(f"Could not write the tags of {target.name}: {e}")
+        os.replace(temporary, target)
+    except BaseException:
+        Path(temporary).unlink(missing_ok=True)
+        raise
     return target
 
 
@@ -395,24 +428,8 @@ def fetch_album(album_id):
     return songs
 
 
-def fetch_playlist(playlist_id):
-    """Every track of a Deezer playlist, with their download tokens."""
-    results = session().gw(
-        "deezer.pagePlaylist",
-        {"playlist_id": int(playlist_id), "start": 0, "tab": 0, "header": True, "lang": "en", "nb": 100000},
-    ) or {}
-    songs = (results.get("SONGS") or {}).get("data") or []
-    if not songs:
-        raise DeezerDownloadError(f"Deezer has no track for playlist {playlist_id}")
-    album = results.get("DATA") or {}
-    for song in songs:
-        song.setdefault("ALB_ART_NAME", song.get("ART_NAME"))
-        song.setdefault("ALB_TITLE", song.get("ALB_TITLE") or album.get("TITLE"))
-    return songs
-
-
 def song_label(song):
-    return f"{song.get('ART_NAME') or 'Unknown artist'} - {song.get('SNG_TITLE') or 'Unknown title'}"
+    return f"{song.get('ART_NAME') or 'Unknown artist'} - {song_title(song) or 'Unknown title'}"
 
 
 def download_track(track_id, base_dir=None, on_start=None, on_bytes=None, on_note=None):
@@ -466,17 +483,24 @@ def download_album(album_id, base_dir=None, on_track=None, on_start=None, on_not
     return downloaded
 
 
+def album_artist_id(album_id) -> str:
+    """The Deezer ID of the album's main artist, or "" when Deezer does not say."""
+    from core.deezer import _public_api
+
+    try:
+        return str(((_public_api(f"/album/{int(album_id)}") or {}).get("artist") or {}).get("id") or "")
+    except Exception as e:
+        _log(f"No main artist for album {album_id}: {e}")
+        return ""
+
+
 def artist_albums(artist_id):
     """[{id, title}] of every release of an artist, from the public API."""
-    albums, index = [], 0
-    while True:
-        page = requests.get(
-            f"{API_URL}/artist/{artist_id}/albums", params={"limit": 100, "index": index}, timeout=30
-        ).json()
-        if "error" in page:
-            raise DeezerDownloadError(f"Deezer has no release for artist {artist_id}")
-        data = page.get("data") or []
-        albums += [{"id": str(a["id"]), "title": a.get("title") or ""} for a in data]
-        index += len(data)
-        if not data or index >= int(page.get("total") or 0):
-            return albums
+    from core.deezer import public_pages
+
+    try:
+        return [{"id": str(a["id"]), "title": a.get("title") or "",
+                 "artist_id": str((a.get("artist") or {}).get("id") or "")}
+                for a in public_pages(f"/artist/{int(artist_id)}/albums")]
+    except RuntimeError as e:
+        raise DeezerDownloadError(f"Deezer has no release for artist {artist_id}") from e

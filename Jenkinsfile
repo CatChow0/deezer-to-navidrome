@@ -136,6 +136,9 @@ pipeline {
   post {
     always {
       sh 'docker logout || true'
+      // The commit's tag, once pushed or tested: prune only takes untagged
+      // images, so each build otherwise left a whole image on the agent.
+      sh 'docker rmi $IMAGE:$SHA || true'
       sh 'docker image prune -f || true'
     }
   }

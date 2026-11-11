@@ -158,6 +158,34 @@ class Api(Base):
         self.assertEqual(accounts_for("115"), ["nd1"])
         self.assertIsNone(self.publication("115", self.alice))
 
+    def test_no_track_found_leaves_the_navidrome_playlist_as_it_is(self):
+        self.save("117", "Mix", [self.alice])
+        publish.publish("117", "Mix", self.rows([1, 2]), wait=True)
+        # Wrong path mappings: nothing resolves any more.
+        navidrome_database(self.nav, [])
+        navidrome_db.forget_songs()
+        with mock.patch.object(publish.navidrome_db, "MISS_REFRESH", 0):
+            publish.publish("117", "Mix", self.rows([1, 2, 3]), wait=True)
+        self.assertEqual(["s1", "s2"], self.made()[0]["songs"])
+        self.assertIn("None of the 3 tracks", self.publication("117", self.alice)["error"])
+
+    def test_a_stale_song_is_not_a_deleted_playlist(self):
+        self.save("118", "Mix", [self.alice])
+        publish.publish("118", "Mix", self.rows([1]), wait=True)
+        stale = publish.subsonic.SubsonicError(70, "Song not found")
+        real_call = publish.subsonic.Client.call
+
+        def call(client, endpoint, **params):
+            if endpoint == "createPlaylist" and params.get("playlistId"):
+                raise stale
+            return real_call(client, endpoint, **params)
+
+        with mock.patch.object(publish.subsonic.Client, "call", call):
+            publish.publish("118", "Mix", self.rows([1, 2]), wait=True)
+        self.assertEqual(accounts_for("118"), [self.alice])
+        self.assertEqual(1, len(self.made()))
+        self.assertTrue(self.publication("118", self.alice)["error"])
+
     def test_forced_publication_replaces_an_edit_made_in_navidrome(self):
         self.save("116", "Mix", [self.alice])
         publish.publish("116", "Mix", self.rows([1, 2]), wait=True)
@@ -284,6 +312,16 @@ class Sync(Base):
         self.assertEqual(accounts_for("152"), ["nd1"])
         self.assertNotIn("154", {p["id"] for p in load_playlists()})
         self.assertEqual(accounts_for("151"), ["nd1", self.alice])
+
+    def test_missing_from_the_list_but_still_there_is_kept(self):
+        self.save("156", "Kept", [self.alice])
+        publish.publish("156", "Kept", self.rows([1]), wait=True)
+        # Navidrome lists it under another owner name, yet still has it.
+        self.by_name("Kept")["owner"] = "Alice-renamed"
+        self.server.users["Alice-renamed"] = self.server.users["alice"]
+        report = publish.sync_account(self.alice)
+        self.assertEqual([], report["removed"])
+        self.assertEqual([self.alice], accounts_for("156"))
 
     def test_all_gone_at_once_is_navidrome_losing_them_so_they_come_back(self):
         self.publish_three()

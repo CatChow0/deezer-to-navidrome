@@ -230,26 +230,24 @@ def _artist_stand_in(account, conn, artist_id):
 
 
 def _save(conn, kind, key, file, color, source, retry_at) -> None:
-    conn.execute(
-        "INSERT OR REPLACE INTO covers(kind, item_key, file, color, source, checked_at, retry_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-        (kind, key, file, color, source, int(time.time()), retry_at),
-    )
-    conn.commit()
+    try:
+        conn.execute(
+            "INSERT OR REPLACE INTO covers(kind, item_key, file, color, source, checked_at, retry_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (kind, key, file, color, source, int(time.time()), retry_at),
+        )
+        conn.commit()
+    except sqlite3.OperationalError as e:
+        # A rebuild holds the database: the cover is shown anyway, and found
+        # again later, rather than an error page.
+        logger.info("Cover of %s %s not saved for now: %s", kind, key, e)
 
 
 def _borrowed(account, kind, key):
     """The cover another account's history already found for the same item:
     the image files are shared, so there is no need to look again."""
-    for other in stats_db.accounts_with_history():
-        if other == account:
-            continue
-        try:
-            with closing(stats_db.connect(other)) as conn:
-                row = conn.execute("SELECT file, color, source FROM covers WHERE kind = ? AND item_key = ? AND file IS NOT NULL",
-                                   (kind, key)).fetchone()
-        except sqlite3.Error:
-            continue
-        if row and (covers_dir() / row["file"]).exists():
+    for row in stats_db.found_elsewhere(
+            account, "SELECT file, color, source FROM covers WHERE kind = ? AND item_key = ? AND file IS NOT NULL", (kind, key)):
+        if (covers_dir() / row["file"]).exists():
             return row
     return None
 

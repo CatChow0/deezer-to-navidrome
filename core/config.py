@@ -1,11 +1,13 @@
 import json
 import logging
 import os
+import re
 import threading
 import time
 import uuid
 from pathlib import Path
 
+from core import files
 from core.patch_notes import RELEASES
 
 logger = logging.getLogger(__name__)
@@ -253,32 +255,33 @@ _secrets_lock = threading.RLock()
 
 
 def _read_secrets() -> dict:
-    try:
-        data = json.loads(SECRETS_FILE.read_text(encoding="utf-8"))
-        return data if isinstance(data, dict) else {}
-    except Exception:
-        return {}
+    data = files.read_json(SECRETS_FILE, {})
+    return data if isinstance(data, dict) else {}
 
 
 def _write_secrets(secrets: dict) -> None:
-    ensure_dirs()
-    partial = SECRETS_FILE.with_name(f".{SECRETS_FILE.name}.part")
-    partial.write_text(json.dumps(secrets, indent=2), encoding="utf-8")
-    try:
-        partial.chmod(0o600)
-    except OSError:
-        pass
-    os.replace(partial, SECRETS_FILE)
+    files.write_json(SECRETS_FILE, secrets, private=True)
+
+
+# The secrets an environment variable may set (upper-case: DEEZER_ARL for
+# "deezer_arl"). Only these: APP_PASSWORD_HASH or FLASK_SECRET_KEY in the
+# environment must not silently replace what the app stored, and APP_USERNAME
+# alone (without APP_PASSWORD) must not rename the account made at setup.
+_ENV_SECRETS = re.compile(r"^(deezer_arl|deezer_arl_premium|api_token|scrobble_token(_nd[1-9][0-9]*)?)$")
+
+
+def _env_secret(name) -> str:
+    return os.environ.get(name.upper(), "").strip() if _ENV_SECRETS.match(name) else ""
 
 
 def load_secret(name):
-    """A credential from the environment (upper-case, DEEZER_ARL for "deezer_arl")
-    or secrets.json, where it is kept encrypted (core/crypto.py)."""
+    """A credential from the environment (for the names in _ENV_SECRETS) or
+    secrets.json, where it is kept encrypted (core/crypto.py)."""
     from core import crypto
 
-    env = os.environ.get(name.upper())
+    env = _env_secret(name)
     if env:
-        return env.strip()
+        return env
     with _secrets_lock:
         value = str(_read_secrets().get(name) or "").strip()
     try:
@@ -289,7 +292,7 @@ def load_secret(name):
 
 
 def secret_from_env(name):
-    return bool(os.environ.get(name.upper()))
+    return bool(_env_secret(name))
 
 
 def save_secret(name, value):
@@ -333,18 +336,35 @@ def load_config():
     if not CONFIG_FILE.exists():
         save_config(DEFAULT_CONFIG)
         return DEFAULT_CONFIG.copy()
-    try:
-        data = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
-    except Exception:
-        data = DEFAULT_CONFIG.copy()
+    data = files.read_json(CONFIG_FILE, {})
     merged = DEFAULT_CONFIG.copy()
-    merged.update(data)
+    merged.update(data if isinstance(data, dict) else {})
     return merged
 
 
 def save_config(cfg):
-    ensure_dirs()
-    CONFIG_FILE.write_text(json.dumps(cfg, ensure_ascii=False, indent=2), encoding="utf-8")
+    files.write_json(CONFIG_FILE, cfg)
+
+
+_warned_paths = set()
+
+
+def data_file(value, default: Path) -> Path:
+    """A file chosen in the settings, kept inside DATA_DIR: these files are
+    rewritten and deleted by the app, so a path elsewhere could make it delete
+    or overwrite any file (a settings form posted from another site, say)."""
+    if not value:
+        return default
+    path = Path(value)
+    try:
+        path.resolve().relative_to(DATA_DIR.resolve())
+    except ValueError:
+        # Once per path: the settings are read many times a minute.
+        if path != default and str(path) not in _warned_paths:
+            _warned_paths.add(str(path))
+            logger.warning("%s is outside DATA_DIR: %s is used instead", value, default)
+        return default
+    return path
 
 
 def _raw_config():
@@ -359,12 +379,21 @@ def _raw_config():
 def whats_new_state():
     """Whether the New button shows its dot, and if the install still used the
     separate downloader."""
+    from core.patch_notes import pending_actions, unread
+
     raw = _raw_config()
     legacy = LEGACY_DOWNLOADER_KEY in raw
+    since = raw.get("notes_seen") or None
+    show = legacy or since != WHATS_NEW_ID
+    # What to change since the notes read last, every version together: shown
+    # only while the dot is, so it goes once the notes are opened.
     return {
         "id": WHATS_NEW_ID,
         "legacy": legacy,
-        "show": legacy or raw.get("notes_seen") != WHATS_NEW_ID,
+        "show": show,
+        "since": since,
+        "unread": [r["version"] for r in unread(since)] if show else [],
+        "pending": pending_actions(since) if show else [],
     }
 
 
@@ -383,26 +412,18 @@ def kept_config_keys():
 
 def get_preview_state_path():
     cfg = load_config()
-    path = cfg.get("preview_state_file") or str(PREVIEW_STATE_FILE)
-    return Path(path)
+    return data_file(cfg.get("preview_state_file"), PREVIEW_STATE_FILE)
 
 
 def load_preview_state():
     ensure_dirs()
     path = get_preview_state_path()
-    if not path.exists():
-        return {}
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
-        return {}
+    data = files.read_json(path, {})
+    return data if isinstance(data, dict) else {}
 
 
 def save_preview_state(state):
-    ensure_dirs()
-    path = get_preview_state_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+    files.write_json(get_preview_state_path(), state)
 
 
 # Scans, manual matches and download marks all rewrite the same file.
@@ -435,10 +456,8 @@ _crossplatform_lock = threading.RLock()
 
 
 def _load_crossplatform():
-    try:
-        return json.loads(CROSSPLATFORM_FILE.read_text(encoding="utf-8"))
-    except Exception:
-        return {}
+    data = files.read_json(CROSSPLATFORM_FILE, {})
+    return data if isinstance(data, dict) else {}
 
 
 def get_crossplatform_state(playlist_id):
@@ -456,24 +475,24 @@ def modify_crossplatform_state(playlist_id, change):
             state.pop(str(playlist_id), None)
         else:
             state[str(playlist_id)] = new
-        CROSSPLATFORM_FILE.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+        files.write_json(CROSSPLATFORM_FILE, state)
         return new
 
 
+def _quiet_unlink(path: Path) -> None:
+    try:
+        path.unlink(missing_ok=True)
+    except OSError as e:
+        logger.warning("Could not delete %s: %s", path, e)
+
+
 def delete_playlist_cache(playlist_id: str):
-    cover_path = COVERS_DIR / f"{playlist_id}.jpg"
-    try:
-        if cover_path.exists():
-            cover_path.unlink()
-    except Exception:
-        pass
-    try:
+    _quiet_unlink(COVERS_DIR / f"{playlist_id}.jpg")
+    # Under the lock: a scan of another playlist may be saving the same file.
+    with _preview_lock:
         state = load_preview_state()
-        if str(playlist_id) in state:
-            state.pop(str(playlist_id), None)
-        save_preview_state(state)
-    except Exception:
-        pass
+        if state.pop(str(playlist_id), None) is not None:
+            save_preview_state(state)
     if get_crossplatform_state(playlist_id) is not None:
         modify_crossplatform_state(playlist_id, lambda old: None)
 
@@ -482,7 +501,7 @@ def get_paths_from_config():
     cfg = load_config()
     scan_dirs = [Path(p) for p in cfg.get("scan_dirs", []) if p]
     playlists_base_dir = Path(cfg.get("playlists_base_dir", "/music/playlists"))
-    library_cache_file = Path(cfg.get("library_cache_file", str(LIBRARY_CACHE_FILE)))
+    library_cache_file = data_file(cfg.get("library_cache_file"), LIBRARY_CACHE_FILE)
     mappings = {
         Path(m["host"]): Path(m["navidrome"])
         for m in cfg.get("host_to_navidrome_roots", [])
@@ -492,57 +511,24 @@ def get_paths_from_config():
 
 
 def clear_library_cache_file():
-    _, _, library_cache_file, _ = get_paths_from_config()
-    try:
-        if library_cache_file.exists():
-            library_cache_file.unlink()
-    except Exception:
-        pass
+    _quiet_unlink(get_paths_from_config()[2])
 
 
 def clear_preview_state_file():
-    try:
-        path = get_preview_state_path()
-        if path.exists():
-            path.unlink()
-    except Exception:
-        pass
+    _quiet_unlink(get_preview_state_path())
 
 
 def clear_dedup_report_file():
-    try:
-        if DEDUP_REPORT_FILE.exists():
-            DEDUP_REPORT_FILE.unlink()
-    except Exception:
-        pass
+    _quiet_unlink(DEDUP_REPORT_FILE)
 
 
 def clear_dedup_choices_file():
-    try:
-        if DEDUP_CHOICES_FILE.exists():
-            DEDUP_CHOICES_FILE.unlink()
-    except Exception:
-        pass
+    _quiet_unlink(DEDUP_CHOICES_FILE)
 
 
 def clear_playlists_and_covers():
-    try:
-        if PLAYLIST_IDS_FILE.exists():
-            PLAYLIST_IDS_FILE.unlink()
-    except Exception:
-        pass
-    try:
-        if COVERS_DIR.exists():
-            for f in COVERS_DIR.glob("*.jpg"):
-                try:
-                    f.unlink()
-                except Exception:
-                    pass
-    except Exception:
-        pass
+    _quiet_unlink(PLAYLIST_IDS_FILE)
+    for cover in COVERS_DIR.glob("*.jpg"):
+        _quiet_unlink(cover)
     clear_preview_state_file()
-    try:
-        if CROSSPLATFORM_FILE.exists():
-            CROSSPLATFORM_FILE.unlink()
-    except Exception:
-        pass
+    _quiet_unlink(CROSSPLATFORM_FILE)

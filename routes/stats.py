@@ -10,7 +10,9 @@ stats_bp = Blueprint("stats", __name__)
 
 # Where Navidrome reaches this app when both run in the same compose file.
 BASE_URL_HINT = "http://deezer-to-navidrome:8080/apis/listenbrainz/1/"
-MIN_PASTED_TOKEN = 8
+# Anyone with the address can try tokens (routes/listenbrainz.py): a short
+# one would be guessed.
+MIN_PASTED_TOKEN = 16
 MAX_ID = 2 ** 63 - 1
 COVER_MAX_AGE = 365 * 86400
 AUDIO_TYPES = {

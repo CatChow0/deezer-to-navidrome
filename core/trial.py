@@ -191,15 +191,30 @@ def _follow_move(old, new) -> None:
             conn.commit()
         finally:
             conn.close()
+    def moved(row, playlist_id):
+        row["local_path"] = str(new)
+        return row
+
+    _edit_playlists(old, moved)
+
+
+def _edit_playlists(path, edit, wanted=lambda playlist_id: True) -> None:
+    """Every saved playlist with a row on `path` (those `wanted` says): each such
+    row becomes `edit(row, playlist_id)`, or leaves when it gives None; then the
+    playlist is written again."""
+    path = str(path)
+
+    def on_path(row):
+        return isinstance(row, dict) and row.get("local_path") == path
+
     for playlist_id, state in config.load_preview_state().items():
         rows = state.get("rows") if isinstance(state, dict) else None
-        if not isinstance(rows, list) or not any(r.get("local_path") == str(old) for r in rows):
+        if not wanted(playlist_id) or not isinstance(rows, list) or not any(on_path(r) for r in rows):
             continue
 
-        def change(current, old=str(old), new=str(new)):
-            for row in current.get("rows", []):
-                if row.get("local_path") == old:
-                    row["local_path"] = new
+        def change(current, playlist_id=playlist_id):
+            edited = (edit(row, playlist_id) if on_path(row) else row for row in current.get("rows", []))
+            current["rows"] = [row for row in edited if row is not None]
             return current
 
         config.modify_preview_state(playlist_id, change)
@@ -212,27 +227,13 @@ def _follow_move(old, new) -> None:
 def _forget_file(path) -> None:
     """A removed track leaves the generated playlists, and a regular playlist shows
     it as missing again, like any file that disappeared."""
-    for playlist_id, state in config.load_preview_state().items():
-        rows = state.get("rows") if isinstance(state, dict) else None
-        if not isinstance(rows, list) or not any(r.get("local_path") == str(path) for r in rows):
-            continue
+    def edit(row, playlist_id):
+        if str(playlist_id).startswith("auto-"):
+            return None
+        row.update({"matched": False, "local_path": None, "source_name": "", "convert": "❌"})
+        return row
 
-        def change(current, generated=str(playlist_id).startswith("auto-"), path=str(path)):
-            kept = []
-            for row in current.get("rows", []):
-                if row.get("local_path") != path:
-                    kept.append(row)
-                elif not generated:
-                    row.update({"matched": False, "local_path": None, "source_name": "", "convert": "❌"})
-                    kept.append(row)
-            current["rows"] = kept
-            return current
-
-        config.modify_preview_state(playlist_id, change)
-        try:
-            _rewrite_playlist(playlist_id)
-        except (OSError, ValueError) as e:
-            logger.warning("Could not rewrite playlist %s: %s", playlist_id, e)
+    _edit_playlists(path, edit)
 
 
 def _drop_from_generated(path, account) -> None:
@@ -240,22 +241,11 @@ def _drop_from_generated(path, account) -> None:
     file stays, and only leaves this profile's generated playlists."""
     from core.deezer import parse_auto_id
 
-    for playlist_id, state in config.load_preview_state().items():
+    def mine(playlist_id):
         parsed = parse_auto_id(playlist_id)
-        rows = state.get("rows") if isinstance(state, dict) else None
-        if not parsed or parsed[0] != account or not isinstance(rows, list) \
-                or not any(r.get("local_path") == str(path) for r in rows):
-            continue
+        return bool(parsed) and parsed[0] == account
 
-        def change(current, path=str(path)):
-            current["rows"] = [r for r in current.get("rows", []) if r.get("local_path") != path]
-            return current
-
-        config.modify_preview_state(playlist_id, change)
-        try:
-            _rewrite_playlist(playlist_id)
-        except (OSError, ValueError) as e:
-            logger.warning("Could not rewrite playlist %s: %s", playlist_id, e)
+    _edit_playlists(path, lambda row, playlist_id: None, wanted=mine)
 
 
 def _to_library(conn, deezer_id, source, now, by) -> Path:
@@ -350,9 +340,10 @@ def share(conn, account, deezer_id, mix_id, now) -> bool:
         path = target
     conn.execute(
         "INSERT INTO trial_tracks(deezer_id, track_key, artist, title, album, path, size, mix_id, downloaded_at,"
-        " trial_ends_at, state, state_at, account_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        " trial_ends_at, state, state_at, account_id, artist_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         (str(deezer_id), holder["track_key"], holder["artist"], holder["title"], holder["album"], str(path),
-         holder["size"], mix_id, int(now), int(now) + TRIAL_DAYS * DAY, ON_TRIAL, int(now), stats_db.checked_account(account)),
+         holder["size"], mix_id, int(now), int(now) + TRIAL_DAYS * DAY, ON_TRIAL, int(now), stats_db.checked_account(account),
+         holder["artist_id"] if "artist_id" in holder.keys() else ""),
     )
     conn.commit()
     return True
@@ -367,6 +358,17 @@ def replace_by_library(conn, deezer_id, library_path, now) -> None:
     if holder is None:
         return
     copy = _inside(holder["path"], trial_dir(), trash_dir())
+    # The trial copy is deleted below: the library's file must be real, and
+    # another file. A stale cache, or the trial folder seen through another
+    # path, would otherwise lose the only copy of the track.
+    library_real = Path(os.path.realpath(library_path))
+    if not library_real.is_file():
+        raise TrialError(f"The library's copy is not there: {library_path}")
+    if library_real == copy:
+        raise TrialError(f"The library's copy is the file on trial: {library_path}")
+    for folder in (trial_dir(), trash_dir()):
+        if Path(os.path.realpath(folder)) in library_real.parents:
+            raise TrialError(f"The library's copy is in the quarantine: {library_path}")
     for row in rows:
         if row["state"] in ACTIVE:
             _set(conn, deezer_id, row["account_id"], KEPT, now, "Also in your library", library_path)

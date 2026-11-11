@@ -1,4 +1,3 @@
-import json
 import os
 import re
 import threading
@@ -20,6 +19,7 @@ from core.config import (
 from core.library import load_library_cache, rebuild_library_cache_full_with_progress
 from core.normalization import extract_version_flags, normalize_text
 from core.matching import build_title_index, find_best_match
+from core import files
 from core.utils import sanitize_filename
 
 
@@ -105,16 +105,65 @@ def playlist_kind(pid: str) -> str:
     return "playlist"
 
 
+# Every read-modify-write of the playlists file holds it: a scan, a mix and a
+# route saving at once would otherwise each drop what the others added.
+_playlists_lock = threading.RLock()
+
+
+def saved_entries() -> list:
+    """The entries of the playlists file as saved, without calling Deezer. The
+    format from before 1.6 (a bare list of IDs) gives entries with an ID only."""
+    with _playlists_lock:
+        data = files.read_json(PLAYLIST_IDS_FILE, {})
+    if not isinstance(data, dict):
+        return []
+    if isinstance(data.get("playlists"), list):
+        return [item for item in data["playlists"] if isinstance(item, dict)]
+    if isinstance(data.get("playlist_ids"), list):
+        return [{"id": str(raw).strip()} for raw in data["playlist_ids"]]
+    return []
+
+
+def _saved_entry(playlist_id) -> dict:
+    return next((item for item in saved_entries() if str(item.get("id")) == str(playlist_id)), {})
+
+
+def modify_playlists(change):
+    """`change(entries) -> entries` on the saved entries, under the lock. Returns
+    what `change` returned."""
+    with _playlists_lock:
+        new = change(saved_entries())
+        save_playlists(new)
+        return new
+
+
+def add_entry(entry: dict) -> bool:
+    """Adds a playlist to the file. False when it is there already."""
+    added = []
+
+    def change(entries):
+        if any(str(e.get("id")) == str(entry["id"]) for e in entries):
+            return entries
+        added.append(True)
+        return [*entries, entry]
+
+    modify_playlists(change)
+    return bool(added)
+
+
+def remove_entries(playlist_ids) -> None:
+    gone = {str(i) for i in playlist_ids}
+    modify_playlists(lambda entries: [e for e in entries if str(e.get("id")) not in gone])
+
+
+def put_entry(entry: dict) -> None:
+    """Adds the playlist, or replaces the saved one with the same ID."""
+    modify_playlists(lambda entries: [*(e for e in entries if str(e.get("id")) != str(entry["id"])), entry])
+
+
 def _saved_profiles(playlist_id: str) -> list:
     """The Navidrome profiles a saved playlist belongs to, without calling Deezer."""
-    try:
-        data = json.loads(PLAYLIST_IDS_FILE.read_text(encoding="utf-8"))
-        for item in data.get("playlists") or []:
-            if str(item.get("id")) == str(playlist_id):
-                return [str(a) for a in item.get("accounts") or [] if a]
-    except Exception:
-        pass
-    return []
+    return [str(a) for a in _saved_entry(playlist_id).get("accounts") or [] if a]
 
 
 def _reading_accounts(playlist_id: str, profiles=None) -> list:
@@ -189,13 +238,9 @@ def cache_cover(playlist):
 def stored_accounts() -> dict:
     """playlist ID -> the Navidrome accounts saved for it, read straight from the
     file (load_playlists may call Deezer for a missing title)."""
-    try:
-        data = json.loads(PLAYLIST_IDS_FILE.read_text(encoding="utf-8"))
-    except Exception:
-        return {}
     found = {}
-    for item in data.get("playlists") or []:
-        if isinstance(item, dict) and isinstance(item.get("accounts"), list) and item["accounts"]:
+    for item in saved_entries():
+        if isinstance(item.get("accounts"), list) and item["accounts"]:
             found[str(item.get("id", "")).strip()] = [str(a) for a in item["accounts"] if a]
     return found
 
@@ -215,11 +260,14 @@ def accounts_for(playlist_id) -> list:
 def set_accounts(playlist_id, accounts) -> list:
     """The Navidrome accounts of a saved playlist, replaced. Returns them."""
     accounts = list(dict.fromkeys(str(a) for a in accounts if a))
-    playlists = load_playlists()
-    for playlist in playlists:
-        if playlist["id"] == playlist_id:
-            playlist["accounts"] = accounts
-    save_playlists(playlists)
+
+    def change(entries):
+        for entry in entries:
+            if str(entry.get("id")) == str(playlist_id):
+                entry["accounts"] = accounts
+        return entries
+
+    modify_playlists(change)
     return accounts
 
 
@@ -233,10 +281,16 @@ def give_to_account(playlist_id, account_id) -> bool:
 
 
 def save_playlists(playlists):
+    with _playlists_lock:
+        _save_playlists(playlists)
+
+
+def _save_playlists(playlists):
     ensure_dirs()
     cleaned = []
     seen = set()
     previous = stored_accounts()
+    previous_folders = {str(e.get("id")): e["folder"] for e in saved_entries() if e.get("folder")}
     for item in playlists:
         pid = str(item.get("id", "")).strip()
         if not _valid_playlist_id(pid) or pid in seen:
@@ -256,6 +310,10 @@ def save_playlists(playlists):
             entry["source"] = str(item["source"])
         if item.get("subtitle"):
             entry["subtitle"] = str(item["subtitle"])
+        # Its .m3u8 folder, kept once chosen (playlist_folder_name).
+        folder = item.get("folder") or previous_folders.get(pid)
+        if folder:
+            entry["folder"] = str(folder)
         # The Navidrome accounts it belongs to. An entry given without them keeps
         # those already saved, so a refresh of its title cannot lose them.
         accounts = item.get("accounts") if isinstance(item.get("accounts"), list) else previous.get(pid)
@@ -265,63 +323,58 @@ def save_playlists(playlists):
         seen.add(pid)
 
     cleaned.sort(key=_playlist_sort_key)
-    PLAYLIST_IDS_FILE.write_text(
-        json.dumps({"playlists": cleaned}, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
+    files.write_json(PLAYLIST_IDS_FILE, {"playlists": cleaned})
+
+
+# Playlist ID -> when Deezer last failed to give its title or picture: asked
+# again an hour later, not on each of the scheduler's 30-second passes.
+_REFRESH_BACKOFF = 3600
+_refresh_failed_at = {}
+
+
+def _missing_details(pid, title, picture):
+    """The title and picture of a saved Deezer playlist that lacks one, or None."""
+    if (title and picture) or not pid.isdigit():
+        return None
+    if time.time() - _refresh_failed_at.get(pid, 0) < _REFRESH_BACKOFF:
+        return None
+    try:
+        info = fetch_deezer_playlist_info(pid)
+    except Exception:
+        _refresh_failed_at[pid] = time.time()
+        return None
+    if not info.get("picture"):
+        _refresh_failed_at[pid] = time.time()
+    return {"title": title or info.get("title") or "", "picture": picture or info.get("picture") or ""}
 
 
 def load_playlists():
     ensure_dirs()
-    if not PLAYLIST_IDS_FILE.exists():
-        return []
-
-    try:
-        data = json.loads(PLAYLIST_IDS_FILE.read_text(encoding="utf-8"))
-    except Exception:
-        return []
-
     playlists = []
-    changed = False
+    refreshed = {}
 
-    if isinstance(data.get("playlists"), list):
-        for item in data["playlists"]:
-            pid = str(item.get("id", "")).strip()
-            if not _valid_playlist_id(pid):
-                continue
-            title = str(item.get("title", "")).strip()
-            picture = str(item.get("picture", "")).strip()
-            if (not title or not picture) and pid.isdigit():
-                try:
-                    info = fetch_deezer_playlist_info(pid)
-                    title = title or info["title"]
-                    picture = picture or info["picture"]
-                    changed = True
-                except Exception:
-                    title = title or "Unknown title"
-            playlists.append({
-                "id": pid,
-                "kind": playlist_kind(pid),
-                "source": str(item.get("source") or (parse_xp_id(pid) or ("", ""))[0]),
-                "subtitle": str(item.get("subtitle") or ""),
-                "title": title or "Mix",
-                "picture": picture,
-                "auto_scan_enabled": bool(item.get("auto_scan_enabled", False)),
-                "auto_scan_interval_minutes": max(1, int(item.get("auto_scan_interval_minutes") or 60)),
-                "auto_download_after_scan": bool(item.get("auto_download_after_scan", False)),
-                "accounts": [str(a) for a in item.get("accounts") or [] if a],
-            })
-    elif isinstance(data.get("playlist_ids"), list):
-        for raw in data["playlist_ids"]:
-            pid = str(raw).strip()
-            if not pid.isdigit():
-                continue
-            try:
-                info = fetch_deezer_playlist_info(pid)
-                playlists.append(info)
-            except Exception:
-                playlists.append({"id": pid, "title": "Unknown title", "picture": ""})
-                changed = True
+    for item in saved_entries():
+        pid = str(item.get("id", "")).strip()
+        if not _valid_playlist_id(pid):
+            continue
+        title = str(item.get("title", "")).strip()
+        picture = str(item.get("picture", "")).strip()
+        found = _missing_details(pid, title, picture)
+        if found and (found["title"] != title or found["picture"] != picture):
+            refreshed[pid] = found
+            title, picture = found["title"], found["picture"]
+        playlists.append({
+            "id": pid,
+            "kind": playlist_kind(pid),
+            "source": str(item.get("source") or (parse_xp_id(pid) or ("", ""))[0]),
+            "subtitle": str(item.get("subtitle") or ""),
+            "title": title or ("Unknown title" if pid.isdigit() else "Mix"),
+            "picture": picture,
+            "auto_scan_enabled": bool(item.get("auto_scan_enabled", False)),
+            "auto_scan_interval_minutes": max(1, int(item.get("auto_scan_interval_minutes") or 60)),
+            "auto_download_after_scan": bool(item.get("auto_download_after_scan", False)),
+            "accounts": [str(a) for a in item.get("accounts") or [] if a],
+        })
 
     playlists = sorted({p["id"]: p for p in playlists}.values(), key=_playlist_sort_key)
     fallback = None
@@ -334,8 +387,14 @@ def load_playlists():
                 fallback = nd_accounts.owner_fallback() or ""
             p["accounts"] = [fallback] if fallback else []
 
-    if changed:
-        save_playlists(playlists)
+    if refreshed:
+        # Only the details found: the file may have changed since it was read.
+        def change(entries):
+            for entry in entries:
+                entry.update(refreshed.get(str(entry.get("id")), {}))
+            return entries
+
+        modify_playlists(change)
 
     for p in playlists:
         p["cover_cached"] = cache_cover(p)
@@ -345,14 +404,7 @@ def load_playlists():
 
 def playlist_title(playlist_id: str) -> str:
     """Title from the saved playlists file, without calling Deezer."""
-    try:
-        data = json.loads(PLAYLIST_IDS_FILE.read_text(encoding="utf-8"))
-        for item in data.get("playlists") or []:
-            if str(item.get("id")) == str(playlist_id):
-                return item.get("title") or str(playlist_id)
-    except Exception:
-        pass
-    return str(playlist_id)
+    return _saved_entry(playlist_id).get("title") or str(playlist_id)
 
 
 def fetch_deezer_playlist_tracks(playlist_id: str, refresh=False, full=False, progress=None):
@@ -392,14 +444,7 @@ def fetch_deezer_playlist_tracks(playlist_id: str, refresh=False, full=False, pr
 def _public_playlist_tracks(playlist_id: str):
     """Every track from the public API. /playlist/{id} lists at most 400 of
     them, so the paginated /playlist/{id}/tracks is read instead."""
-    tracks, index = [], 0
-    while True:
-        page = _public_api(f"/playlist/{playlist_id}/tracks", {"limit": 100, "index": index})
-        data = page.get("data") or []
-        tracks += data
-        index += len(data)
-        if not data or index >= int(page.get("total") or 0):
-            break
+    tracks = list(public_pages(f"/playlist/{playlist_id}/tracks"))
     parsed = []
 
     for idx, t in enumerate(tracks, start=1):
@@ -431,14 +476,14 @@ def follow_mix(kind: str, source_id: str, title: str, accounts=None, deezer_acco
     from core.deezer_account import mix_tracks
 
     pid = mix_id(kind, source_id, deezer_account)
-    playlists = load_playlists()
-    if any(p["id"] == pid for p in playlists):
+    if _saved_entry(pid):
         return pid, False
     tracks = mix_tracks(kind, source_id, account=deezer_account)
     entry = {"id": pid, "title": title, "picture": next((t["picture"] for t in tracks if t.get("picture")), "")}
     if accounts:
         entry["accounts"] = list(accounts)
-    save_playlists([*playlists, entry])
+    if not add_entry(entry):
+        return pid, False
     cache_cover(entry)
     return pid, True
 
@@ -472,7 +517,7 @@ def build_playlist_preview(playlist_id: str):
             "playlist_id": playlist_id, "playlist_title": playlist_title(playlist_id), "rows": [],
             "matched_count": 0, "unmatched_count": 0, "unchecked_count": 0,
         }
-    playlist_title, deezer_tracks = fetch_deezer_playlist_tracks(playlist_id)
+    title, deezer_tracks = fetch_deezer_playlist_tracks(playlist_id)
     saved_state = get_preview_state(playlist_id) or {}
 
     # Saved rows are found by Deezer track ID, so a reordered playlist keeps its results.
@@ -491,7 +536,7 @@ def build_playlist_preview(playlist_id: str):
 
     preview = {
         "playlist_id": playlist_id,
-        "playlist_title": playlist_title,
+        "playlist_title": title,
         "rows": rows,
         "matched_count": sum(1 for r in rows if r["matched"] is True),
         "unmatched_count": sum(1 for r in rows if r["matched"] is False),
@@ -601,11 +646,42 @@ def playlist_report(playlist_id: str, playlist_title: str, rows: list) -> dict:
     return report
 
 
+def playlist_folder_name(playlist_id: str, title: str, remember=False) -> str:
+    """The folder of a playlist's .m3u8, and the file's name in it. Kept once
+    chosen (saved with the playlist): Navidrome knows a playlist by its file,
+    so a title changed on Deezer must not make a second one. A name another
+    playlist has already gets this one's ID: two "Chill" would share files."""
+    entries = saved_entries()
+    mine = next((e for e in entries if str(e.get("id")) == str(playlist_id)), None)
+    if mine and mine.get("folder"):
+        return str(mine["folder"])
+    name = sanitize_filename(title) or f"playlist_{playlist_id}"
+    taken = {str(e.get("folder") or "").casefold() for e in entries if str(e.get("id")) != str(playlist_id)}
+    # Playlists saved before 1.19 have no folder yet: theirs is their title's.
+    taken |= {(sanitize_filename(str(e.get("title") or "")) or f"playlist_{e.get('id')}").casefold()
+              for e in entries if str(e.get("id")) != str(playlist_id) and not e.get("folder")
+              and str(e.get("id")) < str(playlist_id)}
+    if name.casefold() in taken:
+        name = sanitize_filename(f"{name} [{playlist_id}]")
+    if remember and mine is not None:
+        def change(saved):
+            for entry in saved:
+                if str(entry.get("id")) == str(playlist_id) and not entry.get("folder"):
+                    entry["folder"] = name
+            return saved
+
+        modify_playlists(change)
+    return name
+
+
 def write_playlist_outputs(playlist_id: str, playlist_title: str, rows: list):
     """Writes the .m3u8, report.json and missing.txt of a playlist from its preview rows."""
     _, playlists_base_dir, _, mappings = get_paths_from_config()
-    folder = sanitize_filename(playlist_title) or f"playlist_{playlist_id}"
+    folder = playlist_folder_name(playlist_id, playlist_title, remember=True)
     playlist_dir = playlists_base_dir / folder
+    base = Path(os.path.realpath(playlists_base_dir))
+    if base not in Path(os.path.realpath(playlist_dir)).parents:
+        raise ValueError(f"Refused: {playlist_dir} is not in the playlists folder")
     playlist_dir.mkdir(parents=True, exist_ok=True)
 
     lines = ["#EXTM3U"]
@@ -626,8 +702,15 @@ def write_playlist_outputs(playlist_id: str, playlist_title: str, rows: list):
             "deezer_album": row.get("deezer_album", ""),
             "matched": row.get("matched") is True,
         }
+        m3u_rel = None
         if row.get("matched") is True and row.get("local_path"):
-            m3u_rel = relative_m3u_path(playlist_dir, Path(row["local_path"]), mappings)
+            try:
+                m3u_rel = relative_m3u_path(playlist_dir, Path(row["local_path"]), mappings)
+            except ValueError:
+                # A file outside every path mapping: that track is missing for
+                # Navidrome, the others are still written.
+                item["unmapped"] = True
+        if m3u_rel is not None:
             lines.append(m3u_rel)
             report["matched_count"] += 1
             item.update({"local_path": row["local_path"], "m3u_relative_path": m3u_rel, "manual": bool(row.get("manual"))})
@@ -638,9 +721,10 @@ def write_playlist_outputs(playlist_id: str, playlist_title: str, rows: list):
         report["tracks"].append(item)
 
     m3u8_path = playlist_dir / f"{folder}.m3u8"
-    m3u8_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    (playlist_dir / "report.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
-    (playlist_dir / "missing.txt").write_text("\n".join(missing) + ("\n" if missing else ""), encoding="utf-8")
+    # Navidrome may read the .m3u8 at any moment: never half-written.
+    files.write_atomic(m3u8_path, "\n".join(lines) + "\n")
+    files.write_json(playlist_dir / "report.json", report)
+    files.write_atomic(playlist_dir / "missing.txt", "\n".join(missing) + ("\n" if missing else ""))
     return m3u8_path, report
 
 
@@ -989,6 +1073,20 @@ def _public_api(path, params=None):
         return data
 
 
+def public_pages(path, params=None, page_size=100):
+    """Every item of a paginated list of the public API, page after page,
+    through _public_api: its pace, and its wait when Deezer's quota is reached.
+    An error answer is raised, never taken for an empty list."""
+    index = 0
+    while True:
+        page = _public_api(path, {**(params or {}), "limit": page_size, "index": index})
+        data = page.get("data") or []
+        yield from data
+        index += len(data)
+        if not data or index >= int(page.get("total") or 0):
+            return
+
+
 def fetch_deezer_album_tracks(album_id: str):
     """Every track of an album. /album/{id} lists at most 25 of them, so the
     paginated /album/{id}/tracks is used instead."""
@@ -996,14 +1094,7 @@ def fetch_deezer_album_tracks(album_id: str):
     cached = _album_tracks.get(album_id)
     if cached and time.time() - cached[0] < _ALBUM_TRACKS_TTL:
         return cached[1]
-    tracks, index = [], 0
-    while True:
-        page = _public_api(f"/album/{album_id}/tracks", {"limit": 100, "index": index})
-        data = page.get("data") or []
-        tracks += data
-        index += len(data)
-        if not data or index >= int(page.get("total") or 0):
-            break
+    tracks = list(public_pages(f"/album/{album_id}/tracks"))
     if len(_album_tracks) > 2000:
         _album_tracks.clear()
     _album_tracks[album_id] = (time.time(), tracks)
@@ -1047,19 +1138,11 @@ def fetch_deezer_album_details(album_id: str):
     }
 
 
-def fetch_deezer_artist_albums(artist_id: str, limit: int = 50):
-    resp = requests.get(
-        f"https://api.deezer.com/artist/{artist_id}/albums",
-        params={"limit": limit},
-        timeout=30,
-    )
-    resp.raise_for_status()
-    data = resp.json()
-    if "error" in data:
-        raise RuntimeError(str(data["error"]))
-
+def fetch_deezer_artist_albums(artist_id: str):
+    """Every release of the artist: one page held only 50, so an artist with
+    more lost the rest."""
     albums = []
-    for item in data.get("data", []):
+    for item in public_pages(f"/artist/{int(artist_id)}/albums"):
         albums.append(
             {
                 "id": str(item.get("id") or ""),
@@ -1111,13 +1194,18 @@ def submit_missing_downloads(playlist_id: str) -> int:
         and not row.get("downloaded")
     ]
 
+    def done(task, result, error):
+        # Marked, so the next scan does not ask for it again.
+        if not error:
+            mark_preview_rows_downloaded(str(playlist_id), {str(task.music_id)})
+
     submitted = 0
     for row in missing_rows:
         track_id = str(row["track_id"]).strip()
         if not track_id.isdigit():
             continue
         try:
-            enqueue_download("track", track_id)
+            enqueue_download("track", track_id, on_done=done)
             submitted += 1
         except Exception:
             pass

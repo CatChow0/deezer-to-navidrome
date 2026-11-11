@@ -27,7 +27,9 @@ class Base(unittest.TestCase):
         for name in ("DISABLE_AUTH", "API_TOKEN"):
             os.environ.pop(name, None)
         auth.limiter._entries.clear()
+        auth.user_limiter._entries.clear()
         self.addCleanup(auth.limiter._entries.clear)
+        self.addCleanup(auth.user_limiter._entries.clear)
         (Path(config.DATA_DIR) / "devices.json").unlink(missing_ok=True)
         self.client = self.app.test_client()
 

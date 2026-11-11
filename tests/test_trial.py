@@ -347,6 +347,26 @@ class Safety(Base):
         trial.purge(self.conn, "nd1", NOW)
         self.assertEqual(target.read_bytes(), b"precious")
 
+    def test_a_library_copy_that_is_not_there_keeps_the_trial_file(self):
+        path = self.add()
+        with self.assertRaises(trial.TrialError):
+            trial.replace_by_library(self.conn, "1", str(self.root / "library" / "gone.flac"), NOW)
+        self.assertTrue(path.exists())
+        self.assertEqual(self.state(), "on_trial")
+
+    def test_the_trial_file_seen_as_the_library_is_not_deleted(self):
+        path = self.add()
+        with self.assertRaises(trial.TrialError):
+            trial.replace_by_library(self.conn, "1", str(path), NOW)
+        self.assertTrue(path.exists())
+
+    def test_a_real_library_copy_replaces_the_trial_file(self):
+        path = self.add()
+        library = self.outside()
+        trial.replace_by_library(self.conn, "1", str(library), NOW)
+        self.assertFalse(path.exists())
+        self.assertEqual((self.state(), library.read_bytes()), ("kept", b"precious"))
+
     def test_a_path_climbing_out_of_the_folder_is_refused(self):
         target = self.outside()
         sneaky = trial.trial_dir() / ".." / ".." / "library" / "My album" / "01.flac"

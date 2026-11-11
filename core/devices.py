@@ -9,13 +9,12 @@ stamp of its sign-in (core/auth.session_stamp()), as the web sessions do."""
 import hashlib
 import hmac
 import json
-import os
 import secrets
 import threading
 import time
 from pathlib import Path
 
-from core import config
+from core import config, files
 
 PREFIX = "d2n_"
 MAX_NAME = 60
@@ -39,15 +38,7 @@ def _read() -> dict:
 
 
 def _write(data: dict) -> None:
-    path = _path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    partial = path.with_name(f".{path.name}.part")
-    partial.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
-    try:
-        partial.chmod(0o600)
-    except OSError:
-        pass
-    os.replace(partial, path)
+    files.write_json(_path(), data, private=True)
 
 
 def _digest(token: str) -> str:

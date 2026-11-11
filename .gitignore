@@ -18,3 +18,6 @@ android/.gradle/
 android/.kotlin/
 # The APK and app.json the build writes, which the server image picks up
 /dist/
+
+# Your settings and credentials
+.env

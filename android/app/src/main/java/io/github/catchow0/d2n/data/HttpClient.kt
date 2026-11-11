@@ -22,12 +22,15 @@ internal fun RequestHeaders.isForServer(url: HttpUrl): Boolean =
 
 private const val CACHE_BYTES = 20L * 1024 * 1024
 
-/** An APK download and a task's event stream are unsuitable for the HTTP
- * cache: caching the installer would hand an older build back, and caching
- * an event stream would freeze the task on its old events. */
+/** An APK download, a task's events and the answers holding a secret are
+ * unsuitable for the HTTP cache: caching the installer would hand an older
+ * build back, a cached stream would freeze the task on its old events (and
+ * fill the cache, pushing out the saved screens), and the cache is a plain
+ * file on the phone, where a token must never be written. */
 internal fun cacheFreePath(path: String): Boolean =
     path.endsWith("api/v1/app/apk") ||
-        path.contains("/api/v1/tasks/") && path.contains("/events")
+        path.contains("/api/v1/tasks/") && (path.contains("/events") || path.endsWith("/stream")) ||
+        path.endsWith("api/v1/settings/security") || path.endsWith("api/v1/stats/status")
 private val SIGN_IN_PATHS = listOf("api/v1/auth/login", "api/v1/auth/setup")
 
 /**
@@ -63,6 +66,9 @@ fun buildHttpClient(
     onUnauthorized: () -> Unit = {},
 ): OkHttpClient = OkHttpClient.Builder()
     .apply { if (cacheDir != null) cache(Cache(File(cacheDir, "http"), CACHE_BYTES)) }
+    // A redirect from https to http would send the token, or a password, in
+    // clear: the server is always reached at the address it was given.
+    .followSslRedirects(false)
     .connectTimeout(10, TimeUnit.SECONDS)
     // A task's events can be waited for 25 s on the server.
     .readTimeout(35, TimeUnit.SECONDS)

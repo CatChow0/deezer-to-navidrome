@@ -96,6 +96,56 @@ class Api(unittest.TestCase):
         self.assertTrue(again.get_json()["test"]["ok"])
         self.assert_no_secret(response, again)
 
+    def test_the_saved_password_never_goes_to_another_address(self):
+        account_id = self.add().get_json()["created"]
+        other = FakeSubsonic().start()
+        self.addCleanup(other.stop)
+        response = self.client.post("/api/navidrome/accounts/test",
+                                    json={"id": account_id, "url": other.url, "username": "alice", "secret": ""})
+        self.assertEqual(400, response.status_code)
+        self.assertEqual([], other.requests)
+
+    def test_another_server_needs_the_password_again(self):
+        account_id = self.add().get_json()["created"]
+        moved = self.client.patch(f"/api/navidrome/accounts/{account_id}", json={"url": "https://elsewhere.example"})
+        self.assertEqual(400, moved.status_code)
+        self.assertIn("password again", moved.get_json()["error"])
+
+    def test_the_same_server_over_https_keeps_its_password(self):
+        self.assertTrue(nd_accounts.same_server("http://nas.lan", "https://nas.lan/navidrome"))
+        self.assertTrue(nd_accounts.same_server("http://nas.lan:4533", "http://NAS.lan:4533/"))
+        self.assertFalse(nd_accounts.same_server("http://nas.lan:4533", "http://nas.lan:4534"))
+        self.assertFalse(nd_accounts.same_server("https://nas.lan", "https://attacker.example"))
+
+    def test_two_removals_at_once_never_remove_the_last_account(self):
+        import threading
+
+        second = self.add().get_json()["created"]
+        inside, release = threading.Event(), threading.Event()
+
+        def slow(account_id):
+            inside.set()
+            release.wait(5)
+
+        errors = []
+
+        def remove(account_id):
+            try:
+                nd_accounts.delete(account_id)
+            except nd_accounts.AccountError as e:
+                errors.append(str(e))
+
+        with mock.patch.object(nd_accounts, "_before_removal", side_effect=slow), \
+                mock.patch.object(nd_accounts, "_after_removal"):
+            first = threading.Thread(target=remove, args=(second,))
+            first.start()
+            inside.wait(5)
+            remove("nd1")
+            release.set()
+            first.join(5)
+        self.assertEqual(["The last Navidrome account cannot be removed."], errors)
+        self.assertEqual(["nd1"], [a["id"] for a in nd_accounts.list_accounts()])
+
     def test_the_navidrome_user_is_found_in_its_database(self):
         make_navidrome(self.nav, [])
         add_navidrome_users(self.nav, [("uid-alice", "alice", True)])

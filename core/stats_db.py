@@ -17,6 +17,7 @@ from pathlib import Path
 from urllib.parse import quote
 
 from core import config
+from core.normalization import fold  # noqa: F401  (used here and by other modules as stats_db.fold)
 
 logger = logging.getLogger(__name__)
 
@@ -68,6 +69,8 @@ CREATE TABLE IF NOT EXISTS plays (
     UNIQUE (track_id, listened_at)
 );
 CREATE INDEX IF NOT EXISTS plays_listened_at ON plays(listened_at);
+-- An artist's tracks: the primary key only serves a track's artists.
+CREATE INDEX IF NOT EXISTS track_artists_artist ON track_artists(artist_id, track_id);
 CREATE INDEX IF NOT EXISTS plays_album ON plays(album_id);
 CREATE TABLE IF NOT EXISTS maloja_pairs (
     maloja_ts INTEGER PRIMARY KEY,
@@ -124,6 +127,24 @@ def has_history(account) -> bool:
     return db_path(account).exists()
 
 
+def found_elsewhere(account, sql, args=()):
+    """The row `sql` finds first in each other account's history, one account
+    after another. A history that cannot be read is passed over."""
+    for other in accounts_with_history():
+        if other == account:
+            continue
+        try:
+            conn = connect(other)
+            try:
+                row = conn.execute(sql, args).fetchone()
+            finally:
+                conn.close()
+        except sqlite3.Error:
+            continue
+        if row:
+            yield row
+
+
 def accounts_with_history() -> list:
     """The accounts whose history exists, in the order of Settings: for what
     reads every history, as the library is shared."""
@@ -171,24 +192,8 @@ def _migrate(conn) -> None:
     conn.commit()
 
 
-def _is_latin(char) -> bool:
-    code = ord(char)
-    return code < 0x250 or 0x1E00 <= code <= 0x1EFF
-
-
-def fold(text) -> str:
-    """Case removed, and accents on Latin letters. Marks stay in other scripts,
-    where they make a different word (ガラス and カラス)."""
-    kept = []
-    after_latin = False
-    for char in unicodedata.normalize("NFKD", str(text or "")):
-        if unicodedata.combining(char):
-            if not after_latin:
-                kept.append(char)
-        else:
-            kept.append(char)
-            after_latin = _is_latin(char)
-    return unicodedata.normalize("NFKC", "".join(kept)).casefold()
+# fold() is shared with the library's keys (core/normalization.py): one rule
+# for the same names everywhere.
 
 
 def _keeps_name_apart(char) -> bool:

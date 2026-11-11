@@ -160,7 +160,9 @@ def _queries(src):
 
 
 def match_track(src):
-    """The pick for one source track: by ISRC first, else by search."""
+    """The pick for one source track: by ISRC first, else by search. None when
+    Deezer did not answer at all: the track stays to be found, rather than
+    saved as "not on Deezer" for an outage."""
     from core.deezer import _public_api
 
     if src.get("isrc"):
@@ -172,11 +174,13 @@ def match_track(src):
             pass  # unknown ISRC: fall back to the search
 
     best, best_score, seen = None, None, set()
+    answered = False
     for query in _queries(src):
         try:
             results = (_public_api("/search", {"q": query, "limit": 10}) or {}).get("data") or []
         except Exception:
             continue
+        answered = True
         for item in results:
             if item.get("id") in seen or item.get("type", "track") != "track":
                 continue
@@ -187,6 +191,8 @@ def match_track(src):
         if best_score is not None and best_score >= AUTO_SCORE:
             break
 
+    if best is None and not answered:
+        return None
     if best is None or best_score < REVIEW_SCORE:
         return _pick(None, "none", best_score)
     return _pick(best, "auto" if best_score >= AUTO_SCORE else "uncertain", best_score)
@@ -293,12 +299,12 @@ def _create(playlist_id, source, source_id, source_url, info):
 
 
 def _register(playlist_id, info, source, accounts=None):
-    from core.deezer import cache_cover, load_playlists, save_playlists
+    from core.deezer import add_entry, cache_cover
 
     entry = {"id": playlist_id, "title": info["title"], "picture": info["picture"], "source": source}
     if accounts:
         entry["accounts"] = list(accounts)
-    save_playlists([*load_playlists(), entry])
+    add_entry(entry)
     cache_cover(entry)
 
 
@@ -404,9 +410,10 @@ def resync(playlist_id, full=False, progress=None):
     ]
     for done, src in enumerate(todo, start=1):
         pick = match_track(src)
-        old = _store_pick(playlist_id, src["key"], pick, keep_manual=True)
-        if old and (old.get("status") != "manual"):
-            _move_local_state(playlist_id, track_id_of(src["key"], old), track_id_of(src["key"], pick))
+        if pick is not None:
+            old = _store_pick(playlist_id, src["key"], pick, keep_manual=True)
+            if old and (old.get("status") != "manual"):
+                _move_local_state(playlist_id, track_id_of(src["key"], old), track_id_of(src["key"], pick))
         if progress:
             progress(done, len(todo), track_for(playlist_id, src["key"]))
     return len(todo)
@@ -423,6 +430,8 @@ def set_pick(playlist_id, key, choice):
 
     if choice == "auto":
         pick = match_track(src)
+        if pick is None:
+            raise LookupError("Deezer did not answer: try again in a moment")
     elif choice is None:
         pick = _pick(None, "manual", None)
     else:

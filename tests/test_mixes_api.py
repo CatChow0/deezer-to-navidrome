@@ -182,6 +182,22 @@ class Api(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertFalse(path.exists())
 
+    def test_a_decision_waits_for_the_review_and_says_so_when_it_cannot(self):
+        from core import mix_builder
+        from routes import mixes as route
+
+        path = self.add("1")
+        mix_builder._review_lock.acquire()
+        try:
+            with mock.patch.object(route, "QUARANTINE_WAIT", 0.1):
+                busy = self.post("/api/mixes/trial/1/remove")
+                busy_all = self.post("/api/mixes/trial/empty-trash")
+        finally:
+            mix_builder._review_lock.release()
+        self.assertEqual((409, 409), (busy.status_code, busy_all.status_code))
+        self.assertTrue(path.exists())
+        self.assertEqual(200, self.post("/api/mixes/trial/1/remove").status_code)
+
     def test_unknown_track_is_an_error(self):
         # Unknown, or another profile's: not in this profile's quarantine.
         self.assertEqual(self.post("/api/mixes/trial/404/remove").status_code, 404)

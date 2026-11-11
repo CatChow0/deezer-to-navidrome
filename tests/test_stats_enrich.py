@@ -39,6 +39,9 @@ class MatchRule(unittest.TestCase):
 
     def test_title_alone_is_not_enough(self):
         self.assertFalse(deezer_match("Song", ["A"], {"title": "Unrelated", "artist": {"name": "A"}}))
+        # Inside another word is not the same title, nor the same artist.
+        self.assertFalse(deezer_match("Intro", ["Ninho"], {"title": "Introspection", "artist": {"name": "Ninho"}}))
+        self.assertFalse(deezer_match("Love", ["Nas"], {"title": "Love", "artist": {"name": "Nasty C"}}))
 
     def test_any_credited_artist_counts(self):
         self.assertTrue(deezer_match("Song", ["A", "B"], {"title": "Song", "artist": {"name": "B"}}))

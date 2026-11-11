@@ -4,6 +4,7 @@ from datetime import timedelta
 
 from flask import Flask, g, jsonify, redirect, request, session, url_for
 from werkzeug.exceptions import HTTPException
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 from core import auth, content, devices
 from core.config import ensure_dirs
@@ -36,7 +37,26 @@ app.config.update(
     # Cross-site requests carry no session: forms cannot be posted from another site.
     SESSION_COOKIE_SAMESITE="Lax",
     SESSION_COOKIE_SECURE=os.environ.get("COOKIE_SECURE", "").strip().lower() in ("1", "true", "yes"),
+    # The largest body any route reads is a CSV import (5 MB): without a limit,
+    # anyone could make the server read gigabytes before signing in.
+    MAX_CONTENT_LENGTH=16 * 1024 * 1024,
 )
+
+
+def _trusted_proxies() -> int:
+    try:
+        return max(0, int(os.environ.get("TRUSTED_PROXIES", "0").strip() or 0))
+    except ValueError:
+        return 0
+
+
+# Behind a reverse proxy every request comes from the proxy's address, so the
+# limit on failed sign-ins would count everyone together. TRUSTED_PROXIES=1
+# (one proxy in front) reads the client's address from X-Forwarded-For. Left at
+# 0 when nothing is in front: anyone could then send that header.
+if _trusted_proxies():
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=_trusted_proxies(), x_proto=_trusted_proxies(),
+                            x_host=_trusted_proxies())
 
 app.jinja_env.globals["doc_sections"] = content.HELP_SECTIONS
 app.jinja_env.globals["setting_choices"] = SETTING_CHOICES
@@ -76,6 +96,24 @@ def navidrome_accounts_for_pages():
         return {"nd_accounts": accounts, "nd_active": account_context.resolve(request, session)}
     except Exception:
         return {}
+
+
+SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
+
+
+@app.before_request
+def refuse_other_sites():
+    """A form or a script on another site cannot change anything here, even
+    with DISABLE_AUTH or a proxy's login, which the browser sends along.
+    Browsers say where a request comes from (Sec-Fetch-Site); the Android app,
+    Navidrome and CatBoard send no such header and are not concerned."""
+    if request.method in SAFE_METHODS:
+        return None
+    if request.headers.get("Sec-Fetch-Site", "").lower() == "cross-site":
+        if request.path.startswith(api_v1.PREFIX):
+            return api_v1.error("forbidden", "Requests from another site are refused.", 403)
+        return jsonify({"ok": False, "error": "Requests from another site are refused."}), 403
+    return None
 
 
 @app.before_request

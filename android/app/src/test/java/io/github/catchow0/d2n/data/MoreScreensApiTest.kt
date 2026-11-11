@@ -180,4 +180,21 @@ class MoreScreensApiTest {
         assertEquals("POST /d2n/api/v1/content/notes/seen", sent().first)
         assertEquals("getting-started", apiCall { api.help() }.sections.single().id)
     }
+
+    @Test
+    fun `notes say what to change, since the version read last`() = runBlocking {
+        answer(
+            """{"notes":[{"version":"1.19.0","date":"2026-11-11","title":"Safer","html":"<p>x</p>",""" +
+                """"highlights":["Nothing lost"],"actions":[{"level":"recommended","when":"Behind a proxy",""" +
+                """"do":"Set it","lines":["TRUSTED_PROXIES=1"],"file":".env"}]}],"unseen":true,"since":"1.17.0",""" +
+                """"pending_actions":[{"level":"required","when":"Authelia","do":"Bypass","lines":[],"file":"Authelia","version":"1.18.0"}]}""",
+        )
+        val notes = apiCall { api.notes() }
+        assertEquals("1.17.0", notes.since)
+        assertEquals("1.18.0", notes.pendingActions.single().version)
+        val action = notes.notes.single().actions.single()
+        assertEquals(listOf("TRUSTED_PROXIES=1"), action.lines)
+        assertEquals("Behind a proxy", action.`when`)
+        assertEquals(listOf("Nothing lost"), notes.notes.single().highlights)
+    }
 }

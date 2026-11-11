@@ -218,19 +218,13 @@ def favorite_artists(account=None):
 
 def _public_favorite_artists(uid):
     """The public API, paginated: it refuses a private profile."""
-    artists, index = [], 0
-    while True:
-        page = requests.get(f"{API_URL}/user/{uid}/artists", params={"limit": 100, "index": index}, timeout=30).json()
-        if "error" in page:
-            raise DeezerAccountError(f"the public API refused it: {page['error']}")
-        data = page.get("data") or []
-        artists += [
-            {"id": str(a["id"]), "name": a.get("name") or "", "picture": a.get("picture_medium") or ""}
-            for a in data
-        ]
-        index += len(data)
-        if not data or index >= int(page.get("total") or 0):
-            return artists
+    from core.deezer import public_pages
+
+    try:
+        return [{"id": str(a["id"]), "name": a.get("name") or "", "picture": a.get("picture_medium") or ""}
+                for a in public_pages(f"/user/{uid}/artists")]
+    except RuntimeError as e:
+        raise DeezerAccountError(f"the public API refused it: {e}") from e
 
 
 # More favorite artists than anyone keeps: the gateway answers them in one page.

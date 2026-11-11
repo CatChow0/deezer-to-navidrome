@@ -33,6 +33,8 @@ class Reachability(
     /** The time to give [reportFailure] for a call starting now. */
     fun now(): Long = clock()
 
+    // Called from OkHttp's threads too: two failures at once must start one check.
+    @Synchronized
     fun reportFailure(startedAt: Long = now()) {
         if (startedAt < answeredAt) return
         _online.value = false

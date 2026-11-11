@@ -9,7 +9,7 @@
 
   <div class="doc-block">
     <h4>Too many failed sign-ins</h4>
-    <p>After 5 failures in 15 minutes, the username and the address wait 30 seconds, then twice as long after each new failure, up to 15 minutes. Behind a reverse proxy every request has the proxy's address, so a burst of failures briefly blocks everyone.</p>
+    <p>After 5 failures in 15 minutes, the address waits 30 seconds, then twice as long after each new failure, up to 15 minutes. Failures on one username from everywhere at once wait after 50, so someone guessing from the internet cannot lock you out. Behind a reverse proxy, set <code>TRUSTED_PROXIES=1</code> (the number of proxies in front of the app) so each visitor's own address is counted, and <code>COOKIE_SECURE=true</code> to keep the session on HTTPS.</p>
   </div>
 
   <div class="doc-block">

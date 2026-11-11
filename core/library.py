@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 import re
 import threading
@@ -6,9 +7,12 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
+from core.files import write_json
 from core.config import get_paths_from_config
-from core.normalization import normalize_text, enrich_library_entry_for_dedup
+from core.normalization import NORMALIZATION_VERSION, normalize_text, enrich_library_entry_for_dedup
 from core.utils import AUDIO_EXTS, read_tags, get_file_signature
+
+logger = logging.getLogger(__name__)
 
 def _get_workers_per_dir() -> int:
     """Read workers-per-dir from config.json, falling back to env var then 2."""
@@ -67,10 +71,12 @@ def parse_filename_patterns(path: Path, scan_dirs):
 
 
 def build_library_entry(path: Path, scan_dirs):
-    tags = read_tags(path)
-    parsed = parse_filename_patterns(path, scan_dirs)
     mtime_ns, size = get_file_signature(path)
+    return _entry_from(path, read_tags(path), mtime_ns, size, scan_dirs)
 
+
+def _entry_from(path: Path, tags, mtime_ns, size, scan_dirs):
+    parsed = parse_filename_patterns(path, scan_dirs)
     entry = {
         "path": str(path),
         "path_str": str(path),
@@ -138,16 +144,32 @@ def _group_files_by_dir(files: list, scan_dirs) -> dict:
 
 
 def save_library_cache(library, library_cache_file):
-    """Sauvegarde atomique : écriture dans un fichier temp puis renommage."""
-    payload = {
-        "generated_at": int(time.time()),
-        "count": len(library),
-        "library": library,
-    }
-    library_cache_file.parent.mkdir(parents=True, exist_ok=True)
-    tmp = library_cache_file.with_suffix(".tmp")
-    tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-    tmp.replace(library_cache_file)
+    write_json(library_cache_file, {"generated_at": int(time.time()), "count": len(library), "library": library,
+                                    "normalization": NORMALIZATION_VERSION})
+
+
+def renormalize_cache() -> int:
+    """At start: a cache made with an older normalize_text gets its keys made
+    again from the tags it holds, without reading a file. Otherwise Deezer's
+    side would use the new keys and the library the old ones, and nothing
+    would match until a full rebuild. Returns how many entries changed."""
+    with _cache_lock:
+        scan_dirs, _, library_cache_file, _ = get_paths_from_config()
+        try:
+            payload = json.loads(library_cache_file.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return 0
+        if not isinstance(payload, dict) or payload.get("normalization") == NORMALIZATION_VERSION:
+            return 0
+        library = []
+        for old in payload.get("library") or []:
+            if not isinstance(old, dict) or not old.get("path"):
+                continue
+            tags = {"artist": old.get("tag_artist") or "", "title": old.get("tag_title") or "",
+                    "album": old.get("tag_album") or "", "duration": old.get("duration")}
+            library.append(_entry_from(Path(old["path"]), tags, old.get("mtime_ns"), old.get("size"), scan_dirs))
+        save_library_cache(library, library_cache_file)
+        return len(library)
 
 
 def load_library_cache(library_cache_file):
@@ -275,180 +297,114 @@ def _process_dir_into(scan_dir, dir_files, scan_dirs, library, lock, counter,
                 )
 
 
-def rebuild_library_cache_full():
-    scan_dirs, _, library_cache_file, _ = get_paths_from_config()
+# One rebuild or refresh at a time: two at once would each save their own list,
+# and the slower one would lose what the other found.
+_cache_lock = threading.Lock()
 
-    files_by_dir = _group_files_by_dir(scan_audio_files(scan_dirs), scan_dirs)
+
+def _emitter(progress_cb):
+    def emit(message=None, progress=None, stage=None):
+        if progress_cb:
+            progress_cb(message=message, progress=progress, stage=stage)
+    return emit
+
+
+def _build_entries(files, scan_dirs, emit=None) -> list:
+    """The cache entries of these files: one thread per source folder (one disk),
+    each with its own pool."""
+    files_by_dir = _group_files_by_dir(files, scan_dirs)
     total = sum(len(v) for v in files_by_dir.values())
-
-    library = []
-    lock = threading.Lock()
-    counter = [0]
-
+    entries, lock, counter = [], threading.Lock(), [0]
     threads = [
-        threading.Thread(
-            target=_process_dir_into,
-            args=(d, files, scan_dirs, library, lock, counter, total),
-            daemon=True,
-        )
-        for d, files in files_by_dir.items()
-        if files
+        threading.Thread(target=_process_dir_into, args=(d, dir_files, scan_dirs, entries, lock, counter, total, emit),
+                         daemon=True)
+        for d, dir_files in files_by_dir.items()
+        if dir_files
     ]
     for t in threads:
         t.start()
     for t in threads:
         t.join()
+    return entries
 
-    library.sort(key=lambda x: x["path_str"])
-    save_library_cache(library, library_cache_file)
-    return {"count": len(library)}
+
+def rebuild_library_cache_full():
+    return rebuild_library_cache_full_with_progress()
 
 
 def rebuild_library_cache_full_with_progress(progress_cb=None):
-    def emit(message=None, progress=None, stage=None):
-        if progress_cb:
-            progress_cb(message=message, progress=progress, stage=stage)
+    emit = _emitter(progress_cb)
+    with _cache_lock:
+        scan_dirs, _, library_cache_file, _ = get_paths_from_config()
+        emit("Scanning source directories…", stage="cache", progress=0)
+        files = scan_audio_files(scan_dirs)
+        emit(f"Scan complete: {len(files)} files found", stage="cache", progress=0)
+        if not files:
+            save_library_cache([], library_cache_file)
+            emit("Library cache rebuilt (0 files)", stage="cache", progress=100)
+            return {"count": 0}
+        library = _build_entries(files, scan_dirs, emit)
+        emit("Sorting and writing cache…", stage="cache", progress=99)
+        library.sort(key=lambda x: x["path_str"])
+        save_library_cache(library, library_cache_file)
+        emit("Library cache rebuilt", stage="cache", progress=100)
+        return {"count": len(library)}
 
-    scan_dirs, _, library_cache_file, _ = get_paths_from_config()
 
-    emit("Scanning source directories…", stage="cache", progress=0)
+def _inside(path_str, folder) -> bool:
+    try:
+        Path(path_str).relative_to(folder)
+        return True
+    except ValueError:
+        return False
 
-    # Scan parallèle : un thread par HDD
-    files_by_dir = _group_files_by_dir(scan_audio_files(scan_dirs), scan_dirs)
-    total = sum(len(v) for v in files_by_dir.values())
 
-    emit(f"Scan complete: {total} files found", stage="cache", progress=0)
-
-    if not total:
-        save_library_cache([], library_cache_file)
-        emit("Library cache rebuilt (0 files)", stage="cache", progress=100)
-        return {"count": 0}
-
-    library = []
-    lock = threading.Lock()
-    counter = [0]
-
-    # Un thread par répertoire source (= par HDD), chacun avec son pool interne
-    threads = [
-        threading.Thread(
-            target=_process_dir_into,
-            args=(d, files, scan_dirs, library, lock, counter, total, emit),
-            daemon=True,
-        )
-        for d, files in files_by_dir.items()
-        if files
-    ]
-    for t in threads:
-        t.start()
-    for t in threads:
-        t.join()
-
-    emit("Sorting and writing cache…", stage="cache", progress=99)
-    library.sort(key=lambda x: x["path_str"])
-    save_library_cache(library, library_cache_file)
-    emit("Library cache rebuilt", stage="cache", progress=100)
-    return {"count": len(library)}
+def _absent_folders(scan_dirs, files, old_library) -> list:
+    """Source folders that gave no file although the cache had some: a disk not
+    mounted at that moment (its mount point is then missing, or empty), more
+    likely than every file of it deleted. Their entries are kept."""
+    absent = []
+    for folder in scan_dirs:
+        found = any(_inside(str(f), folder) for f in files)
+        if not found and any(_inside(e["path_str"], folder) for e in old_library):
+            logger.warning("No file found in %s, which had some: kept as it was (not mounted?)", folder)
+            absent.append(folder)
+    return absent
 
 
 def refresh_library_cache_incremental():
-    scan_dirs, _, library_cache_file, _ = get_paths_from_config()
-    old_library = load_library_cache(library_cache_file)
-    old_index = {entry["path_str"]: entry for entry in old_library}
-    current_files = scan_audio_files(scan_dirs)
-    current_paths = {str(p): p for p in current_files}
-
-    reused = []
-    changed = []
-
-    for path_str, path in current_paths.items():
-        try:
-            mtime_ns, size = get_file_signature(path)
-        except FileNotFoundError:
-            continue
-        old = old_index.get(path_str)
-        if old and old.get("mtime_ns") == mtime_ns and old.get("size") == size:
-            reused.append(old)
-        else:
-            changed.append(path)
-
-    files_by_dir = _group_files_by_dir(changed, scan_dirs)
-    total = len(changed)
-
-    rebuilt = []
-    lock = threading.Lock()
-    counter = [0]
-
-    threads = [
-        threading.Thread(
-            target=_process_dir_into,
-            args=(d, files, scan_dirs, rebuilt, lock, counter, total),
-            daemon=True,
-        )
-        for d, files in files_by_dir.items()
-        if files
-    ]
-    for t in threads:
-        t.start()
-    for t in threads:
-        t.join()
-
-    new_library = sorted(reused + rebuilt, key=lambda x: x["path_str"])
-    save_library_cache(new_library, library_cache_file)
-    return {"count": len(new_library), "reused": len(reused), "rebuilt": len(rebuilt)}
+    return refresh_library_cache_incremental_with_progress()
 
 
 def refresh_library_cache_incremental_with_progress(progress_cb=None):
-    def emit(message=None, progress=None, stage=None):
-        if progress_cb:
-            progress_cb(message=message, progress=progress, stage=stage)
+    emit = _emitter(progress_cb)
+    with _cache_lock:
+        scan_dirs, _, library_cache_file, _ = get_paths_from_config()
+        old_library = load_library_cache(library_cache_file)
+        old_index = {entry["path_str"]: entry for entry in old_library}
 
-    scan_dirs, _, library_cache_file, _ = get_paths_from_config()
-    old_library = load_library_cache(library_cache_file)
-    old_index = {entry["path_str"]: entry for entry in old_library}
+        emit("Scanning existing files…", stage="cache", progress=0)
+        current_files = scan_audio_files(scan_dirs)
+        absent = _absent_folders(scan_dirs, current_files, old_library)
+        kept = [e for e in old_library if any(_inside(e["path_str"], folder) for folder in absent)]
 
-    emit("Scanning existing files…", stage="cache", progress=0)
-    current_files = scan_audio_files(scan_dirs)
-    current_paths = {str(p): p for p in current_files}
+        reused = []
+        changed = []
+        for path in current_files:
+            try:
+                mtime_ns, size = get_file_signature(path)
+            except FileNotFoundError:
+                continue
+            old = old_index.get(str(path))
+            if old and old.get("mtime_ns") == mtime_ns and old.get("size") == size:
+                reused.append(old)
+            else:
+                changed.append(path)
 
-    reused = []
-    changed = []
+        emit(f"Processing {len(changed)} changed files", stage="cache", progress=0)
+        rebuilt = _build_entries(changed, scan_dirs, emit) if changed else []
 
-    for path_str, path in current_paths.items():
-        try:
-            mtime_ns, size = get_file_signature(path)
-        except FileNotFoundError:
-            continue
-        old = old_index.get(path_str)
-        if old and old.get("mtime_ns") == mtime_ns and old.get("size") == size:
-            reused.append(old)
-        else:
-            changed.append(path)
-
-    total = len(changed)
-    emit(f"Processing {total} changed files", stage="cache", progress=0)
-
-    rebuilt = []
-
-    if total:
-        files_by_dir = _group_files_by_dir(changed, scan_dirs)
-        lock = threading.Lock()
-        counter = [0]
-
-        threads = [
-            threading.Thread(
-                target=_process_dir_into,
-                args=(d, files, scan_dirs, rebuilt, lock, counter, total, emit),
-                daemon=True,
-            )
-            for d, files in files_by_dir.items()
-            if files
-        ]
-        for t in threads:
-            t.start()
-        for t in threads:
-            t.join()
-
-    new_library = sorted(reused + rebuilt, key=lambda x: x["path_str"])
-    save_library_cache(new_library, library_cache_file)
-    emit("Incremental cache updated", stage="cache", progress=100)
-    return {"count": len(new_library), "reused": len(reused), "rebuilt": len(rebuilt)}
+        new_library = sorted({e["path_str"]: e for e in kept + reused + rebuilt}.values(), key=lambda x: x["path_str"])
+        save_library_cache(new_library, library_cache_file)
+        emit("Incremental cache updated", stage="cache", progress=100)
+        return {"count": len(new_library), "reused": len(reused) + len(kept), "rebuilt": len(rebuilt)}

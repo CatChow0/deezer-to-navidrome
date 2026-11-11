@@ -2,8 +2,8 @@
 
 **A self-hosted web app that turns your Deezer playlists into Navidrome `.m3u8` playlists, matches them against your local library, and downloads what is missing straight from Deezer.**
 
-[![Docker Image Version](https://img.shields.io/badge/version-1.18.2-blue)](https://hub.docker.com/r/catchow/deezer-to-navidrome)
-[![Python 3](https://img.shields.io/badge/python-3-blue)](https://www.python.org/)
+[![Docker Image Version](https://img.shields.io/badge/version-1.19.0-blue)](https://hub.docker.com/r/catchow/deezer-to-navidrome)
+[![Python 3.12](https://img.shields.io/badge/python-3.12-blue)](https://www.python.org/)
 [![Flask](https://img.shields.io/badge/flask-web%20app-brightgreen)](https://flask.palletsprojects.com/)
 
 ## 📋 Table of Contents
@@ -17,6 +17,8 @@
 - [Cache System](#cache-system)
 - [Deduplication System](#deduplication-system)
 - [Installation](#installation)
+  - [Behind a reverse proxy](#behind-a-reverse-proxy)
+  - [Upgrading](#upgrading)
 - [Configuration](#configuration)
 - [Usage](#usage)
 - [API Reference](#api-reference)
@@ -43,6 +45,10 @@ Deezer-To-Navidrome bridges Deezer and self-hosted music servers like [Navidrome
 - **Generate M3U8 playlists** that Navidrome imports
 - **Follow new releases** of your favorite Deezer artists, with what you already own
 - **Find duplicates** in your library and quarantine or delete them
+- **Keep your listening stats**: recaps, tops and habits, from the plays Navidrome sends
+- **Get playlists made from your listening** (Made for you): Daily Mix, Daily Mix+ and Discover
+- **Serve several Navidrome users and Deezer accounts**, each with their own playlists, history and mixes
+- **Use it from your phone** with the Android app shipped in the image
 
 ### Why Deezer-To-Navidrome?
 
@@ -128,14 +134,18 @@ Two buttons in the topbar explain the app. **New** keeps the notes of each versi
 └───────────┬─────────────┘
             │
             ▼
-┌─────────────────────────────────────┐
-│  Deezer-To-Navidrome (port 8080)    │
-│  • Web UI + background tasks (SSE)  │
-│  • Matching engine                  │
-│  • Download queue (decrypt + tag)   │
-│  • Library index + dedup engine     │
-│  • Scheduler (playlists, releases)  │
-└─────┬─────────────┬─────────────┬───┘
+┌──────────────────────────────────────────┐      ┌──────────────────────┐
+│  Deezer-To-Navidrome (port 8080)         │◄────►│  Web browser         │
+│  • Web UI + background tasks (SSE)       │      │  Android app         │
+│  • API v1, a token per device            │      │  (API v1)            │
+│  • Matching engine                       │      └──────────────────────┘
+│  • Download queue (decrypt + tag)        │
+│  • Library index + dedup engine          │
+│  • Made for you + quarantine             │
+│  • Listening stats (one history/profile) │
+│  • Scheduler (scans, releases, mixes,    │
+│    sync with Navidrome)                  │
+└─────┬─────────────┬─────────────┬────────┘
       │             │             │
       ▼             ▼             ▼
 ┌───────────┐ ┌───────────┐ ┌────────────┐
@@ -144,10 +154,17 @@ Two buttons in the topbar explain the app. **New** keeps the notes of each versi
 └─────┬─────┘ └─────┬─────┘ └─────┬──────┘
       └─────────────┼─────────────┘
                     ▼
-          ┌───────────────────┐
-          │  Navidrome        │
-          └───────────────────┘
+          ┌───────────────────────────────┐
+          │  Navidrome                    │
+          │  • reads the files and M3U8   │
+          │  • gets each user's playlists │
+          │    through its Subsonic API   │
+          │  • sends new plays back       │
+          │    (ListenBrainz endpoint)    │
+          └───────────────────────────────┘
 ```
+
+The app keeps everything in `DATA_DIR`. Each file there is written in one step (a temporary file, then a rename), so a crash or two saves at once never leave it half-written; a file found damaged is set aside as `name.corrupt-<time>` rather than replaced by an empty one.
 
 ### Data Flow
 
@@ -395,6 +412,10 @@ Both back up the profile's history first (the last 3, as `stats.db.bak-*` in `DA
 | `deezer_accounts.json` | Deezer accounts, their ARLs encrypted | Survives restarts |
 | `releases.json`, `releases-dz2.json`… | Release feed of each Deezer account, with `release_prefs*.json` for the muted artists | Rebuilt by a refresh |
 | `encryption.key` | The encryption key, only when `D2N_ENCRYPTION_KEY` is not set | Keep it: without it, saved credentials must be entered again |
+| `scheduler.json` | When each playlist was last scanned automatically, so a restart keeps the schedule | Survives restarts |
+| `dedup_quarantine/` | Duplicates moved aside, with `manifest.jsonl`: one line per file, saying where it came from | Until you empty it |
+| `*.corrupt-<time>` | A file that could not be read, set aside instead of being overwritten | Delete it once you checked it |
+| `trial/` (in the downloads folder) | Tracks Made for you downloaded, on trial | Until kept (moved to `songs/`) or removed |
 
 > Credentials are encrypted, but with `encryption.key` in the same folder a copy of `/data` still reveals them. Set `D2N_ENCRYPTION_KEY`, and keep `/data` private and out of any backup you share.
 
@@ -470,8 +491,9 @@ During the build, the app also pre-computes normalized text (lowercase, no accen
 
 5. Action Phase
    ├─ User chooses: QUARANTINE or DELETE
+   ├─ A group keeping none of its files is left alone
    ├─ Apply to all duplicates
-   ├─ Move to quarantine dir or unlink
+   ├─ Move to quarantine dir (noted in manifest.jsonl) or unlink
    └─ Save decisions to dedup_choices.json
 ```
 
@@ -573,70 +595,83 @@ services:
     image: catchow/deezer-to-navidrome:latest
     container_name: deezer-to-navidrome
     restart: unless-stopped
-
     # Let the container use your CPU cores: without this, Docker may
     # throttle the library scan and the matching threads.
     cpus: "4.0"          # set to your actual core count
     cpu_shares: 1024
-
+    env_file: .env
+    # Not needed behind a reverse proxy on the same Docker network
+    # (see "Behind a reverse proxy").
     ports:
       - "8080:8080"
-
-    environment:
-      DATA_DIR: "/data"
-
-      # Music folders to index (comma-separated). The one named deezer-dl
-      # receives the downloads unless DEEZER_DL_DIR says otherwise.
-      SCAN_DIRS: "/music/deezer-dl,/music/library"
-
-      # Where the M3U8 playlists are written
-      PLAYLISTS_BASE_DIR: "/music/playlists"
-
-      # The same folders as Navidrome sees them: /in/this/app:/in/navidrome
-      HOST_TO_NAVIDROME_ROOT: "/music/deezer-dl:/deezer-dl,/music/library:/music"
-
-      # Optional: another folder for the downloads
-      # DEEZER_DL_DIR: "/music/deezer-dl"
-
-      LIBRARY_WORKERS_PER_DIR: "2"   # 2 = HDD, 4 = RAID, 8 = SSD/NVMe
-      MATCH_WORKERS: "4"             # your CPU count
-      # DOWNLOAD_WORKERS: "4"        # parallel downloads from Deezer
-
-      # Optional: Deezer accounts (you can add them in Settings instead)
-      # DEEZER_ARL: ""               # a Deezer account, the default one
-      # DEEZER_ARL_PREMIUM: ""       # a Deezer account marked for the downloads
-      # SCROBBLE_TOKEN: ""           # token Navidrome sends new plays with (first account)
-
-      # Optional: the key credentials are encrypted with (else one is kept in /data)
-      # D2N_ENCRYPTION_KEY: ""
-
-      # Optional: the sign-in account (else the first visit asks for it)
-      # APP_USERNAME: "admin"
-      # APP_PASSWORD: "a-long-password"
-
     volumes:
-      # Config, index, secrets: must be persistent
+      # Config, index, secrets: must be persistent and private
       - ./data:/data
-
-      # Music folders. deezer-dl must be writable: downloads go there.
+      # Music folders. deezer-dl must be writable: downloads go there. The
+      # others too if you use Fix missing metadata or delete duplicates.
       - /path/on/host/deezer-dl:/music/deezer-dl
       - /path/on/host/library:/music/library
-
       # Playlist output, shared with Navidrome
       - /path/on/host/playlists:/music/playlists
+      # Optional: Navidrome's data and Maloja, for the Stats history (read-only)
+      # - /path/to/navidrome/data:/import/navidrome:ro
+      # - /path/to/Maloja:/import/maloja:ro
 ```
 
-2. **Start the app:**
+2. **Create `.env` next to it:**
+
+```env
+DATA_DIR=/data
+# Music folders to index (comma-separated). The one named deezer-dl receives
+# the downloads unless DEEZER_DL_DIR says otherwise.
+SCAN_DIRS=/music/deezer-dl,/music/library
+# Where the M3U8 playlists are written
+PLAYLISTS_BASE_DIR=/music/playlists
+# The same folders as Navidrome sees them: /in/this/app:/in/navidrome
+HOST_TO_NAVIDROME_ROOT=/music/deezer-dl:/deezer-dl,/music/library:/music
+
+# Read on first start only, then in Settings
+LIBRARY_WORKERS_PER_DIR=2    # 2 = HDD, 4 = RAID, 8 = SSD/NVMe
+MATCH_WORKERS=4              # your CPU count
+
+# The key credentials are encrypted with (else one is kept in /data):
+# any long random string
+D2N_ENCRYPTION_KEY=
+
+# Optional: listening stats
+# STATS_NAVIDROME_DB=/import/navidrome/navidrome.db
+# STATS_MALOJA_DB=/import/maloja/malojadb.sqlite
+# SCROBBLE_TOKEN=            # token Navidrome sends new plays with (first account)
+
+# Optional: behind a reverse proxy (see below)
+# TRUSTED_PROXIES=1
+# COOKIE_SECURE=true
+
+# Optional: run as your user instead of root (folders must be writable by it)
+# PUID=1000
+# PGID=1000
+
+# Optional: Deezer accounts and the sign-in account (else in Settings / at the
+# first visit)
+# DEEZER_ARL=
+# DEEZER_ARL_PREMIUM=
+# APP_USERNAME=admin
+# APP_PASSWORD=a-long-password
+```
+
+3. **Start the app:**
 
 ```bash
 docker compose up -d
 ```
 
-3. **Open the web UI** at `http://localhost:8080` and create your account.
+4. **Open the web UI** at `http://localhost:8080` and create your account.
 
-4. **Add your Deezer account** in **Settings → Deezer accounts** (optional, but needed for downloads, mixes and the release feed).
+5. **Add your Deezer account** in **Settings → Deezer accounts** (optional, but needed for downloads, mixes and the release feed).
 
 ### Without Docker
+
+With Python 3.12 (the version the image runs and the requirements are tested with):
 
 ```bash
 pip install -r requirements.txt
@@ -646,6 +681,93 @@ export PLAYLISTS_BASE_DIR=/path/to/playlists
 export HOST_TO_NAVIDROME_ROOT=/path/to/library:/music
 python app.py   # http://localhost:8080
 ```
+
+<a id="behind-a-reverse-proxy"></a>
+### Behind a reverse proxy
+
+The app works behind Traefik, nginx, Caddy or any proxy that serves it over HTTPS:
+
+- **Tell it the proxy is there**: `TRUSTED_PROXIES=1` (the number of proxies in front of it; `2` with Cloudflare's proxy in front of yours). The limit on failed sign-ins then counts each visitor's own address instead of the proxy's, and the app knows the page is served over HTTPS. Leave it at `0` without a proxy: anyone could then pretend to be another address.
+- **Keep the session cookie on HTTPS**: `COOKIE_SECURE=true`.
+- **No port to publish**: drop `ports:` when the proxy reaches the container on a shared Docker network.
+- **Let task streams through as they come.** Activity follows each task through a Server-Sent Events stream (`/tasks/<id>/stream`, `/api/v1/tasks/<id>/stream`): the proxy must neither buffer nor compress it. Traefik does not buffer, but keep any `compress` middleware off these paths; nginx needs `proxy_buffering off`.
+- **A login in front (Authelia…)** must let `/api/v1/` through, or the Android app cannot sign in: see [API v1](#api-v1).
+
+Traefik, with the app on the proxy's network:
+
+```yaml
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=proxy
+      - traefik.http.routers.d2n.rule=Host(`music.example.com`)
+      - traefik.http.routers.d2n.entrypoints=websecure
+      - traefik.http.routers.d2n.tls=true
+      - traefik.http.services.d2n.loadbalancer.server.port=8080
+    networks:
+      - proxy
+```
+
+nginx:
+
+```nginx
+location / {
+    proxy_pass http://deezer-to-navidrome:8080;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_buffering off;          # task streams (SSE)
+    proxy_read_timeout 1h;
+    client_max_body_size 16m;     # the largest request the app takes
+}
+```
+
+<a id="upgrading"></a>
+### Upgrading
+
+Pull the new image and restart: `docker compose pull && docker compose up -d`. Settings, playlists and histories carry over; the app updates what it keeps at its first start. **New**, in the app, shows what changed and starts with what to change, all versions you skipped together. The same list:
+
+#### 1.19.0
+
+- *Recommended, behind a reverse proxy*: `TRUSTED_PROXIES=1` and `COOKIE_SECURE=true` in `.env` (see [Behind a reverse proxy](#behind-a-reverse-proxy)).
+- *Optional*: `PUID=1000` and `PGID=1000` to run as your user instead of root. The music and playlist folders must be writable by that user first (the data folder is given to it at start).
+- At its first start, the app makes the library index's keys again from the tags it holds, without reading your files: names in every script now match.
+
+#### 1.18.0 and 1.17.0
+
+- *Required behind Authelia or another login proxy*: let `/api/v1/` through without the login page, for the Android app:
+
+  ```yaml
+  - domain: music.example.com
+    resources: ["^/api/v1/"]
+    policy: bypass
+  ```
+
+#### 1.16.0
+
+- *Recommended*: `D2N_ENCRYPTION_KEY=a-long-random-string` in `.env`, so a copy of the data folder does not carry the key along.
+
+#### 1.14.0
+
+- *Recommended*: mount your music folders writable (no `:ro`), so Fix missing metadata can write tags.
+
+#### 1.13.0
+
+- *Recommended, to import your past plays*: mount Navidrome's data folder, and Maloja's if you had it, read-only:
+
+  ```yaml
+  - /path/to/navidrome/data:/import/navidrome:ro
+  - /path/to/Maloja:/import/maloja:ro
+  ```
+
+- *Recommended, to record new plays*: in Navidrome, `ND_LISTENBRAINZ_BASEURL=http://deezer-to-navidrome:8080/apis/listenbrainz/1/`, then link ListenBrainz with the token from **Settings → Listening stats**.
+
+#### 1.11.1
+
+- *Required if you downloaded with 1.10.0 to 1.11.0*: run **Repair downloads** (Settings → Library index), then **Refresh library**.
+
+#### 1.10.0
+
+- *Required if you ran the deezer-downloader container*: delete its service and `DEEZER_DL_BASE_URL`, and mount your downloads folder here, writable: `- /path/on/host/deezer-dl:/music/deezer-dl`.
 
 ---
 
@@ -679,6 +801,10 @@ The folder and performance variables are read **on first start** to create `conf
 | `STATS_MALOJA_DB` | `/import/maloja/malojadb.sqlite` | Maloja's database, for importing your history |
 | `DISABLE_AUTH` | `false` | `true` turns sign-in off (a reverse proxy already asks for a login) |
 | `COOKIE_SECURE` | `false` | `true` makes the session cookie HTTPS-only |
+| `TRUSTED_PROXIES` | `0` | How many reverse proxies stand in front of the app. Set it (usually `1`) behind a proxy, so the limit on failed sign-ins counts each visitor's own address rather than the proxy's. Leave it at `0` otherwise: anyone could then pretend to be another address |
+| `PUID` / `PGID` | — | Run the app as this user and group instead of root. The data folder is given to them at start; the music and playlist folders must already be writable by them |
+
+Only `DEEZER_ARL`, `DEEZER_ARL_PREMIUM`, `API_TOKEN`, `SCROBBLE_TOKEN` and `SCROBBLE_TOKEN_ND2`… replace a saved credential. The files named in Settings (library cache, scan state, playlists list) stay inside `DATA_DIR`: a path elsewhere is replaced by the default one.
 
 #### Folders
 
@@ -687,11 +813,14 @@ The folder and performance variables are read **on first start** to create `conf
 Each playlist gets its own folder under `PLAYLISTS_BASE_DIR`:
 ```
 /music/playlists/
-└── My Playlist/
-    ├── My Playlist.m3u8
-    ├── report.json
-    └── missing.txt
+├── My Playlist/
+│   ├── My Playlist.m3u8
+│   ├── report.json
+│   └── missing.txt
+└── My Playlist [xp-csv-…]/   # a second playlist with the same name
 ```
+
+The folder is chosen once and kept: Navidrome knows a playlist by its file, so a title changed on Deezer keeps the same file. A second playlist with a name already taken gets its ID in its folder's name.
 
 #### Path mappings (`HOST_TO_NAVIDROME_ROOT`)
 
@@ -717,7 +846,8 @@ Both containers must see the same files under their mapped paths. The downloads 
 
 The web interface asks for a sign-in. On the first visit, the app asks you to create the account (password of 8 characters or more, stored hashed in `data/secrets.json`), unless `APP_USERNAME` and `APP_PASSWORD` are set.
 
-- After 5 failed sign-ins in 15 minutes, the username and the address wait 30 s, then twice as long after each new failure (up to 15 min). Behind a reverse proxy every request has the proxy's address, so a burst of failures briefly blocks everyone.
+- After 5 failed sign-ins in 15 minutes, the address waits 30 s, then twice as long after each new failure (up to 15 min). Failures on one username from everywhere at once wait after 50, so someone guessing from the internet cannot lock you out. Behind a reverse proxy, set `TRUSTED_PROXIES` so each visitor's own address is counted.
+- Forms and scripts from another site cannot post to the app (browsers say where a request comes from), even with `DISABLE_AUTH`. Requests over 16 MB are refused.
 - Changing the password (**Settings → Sign-in and other apps**) signs out your other browsers and your devices.
 - The API token is sent as `Authorization: Bearer <token>` and only opens `GET /api/releases`, `POST /search/library-check` and `GET /api/version`.
 - **Devices** (the Android app) sign in through the API and each get their own token. **Settings → Sign-in and other apps** lists them, with when they were last used, and signs one out. See [API v1](#api-v1).
@@ -980,6 +1110,30 @@ The API the Android app uses, described in [`docs/api/openapi.yaml`](docs/api/op
 | `/api/mixes/trial/remove-pending` | POST | Remove everything waiting under To review |
 | `/api/metadata/fix`, `/api/metadata/undo` | POST | Start Fix missing metadata, or undo it |
 
+#### Listening stats
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/stats` | GET | The Stats tab |
+| `/api/stats/overview`, `/api/stats/recaps`, `/api/stats/recap` | GET | Tops of a period, the recaps there are, one recap |
+| `/api/stats/<artist\|album\|track>/<id>`, `/api/stats/plays` | GET | One artist, album or track; the plays, searchable |
+| `/stats/cover/<kind>/<id>`, `/stats/audio/<id>` | GET | A cover, the audio a recap plays |
+| `/api/stats/status`, `/api/stats/token` | GET, POST/DELETE | The profile's history and sources; its scrobble token |
+| `/api/stats/import`, `/api/stats/import/preview` | POST | Rebuild the history (`merge` or `clean`), and what Start clean would do |
+| `/apis/listenbrainz/1/submit-listens`, `/validate-token` | POST, GET | Where Navidrome sends new plays (its own token, no session) |
+
+#### Navidrome accounts
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/api/navidrome/accounts` | GET/POST | List the accounts, add one |
+| `/api/navidrome/accounts/<id>` | PATCH/DELETE | Edit or remove one (another server needs its password again) |
+| `/api/navidrome/accounts/<id>/test`, `/api/navidrome/accounts/test` | POST | Test a saved account, or what the form holds |
+| `/api/navidrome/accounts/<id>/default` | POST | Make it the default |
+| `/api/navidrome/accounts/<id>/switch` | GET/POST | What Publish as this user would do, then do it |
+| `/api/navidrome/active` | POST | The profile of this browser |
+| `/api/navidrome/playlists/<id>/<playlist>`, `/navidrome/cover/<id>/<cover>` | GET | A playlist made by hand in Navidrome, its cover |
+
 #### System
 
 | Endpoint | Method | Purpose |
@@ -1025,7 +1179,9 @@ An `http://` address works, with a warning: only on your local network or Tailsc
 The app shares the server's version. When the server is newer, the app shows a banner: **Update** downloads the APK from your server, checks its SHA-256 and opens Android's installer; Android asks once to allow installs from D2N. **More → Check for updates** asks at once.
 
 - `versionCode` is `MAJOR×10000 + MINOR×100 + PATCH` (1.18.0 gives 11800).
-- A rebuild of the same version (another commit, or the same one built again) is offered too; a lower version never is.
+- A newer build of the same version (a DEV image) is offered too; a lower version, or an older build, never is.
+- Before Android gets it, the app checks the file is this app, signed with the same key, and not older: the SHA-256 comes from the same server, so it only proves the file arrived whole.
+- Signing out (on the phone, from the web, or by a new password) clears what the phone saved from the server and its downloaded updates.
 - An image built without the signing key (a fork, say) carries no app, and Settings says so.
 
 ### The signing key
@@ -1157,6 +1313,8 @@ docker run -p 8080:8080 \
 
 ### Running Without Docker
 
+With Python 3.12:
+
 ```bash
 python -m venv venv
 source venv/bin/activate  # or venv\Scripts\activate on Windows
@@ -1172,6 +1330,15 @@ python app.py  # http://localhost:8080
 
 The image runs the app with gunicorn (`gthread`, 16 threads) so task streams stay open without blocking other requests.
 
+### Tests
+
+```bash
+python -m unittest discover -s tests -t .      # the server
+cd android && ./gradlew :app:testDebugUnitTest  # the Android app
+```
+
+The tests use a throwaway data folder and never start the scheduler. Some check the documentation too: every environment variable the app reads is in the tables of both READMEs, and the Upgrading section lists what each version's notes ask to change.
+
 ### Code Structure
 
 ```
@@ -1179,7 +1346,16 @@ app.py                  # Flask init, blueprints, sign-in check
 
 core/
 ├── config.py           # Paths, config and secrets, background tasks
-├── auth.py             # Sign-in, password, API token
+├── files.py            # Files written in one step, damaged ones set aside
+├── crypto.py           # Encryption of the saved credentials
+├── auth.py             # Sign-in, limits on failures, API token
+├── devices.py          # Devices signed in through the API
+├── nd_accounts.py      # Navidrome accounts
+├── subsonic.py         # Subsonic API client (Navidrome)
+├── navidrome_db.py     # Reading a copy of Navidrome's database
+├── publish.py          # Playlists published per user, sync with Navidrome
+├── content.py          # Help and notes, for the web and the app
+├── patch_notes.py      # Each version: highlights and what to change
 ├── library.py          # Library scanning and index (threaded, per folder)
 ├── matching.py         # Matching a Deezer track against the library
 ├── normalization.py    # Text normalization, version flags, quality score
@@ -1215,6 +1391,10 @@ routes/
 ├── listenbrainz.py     # /apis/listenbrainz/1/*, plays sent by Navidrome
 ├── mixes.py            # /api/mixes*, /api/metadata/*
 ├── auth.py             # /login, /setup, /api/auth/*, /api/webhook
+├── navidrome_accounts.py  # /api/navidrome/accounts*
+├── navidrome_playlists.py # Playlists made by hand in Navidrome
+├── android.py          # The APK in the image
+├── api_v1/             # /api/v1/*, for the Android app
 └── system.py           # /config, /deezer-dl/*, /tasks/*, /admin/*, /health
 
 templates/

@@ -8,6 +8,8 @@ import os
 import shutil
 from pathlib import Path
 
+from core import files
+
 logger = logging.getLogger(__name__)
 BACKUP_FOLDER = "pre-1.16.0"
 
@@ -42,9 +44,7 @@ def playlist_accounts() -> int:
     backup(PLAYLIST_IDS_FILE)
     for entry in missing:
         entry["accounts"] = [owner]
-    partial = PLAYLIST_IDS_FILE.with_name(f".{PLAYLIST_IDS_FILE.name}.part")
-    partial.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-    os.replace(partial, PLAYLIST_IDS_FILE)
+    files.write_json(PLAYLIST_IDS_FILE, data)
     return len(missing)
 
 
@@ -74,7 +74,7 @@ def deezer_accounts_from_secrets() -> int:
 
 
 def run() -> None:
-    from core import config, nd_accounts
+    from core import config, library, nd_accounts
 
     try:
         changed = config.encrypt_stored_secrets()
@@ -82,6 +82,12 @@ def run() -> None:
             logger.info("Encrypted %s secrets in secrets.json", changed)
     except Exception as e:
         logger.error("Could not encrypt secrets.json: %s", e)
+    try:
+        renormalized = library.renormalize_cache()
+        if renormalized:
+            logger.info("Library cache: keys of %s tracks made again for this version", renormalized)
+    except Exception as e:
+        logger.error("Could not update the library cache's keys: %s", e)
     try:
         made = nd_accounts.ensure_initial()
         if made:

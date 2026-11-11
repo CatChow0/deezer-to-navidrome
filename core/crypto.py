@@ -21,7 +21,7 @@ from pathlib import Path
 
 from Crypto.Cipher import AES
 
-from core import config
+from core import config, files
 
 logger = logging.getLogger(__name__)
 
@@ -81,15 +81,8 @@ def _file_key(create: bool):
         return None
     if not create:
         return None
-    path.parent.mkdir(parents=True, exist_ok=True)
     key = secrets.token_bytes(32)
-    partial = path.with_name(f".{path.name}.part")
-    partial.write_text(_b64encode(key) + "\n", encoding="utf-8")
-    try:
-        partial.chmod(0o600)
-    except OSError:
-        pass
-    os.replace(partial, path)
+    files.write_atomic(path, _b64encode(key) + "\n", private=True)
     logger.warning("No %s: generated an encryption key in %s", KEY_ENV, path)
     return key
 
@@ -146,7 +139,12 @@ def needs_rewrap(value) -> bool:
     if not is_encrypted(value):
         return True
     primary, _ = _keys()
-    data = _b64decode(value[len(PREFIX):])
+    try:
+        data = _b64decode(value[len(PREFIX):])
+    except (ValueError, binascii.Error):
+        # Damaged: no key can read it, so rewrapping cannot help. Left for
+        # decrypt() to report, and the other secrets are still encrypted.
+        return False
     try:
         AES.new(primary, AES.MODE_GCM, nonce=data[:NONCE_BYTES]).decrypt_and_verify(
             data[NONCE_BYTES:-TAG_BYTES], data[-TAG_BYTES:])
