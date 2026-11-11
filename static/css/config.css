@@ -553,10 +553,6 @@ body.has-player .save-bar {
   flex-wrap: wrap;
 }
 
-.set-fieldset {
-  display: contents;
-}
-
 .settings-subject {
   max-width: 320px;
 }

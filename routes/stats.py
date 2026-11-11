@@ -1,6 +1,6 @@
 from contextlib import closing
 
-from flask import Blueprint, jsonify, request, send_file, session
+from flask import Blueprint, g, jsonify, request, send_file, session
 
 from core import account_context, nd_accounts, stats_covers, stats_db, stats_enrich, stats_files, stats_import, stats_ingest, stats_queries
 from core.stats_queries import BadPeriod
@@ -25,7 +25,7 @@ def _account():
     """The profile whose history this request reads: the one an address names
     (a cover or a track keeps the page it belongs to), else this browser's."""
     asked = request.args.get("a")
-    if asked and nd_accounts.get(asked):
+    if asked and asked in account_context.own_profiles(g.get("user")):
         return asked
     return account_context.resolve(request, session)
 

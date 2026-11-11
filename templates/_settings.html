@@ -5,17 +5,17 @@
   </div>
 
   <div class="span-12 segmented settings-tabs" aria-label="Settings" data-settings-tabs>
-    <button type="button" data-space-tab="general" aria-pressed="true">General</button>
-    <button type="button" data-space-tab="accounts" aria-pressed="false">Accounts</button>
+    {% if is_admin %}<button type="button" data-space-tab="general" aria-pressed="true">General</button>{% endif %}
+    <button type="button" data-space-tab="accounts" aria-pressed="{{ 'false' if is_admin else 'true' }}">Accounts</button>
     <button type="button" data-space-tab="stats" aria-pressed="false">Stats and sign-in</button>
     {% if is_admin %}<button type="button" data-space-tab="users" aria-pressed="false">Users</button>{% endif %}
   </div>
 
+  {# The server's settings, for every account: only an Admin sees and changes them. #}
+  {% if is_admin %}
   <h2 class="settings-group span-12" data-space="general">Music and downloads</h2>
-  {% if not is_admin %}<p class="span-12 muted" data-space="general">These settings are the server's, for every account: an Admin changes them.</p>{% endif %}
 
   <form method="post" action="{{ url_for('system.config_view') }}" class="span-12 set-rows" id="settings-form" data-space="general">
-    <fieldset class="set-fieldset" {% if not is_admin %}disabled{% endif %}>
     <div class="set-row">
 <section class="cell set-4" aria-labelledby="sources-title">
       <div class="cell-head">
@@ -195,8 +195,8 @@
       <p>You have unsaved changes.</p>
       <button type="submit" class="btn">Save settings</button>
     </div>
-    </fieldset>
   </form>
+  {% endif %}
 
   <h2 class="settings-group span-12" data-space="accounts">Navidrome and Deezer accounts</h2>
   {% if is_admin %}

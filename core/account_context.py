@@ -21,6 +21,16 @@ def own_profiles(user) -> list:
     return [a["id"] for a in nd_accounts.accounts_of(user["id"])] if user else []
 
 
+def may_see_playlist(playlist) -> bool:
+    """A playlist is reached from a profile it is on; one on no profile (saved
+    before profiles) is the Super-Admin's, as an account without owner."""
+    from core import auth, users
+
+    if playlist.get("accounts"):
+        return bool(set(playlist["accounts"]) & set(own_profiles(g.get("user"))))
+    return auth.auth_disabled() or users.effective_owner("") == (g.get("user") or {}).get("id")
+
+
 def resolve(request, session):
     own = own_profiles(g.get("user"))
     for candidate in (request.headers.get(HEADER), session.get(SESSION_KEY)):

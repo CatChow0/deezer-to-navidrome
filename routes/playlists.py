@@ -1,6 +1,6 @@
 import threading
 
-from flask import Blueprint, flash, jsonify, redirect, render_template, request, session, url_for
+from flask import Blueprint, flash, g, jsonify, redirect, render_template, request, session, url_for
 
 from core.patch_notes import RELEASES
 from core.config import (
@@ -29,7 +29,7 @@ from core.deezer import (
 from core import account_context, android_app, crossplatform, nd_accounts, publish
 from core.deezer import accounts_for, add_entry, give_to_account, is_auto_id, modify_playlists, remove_entries, set_accounts
 from core.utils import extract_playlist_id
-from routes.auth import my_download_account
+from routes.auth import my_download_account, refused
 from core.xp_sources import MAX_CSV_BYTES, SourceError, spotify_playlist_id
 from core import scheduler
 
@@ -55,10 +55,26 @@ class PlaylistError(ValueError):
     """Shown to the user as it is."""
 
 
+def playlist_refused(playlist_id):
+    """A playlist of another account's profiles is not reached by its ID (here and under /api/v1)."""
+    playlist = next((p for p in load_playlists() if p["id"] == playlist_id), None) if playlist_id else None
+    if playlist is not None and not account_context.may_see_playlist(playlist):
+        return refused("This playlist is not on your profiles.")
+    return None
+
+
+@playlists_bp.before_request
+def _only_your_playlists():
+    return playlist_refused((request.view_args or {}).get("playlist_id"))
+
+
 def dashboard_playlists(account):
     """The playlists of this profile, with the names its user gave them in
-    Navidrome, and the ones the user made there. For the dashboard and the API."""
-    playlists = [p for p in load_playlists() if not account or not p.get("accounts") or account in p["accounts"]]
+    Navidrome, and the ones the user made there. For the dashboard and the API.
+    An account of this app without a profile yet has none."""
+    if not account:
+        return [], []
+    playlists = [p for p in load_playlists() if not p.get("accounts") or account in p["accounts"]]
     handmade = []
     if account:
         names = publish.custom_titles(account)
@@ -245,12 +261,13 @@ def playlist_accounts_route(playlist_id):
     wanted = body.get("accounts")
     if is_auto_id(playlist_id):
         return jsonify({"ok": False, "error": "A generated playlist belongs to its profile"}), 409
-    known = {a["id"] for a in nd_accounts.list_accounts()}
-    if not isinstance(wanted, list) or not wanted or any(a not in known for a in wanted):
-        return jsonify({"ok": False, "error": "Choose at least one Navidrome account"}), 400
+    own = set(account_context.own_profiles(g.get("user")))
+    if not isinstance(wanted, list) or not wanted or any(a not in own for a in wanted):
+        return jsonify({"ok": False, "error": "Choose at least one of your Navidrome accounts"}), 400
     if not any(p["id"] == playlist_id for p in load_playlists()):
         return jsonify({"ok": False, "error": "Playlist not found"}), 404
     members = accounts_for(playlist_id)
+    wanted = wanted + [a for a in members if a not in own]  # other accounts' profiles keep it
     added = [a for a in wanted if a not in members]
     removed = [a for a in members if a not in wanted]
     set_accounts(playlist_id, wanted)

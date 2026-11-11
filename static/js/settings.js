@@ -11,7 +11,7 @@ function initSpaces() {
   const tabs = document.querySelector('[data-settings-tabs]');
   if (!tabs) return;
   const show = name => {
-    if (!tabs.querySelector(`[data-space-tab="${name}"]`)) name = 'general';
+    if (!tabs.querySelector(`[data-space-tab="${name}"]`)) name = tabs.querySelector('[data-space-tab]').dataset.spaceTab;
     tabs.querySelectorAll('[data-space-tab]').forEach(tab => tab.setAttribute('aria-pressed', String(tab.dataset.spaceTab === name)));
     document.querySelectorAll('[data-space]').forEach(part => { part.hidden = part.dataset.space !== name; });
   };
@@ -20,7 +20,7 @@ function initSpaces() {
     history.replaceState(history.state, '', `#settings/${tab.dataset.spaceTab}`);
   });
   const asked = location.hash.match(/^#settings\/(\w+)/)?.[1];
-  show(SPACES.includes(asked) ? asked : 'general');
+  show(SPACES.includes(asked) ? asked : '');
 }
 
 async function initSubject() {

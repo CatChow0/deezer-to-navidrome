@@ -17,6 +17,15 @@ def _profile():
     return account_context.resolve(request, session)
 
 
+@api_v1_bp.before_request
+def _only_yours():
+    """A playlist, or a profile's Navidrome covers, of your own profiles only."""
+    args = request.view_args or {}
+    if request.endpoint == "api_v1.navidrome_cover":
+        return made_in_navidrome.profile_refused(args.get("account_id"))
+    return web.playlist_refused(args.get("playlist_id"))
+
+
 def _tile(playlist) -> dict:
     """A playlist as the dashboard shows it, with how far its matching got."""
     state = get_preview_state(playlist["id"]) or {}

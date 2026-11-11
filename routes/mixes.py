@@ -14,6 +14,13 @@ logger = logging.getLogger(__name__)
 mixes_bp = Blueprint("mixes", __name__)
 
 
+@mixes_bp.before_request
+def _a_profile_first():
+    if request.path.startswith("/api/mixes") and not _profile():
+        return jsonify({"ok": False, "error": "Add your Navidrome account in Settings → Accounts first."}), 409
+    return None
+
+
 def _profile():
     return account_context.resolve(request, session)
 

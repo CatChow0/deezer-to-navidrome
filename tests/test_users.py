@@ -168,13 +168,48 @@ class Pages(Base):
         self.sign_in("alice")
         page = self.client.get("/config").get_data(as_text=True)
         self.assertNotIn('data-space-tab="users"', page)
-        self.assertIn('class="set-fieldset" disabled', page)
+        self.assertNotIn('settings-form', page)
         self.assertNotIn("danger-title", page)
         self.sign_in("admin")
         page = self.client.get("/config").get_data(as_text=True)
         self.assertIn('data-space-tab="users"', page)
         self.assertIn('title="Signed in as admin">Sign out', page)
-        self.assertNotIn('class="set-fieldset" disabled', page)
+        self.assertIn('settings-form', page)
+
+    def test_without_a_profile_the_dashboard_asks_for_one(self):
+        save_playlists([{"id": "222", "title": "Bob's", "picture": "", "accounts": [self.bob_nd]}])
+        carol = users.create("carol", PASSWORD, users.STANDARD, must_change=False)
+        self.sign_in("carol")
+        page = self.client.get("/").get_data(as_text=True)
+        self.assertIn("Add your Navidrome account", page)
+        self.assertNotIn("Bob&#39;s", page)
+        self.assertEqual([], self.client.get("/api/v1/playlists").get_json()["playlists"])
+        self.assertEqual(409, self.client.get("/api/mixes").status_code)
+        self.assertTrue(carol)
+
+    def test_another_accounts_playlist_and_profile_are_out_of_reach(self):
+        save_playlists([{"id": "222", "title": "Bob's", "picture": "", "accounts": [self.bob_nd]}])
+        self.sign_in("alice")
+        self.assertEqual(403, self.client.get("/playlist/222/preview").status_code)
+        self.assertEqual(403, self.client.get("/api/v1/playlists/222/tracks").status_code)
+        self.assertEqual(403, self.client.get(f"/navidrome/cover/{self.bob_nd}/x").status_code)
+        self.assertEqual(403, self.client.post("/playlist/222/accounts", json={"accounts": [self.alice_nd]}).status_code)
+        from flask import g
+
+        from routes import stats
+
+        with self.app.test_request_context(f"/api/stats/overview?a={self.bob_nd}"):
+            g.user = self.alice
+            self.assertEqual(self.alice_nd, stats._account())
+
+    def test_a_standard_refreshes_its_own_release_feed(self):
+        with mock.patch.object(deezer_accounts, "_forget"):
+            dz = deezer_accounts.create({"arl": "a" * 40, "owner": self.alice["id"]}, check=False)["id"]
+        nd_accounts.update(self.alice_nd, {"deezer_account": dz})
+        self.sign_in("alice")
+        with mock.patch("routes.account.start_release_refresh", return_value="t1") as start:
+            self.assertEqual(200, self.client.post("/api/releases/refresh").status_code)
+        self.assertEqual(dz, start.call_args.kwargs["account"])
 
     def test_each_one_sees_and_picks_only_their_profiles(self):
         self.sign_in("alice")
