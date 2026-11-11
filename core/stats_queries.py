@@ -151,18 +151,29 @@ def _with_art(conn, kind, rows) -> list:
 
 def _artist_rows(conn, start, end, limit=TOP_SIZE, only_new_since=False) -> list:
     where, args = _where(start, end)
-    having = ""
     if only_new_since:
-        having = "HAVING (SELECT MIN(p2.listened_at) FROM plays p2 JOIN track_artists ta2 ON ta2.track_id = p2.track_id WHERE ta2.artist_id = a.id) >= ?"
+        # The artists first heard since `start`, found in one grouped pass: a
+        # subquery for each artist walked the whole history once per artist
+        # (30 s for a year's recap of a long history).
+        where += (" AND a.id IN (SELECT ta2.artist_id FROM plays p2 JOIN track_artists ta2"
+                  " ON ta2.track_id = p2.track_id GROUP BY ta2.artist_id HAVING MIN(p2.listened_at) >= ?)")
         args = (*args, start)
     limit_sql = f"LIMIT {int(limit)}" if limit else ""
     rows = conn.execute(
         f"SELECT a.id, a.key, a.name, COUNT(*) plays, SUM({_SECONDS}) seconds"
         " FROM plays p JOIN tracks t ON t.id = p.track_id"
         " JOIN track_artists ta ON ta.track_id = p.track_id JOIN artists a ON a.id = ta.artist_id"
-        f" WHERE {where} GROUP BY a.id {having} ORDER BY plays DESC, a.name {limit_sql}", args,
+        f" WHERE {where} GROUP BY a.id ORDER BY plays DESC, a.name {limit_sql}", args,
     ).fetchall()
     return _with_art(conn, "artist", [{"id": r["id"], "key": r["key"], "name": r["name"], "plays": r["plays"], "seconds": int(round(r["seconds"]))} for r in rows])
+
+
+def _play_counts(conn, column, start, end) -> dict:
+    """id -> plays in the period, for artists (ta.artist_id), albums or tracks."""
+    join = " JOIN track_artists ta ON ta.track_id = p.track_id" if column.startswith("ta.") else ""
+    return {row[0]: row[1] for row in conn.execute(
+        f"SELECT {column}, COUNT(*) FROM plays p{join} WHERE p.listened_at >= ? AND p.listened_at < ?"
+        f" AND {column} IS NOT NULL GROUP BY {column}", (start, end))}
 
 
 def _album_rows(conn, start, end, limit=TOP_SIZE) -> list:
@@ -295,11 +306,9 @@ def recap(account, kind, key, tz) -> dict:
             prev_key = previous_key(kind, key)
             prev_start, prev_end = period_bounds(kind, prev_key, tz)
             data["previous"] = {"key": prev_key, "label": _label(kind, prev_key), "totals": _totals(conn, prev_start, prev_end)}
-            counts = {
-                "artists": {r["id"]: r["plays"] for r in _artist_rows(conn, prev_start, prev_end, limit=None)},
-                "albums": {r["id"]: r["plays"] for r in _album_rows(conn, prev_start, prev_end, limit=None)},
-                "tracks": {r["id"]: r["plays"] for r in _track_rows(conn, prev_start, prev_end, limit=None)},
-            }
+            # Only the counts: the full rows would load every cover for nothing.
+            counts = {name: _play_counts(conn, column, prev_start, prev_end)
+                      for name, column in (("artists", "ta.artist_id"), ("albums", "p.album_id"), ("tracks", "p.track_id"))}
             data["new_artists"] = _artist_rows(conn, start, end, limit=None, only_new_since=True)
             data["discovery"] = data["new_artists"][0] if data["new_artists"] else None
             new_ids["artists"] = {row["id"] for row in data["new_artists"]}
@@ -310,7 +319,7 @@ def recap(account, kind, key, tz) -> dict:
             for row in rows:
                 row["previous_plays"] = counts[kind_name].get(row["id"])
                 row["is_new"] = row["id"] in new_ids[kind_name]
-        previous_bounds = period_bounds(kind, data["previous"]["key"], tz) if data["previous"] else (None, None)
+        previous_bounds = (prev_start, prev_end) if has_previous else (None, None)
         data["story"] = build_story(conn, data, start, end, previous_bounds[0], previous_bounds[1], zone)
         return stats_db.with_account(data, account)
 

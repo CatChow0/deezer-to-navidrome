@@ -6,7 +6,6 @@ rule did: a wrong match would put a wrong cover and wrong numbers on screen,
 so a doubtful track is left unknown."""
 import logging
 import re
-import sqlite3
 import threading
 import time
 from contextlib import closing
@@ -31,11 +30,15 @@ _DUE = "(t.lookup_at IS NULL OR t.lookup_at <= ?)"
 
 
 def _score(a, b) -> float:
+    """1 for the same key, 0.9 when one holds the other's every word ("Song" and
+    "Song Part"), else 0. Whole words: "Intro" is not "Introspection", nor
+    "Nas" "Nasty C"."""
     if not a or not b:
         return 0.0
     if a == b:
         return 1.0
-    return 0.9 if a in b or b in a else 0.0
+    shorter, longer = sorted((a.split(), b.split()), key=len)
+    return 0.9 if all(word in longer for word in shorter) else 0.0
 
 
 def _markers(title) -> set:
@@ -77,21 +80,14 @@ def _borrowed(account, key):
     """What another account's history already learned from Deezer about the
     same track, as a match: the people of one house share much of their music.
     Only what came from Deezer is taken."""
-    for other in stats_db.accounts_with_history():
-        if other == account:
-            continue
-        try:
-            with closing(stats_db.connect(other)) as conn:
-                row = conn.execute(
-                    "SELECT deezer_track_id, deezer_album_id, cover_url, duration_sec, duration_source, genre, genre_source"
-                    " FROM tracks WHERE key = ? AND deezer_track_id IS NOT NULL", (key,)).fetchone()
-        except sqlite3.Error:
-            continue
-        if row:
-            match = {"id": row["deezer_track_id"], "album": {"id": row["deezer_album_id"], "cover_big": row["cover_url"]},
-                     "duration": row["duration_sec"] if row["duration_source"] == "deezer" else None}
-            return match, row["genre"] if row["genre_source"] == "deezer" else None
-    return None
+    row = next(stats_db.found_elsewhere(
+        account, "SELECT deezer_track_id, deezer_album_id, cover_url, duration_sec, duration_source, genre, genre_source"
+                 " FROM tracks WHERE key = ? AND deezer_track_id IS NOT NULL", (key,)), None)
+    if row is None:
+        return None
+    match = {"id": row["deezer_track_id"], "album": {"id": row["deezer_album_id"], "cover_big": row["cover_url"]},
+             "duration": row["duration_sec"] if row["duration_source"] == "deezer" else None}
+    return match, row["genre"] if row["genre_source"] == "deezer" else None
 
 
 def _save(account, track_id, key, match, genre) -> None:
@@ -162,20 +158,13 @@ def enrich_batch(account, limit=40) -> int:
 def _borrowed_artist(account, key):
     """What another account's history knows of the same artist, with where its ID
     came from: one a played track gave first."""
-    for other in stats_db.accounts_with_history():
-        if other == account:
-            continue
-        try:
-            with closing(stats_db.connect(other)) as conn:
-                row = conn.execute(
-                    "SELECT deezer_id, picture_url, deezer_source FROM artists WHERE key = ? AND deezer_id IS NOT NULL"
-                    " AND (deezer_source = 'track' OR picture_url IS NOT NULL)"
-                    " ORDER BY deezer_source = 'track' DESC LIMIT 1", (key,)).fetchone()
-        except sqlite3.Error:
-            continue
-        if row:
-            return {"id": row["deezer_id"], "picture_big": row["picture_url"]}, row["deezer_source"] or "search"
-    return None
+    row = next(stats_db.found_elsewhere(
+        account, "SELECT deezer_id, picture_url, deezer_source FROM artists WHERE key = ? AND deezer_id IS NOT NULL"
+                 " AND (deezer_source = 'track' OR picture_url IS NOT NULL)"
+                 " ORDER BY deezer_source = 'track' DESC LIMIT 1", (key,)), None)
+    if row is None:
+        return None
+    return {"id": row["deezer_id"], "picture_big": row["picture_url"]}, row["deezer_source"] or "search"
 
 
 def _played_track_id(account, artist_id):

@@ -63,6 +63,29 @@ class Merging(ImportCase):
         self.assertEqual(rows[0]["title"], "Love Galore (feat. Travis Scott)")
         self.assertEqual(report["from_maloja"], 0)
 
+    def test_a_play_renamed_in_maloja_counts_once(self):
+        make_navidrome(self.nav, [{"ts": 1000, "title": "One"}])
+        make_maloja(self.mal, [{"ts": 9000, "title": "Old name", "artist": "Old artist"}])
+        run_import("nd1", "merge")
+        self.mal.unlink()
+        make_maloja(self.mal, [{"ts": 9000, "title": "New name", "artist": "New artist"}])
+        run_import("nd1", "merge")
+        maloja = [r for r in self.rows() if r["source"] == "maloja"]
+        self.assertEqual([("New name", 9000)], [(r["title"], r["ts"]) for r in maloja])
+
+    def test_the_preview_counts_as_a_rebuild(self):
+        stats_import._running.acquire()
+        try:
+            with self.assertRaises(ImportRefused):
+                stats_import.preview_clean("nd1")
+        finally:
+            stats_import._running.release()
+
+    def test_null_tags_from_navidrome_do_not_stop_the_import(self):
+        self.assertIsNone(stats_import._first_genre("null"))
+        self.assertEqual(["X"], stats_import._participants("null", "X"))
+        self.assertEqual("Rap", stats_import._first_genre('{"genre": "Rap"}'))
+
     def test_maloja_only_play_is_kept(self):
         make_navidrome(self.nav, [{"ts": 1000, "title": "One"}])
         make_maloja(self.mal, [{"ts": 9000, "title": "Two"}])

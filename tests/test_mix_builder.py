@@ -73,6 +73,12 @@ class Base(unittest.TestCase):
 
 
 class Plumbing(unittest.TestCase):
+    def test_new_tracks_are_spaced_out_among_yours(self):
+        mixed = mb._interleave(list("AAAABBBBCCCC"), list("xyz"))
+        self.assertEqual(list("AAAABBBBCCCC"), [t for t in mixed if t.isupper()])
+        positions = [mixed.index(t) for t in "xyz"]
+        self.assertTrue(all(b - a >= 3 for a, b in zip(positions, positions[1:])))
+
     def test_generated_ids_are_their_own_kind(self):
         for pid in ("auto-daily-1", "auto-blend-4", "auto-discover", "auto-trial"):
             self.assertEqual(playlist_kind(pid), "auto", pid)
@@ -247,6 +253,31 @@ class Downloading(Base):
 
     def test_all_failed_gives_an_empty_list(self):
         self.assertEqual(mb.download_to_trial(self.conn, "nd1", [cand(1)], 1, "m", NOW, enqueue=FakeQueue(failing=[1])), [])
+
+    def test_a_download_arriving_after_the_wait_is_not_left_behind(self):
+        late = []
+
+        def slow(kind, music_id, on_done=None, base_dir=None):
+            late.append((music_id, base_dir, on_done))
+
+        with mock.patch.object(mb, "DOWNLOAD_TIMEOUT", 0.05):
+            self.assertEqual([], mb.download_to_trial(self.conn, "nd1", [cand(1)], 1, "m", NOW, enqueue=slow))
+        music_id, base_dir, on_done = late[0]
+        path = Path(base_dir) / "late.flac"
+        path.write_bytes(b"audio")
+        on_done(mock.Mock(music_id=music_id), {"path": str(path)}, None)
+        self.assertFalse(path.exists())
+
+    def test_a_file_another_track_has_is_not_taken_by_a_second_one(self):
+        def same_name(kind, music_id, on_done=None, base_dir=None):
+            path = Path(base_dir) / "Artist - Song.flac"
+            path.write_bytes(b"audio")
+            on_done(mock.Mock(music_id=music_id), {"path": str(path)}, None)
+
+        mb.download_to_trial(self.conn, "nd1", [cand(1)], 1, "m", NOW, enqueue=same_name)
+        saved = mb.download_to_trial(self.conn, "nd1", [cand(2)], 1, "m", NOW, enqueue=same_name)
+        self.assertEqual([], saved)
+        self.assertIsNone(trial.get(self.conn, "2", "nd1"))
 
 
 class WithDownloads(Base):
@@ -443,6 +474,25 @@ class Timing(Base):
             mb.tick(NOW)
         start.assert_called_once_with("nd1", ["daily"])
 
+    def test_a_version_that_cannot_download_waits_an_hour(self):
+        self.rich_library()
+        mb.save_settings(self.conn, "nd1", {"mix_mode": "blend"})
+        with mock.patch("core.mix_builder.downloads_possible", return_value="No Deezer account"):
+            result = mb.generate("nd1", ["blend"], now=NOW)
+        self.assertIn("blend: No Deezer account", result["notes"])
+        self.assertEqual(mb.due_versions(self.conn, "nd1", NOW + 600), [])
+        self.assertEqual(mb.due_versions(self.conn, "nd1", NOW + mb.BLOCKED_RETRY), ["blend"])
+
+    def test_the_profile_tried_last_waits_behind_the_others(self):
+        self.rich_library()
+        with mock.patch("core.mix_builder.accounts", return_value=["nd1", "nd2"]):
+            for account in ("nd1", "nd2"):
+                mb.save_settings(self.conn, account, {"mix_mode": "daily"})
+            mixes_db.set_meta(self.conn, mb.key("nd1", "last_attempt"), NOW - 60)
+            with mock.patch("core.mix_builder.start_task") as start:
+                mb.tick(NOW)
+        start.assert_called_once_with("nd2", ["daily"])
+
     def test_after_the_button_new_files_are_handled_with_every_mix_off(self):
         self.entries.append({"path": "/x/1.flac", "mtime_ns": 1})
         mixes_db.set_meta(self.conn, "metadata_fix_on", True)
@@ -470,6 +520,15 @@ class Settings(Base):
         self.assertEqual((low["mix_size"], low["blend_new_percent"], low["max_trial_gb"]), (12, 1, 1))
         high = mb.save_settings(self.conn, "nd1", {"mix_size": 900, "blend_new_percent": 100})
         self.assertEqual((high["mix_size"], high["blend_new_percent"]), (100, 90))
+
+    def test_every_limit_has_a_top(self):
+        huge = mb.save_settings(self.conn, "nd1", {k: 10 ** 9 for k in mb.BOUNDS})
+        self.assertEqual({k: high for k, (_, high) in mb.BOUNDS.items()}, {k: huge[k] for k in mb.BOUNDS})
+
+    def test_infinity_is_not_a_number(self):
+        for value in (float("inf"), float("nan")):
+            with self.assertRaises((ValueError, OverflowError)):
+                mb.save_settings(self.conn, "nd1", {"max_unheard": value})
 
     def test_an_unknown_mode_is_refused(self):
         with self.assertRaises(ValueError):
@@ -572,6 +631,14 @@ class QuarantineReview(Base):
         path.write_bytes(b"a")
         trial.add_download(self.conn, "nd1", deezer_id, "Artist", title, "", path, "auto-discover", when)
         return path
+
+    def test_with_automatic_decisions_off_namesakes_stay_too(self):
+        self.add_trial()
+        mb.save_settings(self.conn, "nd1", {"trial_auto": False})
+        with mock.patch("core.trial.drop_homonyms") as drop:
+            report = mb.review_trial(self.conn, self.stats, "nd1", NOW)
+        drop.assert_not_called()
+        self.assertEqual(0, report["namesakes"])
 
     def test_trial_rules_have_defaults_and_bounds(self):
         settings = mb.load_settings(self.conn, "nd1")

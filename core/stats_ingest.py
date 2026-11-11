@@ -47,7 +47,7 @@ def _accounts() -> list:
     from core import nd_accounts
 
     try:
-        return [a["id"] for a in nd_accounts.list_accounts()]
+        return [a["id"] for a in nd_accounts.list_accounts()] or [stats_db.FIRST_ACCOUNT]
     except Exception:
         return [stats_db.FIRST_ACCOUNT]
 

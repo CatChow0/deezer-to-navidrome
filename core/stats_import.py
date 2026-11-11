@@ -146,10 +146,21 @@ def _open_copy(source: Path, folder: Path, name: str, needs: dict, label: str) -
     return conn
 
 
-def _first_genre(tags_json):
+def _json_object(text) -> dict:
+    """A JSON column of Navidrome as a dict: Go writes a nil map as null."""
     try:
-        values = (json.loads(tags_json or "{}").get("genre") or [])
+        data = json.loads(text or "{}")
     except ValueError:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _first_genre(tags_json):
+    values = _json_object(tags_json).get("genre") or []
+    if isinstance(values, str):
+        # One genre given as a string, not a list: not to be read letter by letter.
+        values = [values]
+    if not isinstance(values, list):
         return None
     for item in values:
         value = item.get("value") if isinstance(item, dict) else item
@@ -159,11 +170,8 @@ def _first_genre(tags_json):
 
 
 def _participants(participants_json, fallback):
-    try:
-        people = (json.loads(participants_json or "{}").get("artist") or [])
-        names = [p.get("name") for p in people if isinstance(p, dict)]
-    except ValueError:
-        names = []
+    people = _json_object(participants_json).get("artist") or []
+    names = [p.get("name") for p in people if isinstance(p, dict)] if isinstance(people, list) else []
     return split_artists(names) or split_artists(fallback)
 
 
@@ -450,12 +458,12 @@ def _wipe(conn) -> None:
         conn.execute(f"DELETE FROM {table}")
 
 
-def _point_play(conn, play_id, track_id, album_id, duration, listened_at) -> tuple:
-    """Gives a stored play Navidrome's details and time, so the next run finds
+def _point_play(conn, play_id, track_id, album_id, duration, listened_at, source="navidrome") -> tuple:
+    """Gives a stored play the source's details and time, so the next run finds
     it again at that exact moment. Returns (updated, merged)."""
     row = conn.execute("SELECT track_id, album_id, duration_sec, listened_at, source FROM plays WHERE id = ?", (play_id,)).fetchone()
     duration = duration or row["duration_sec"]
-    wanted = (track_id, album_id, duration, listened_at, "navidrome")
+    wanted = (track_id, album_id, duration, listened_at, source)
     if tuple(row) == wanted:
         return 0, 0
     try:
@@ -552,8 +560,9 @@ def _apply_maloja(conn, plays, stored, report, mode, navidrome_plays) -> None:
         stored.used.add(partner["id"])
         conn.execute("INSERT OR REPLACE INTO maloja_pairs(maloja_ts, partner_ts) VALUES (?, ?)", (play["ts"], partner["ts"]))
         # An earlier run may have stored it alone, before its partner was known.
+        # Maloja's timestamp is its play's key: whatever its name was then.
         for item in stored.near(play["ts"], 0):
-            if item["source"] == "maloja" and item["key"] == key:
+            if item["source"] == "maloja" and item["ts"] == play["ts"]:
                 conn.execute("DELETE FROM plays WHERE id = ?", (item["id"],))
                 stored.remove(item)
                 report["merged"] += 1
@@ -598,6 +607,22 @@ def _apply_maloja(conn, plays, stored, report, mode, navidrome_plays) -> None:
             continue  # imported by an earlier run
         track_id = upsert_track(conn, play["title"], play["artists"], duration=play["duration"], duration_source="maloja")
         album_id = upsert_album(conn, play["album"], play["album_artist"])
+        # Imported by an earlier run under another name: renamed or merged in
+        # Maloja since. The same play (Maloja keys its plays by timestamp),
+        # moved to the new track rather than counted a second time.
+        alone = next((i for i in stored.near(play["ts"], 0)
+                      if i["source"] == "maloja" and i["ts"] == play["ts"] and i["id"] not in stored.used), None)
+        if alone:
+            stored.used.add(alone["id"])
+            updated, merged = _point_play(conn, alone["id"], track_id, album_id, play["duration"], play["ts"],
+                                          source="maloja")
+            report["updated"] += updated
+            report["merged"] += merged
+            if merged:
+                stored.remove(alone)
+            else:
+                alone.update(key=key, title=play["title"])
+            continue
         if add_play(conn, track_id, album_id, play["duration"], play["ts"], "maloja"):
             row = conn.execute("SELECT id FROM plays WHERE track_id = ? AND listened_at = ?", (track_id, play["ts"])).fetchone()
             stored.add({"id": row[0], "ts": play["ts"], "key": key, "title": play["title"], "source": "maloja"})
@@ -744,8 +769,14 @@ def run_import(account, mode: str, progress=None, dry_run=False) -> dict:
 
 
 def preview_clean(account) -> dict:
-    """What Start clean would do, for its confirmation."""
-    return run_import(account, "clean", dry_run=True)
+    """What Start clean would do, for its confirmation. As one rebuild: a real
+    one started meanwhile would wait on the preview's lock, then fail."""
+    if not _running.acquire(blocking=False):
+        raise ImportRefused("A rebuild is already running.")
+    try:
+        return run_import(account, "clean", dry_run=True)
+    finally:
+        _running.release()
 
 
 def import_running() -> bool:

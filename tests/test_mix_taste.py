@@ -122,6 +122,15 @@ class Choice(Base):
         second = mix_taste.choose_seeds(seeds, recent_ids={s.id for s in first}, rng=random.Random(2))
         self.assertEqual({s.id for s in first} & {s.id for s in second}, set())
 
+    def test_too_few_seeds_for_a_new_set_bring_back_the_last_ones(self):
+        for a in range(4):
+            add_plays(self.conn, f"Artist{a}", "Song", 6, album=f"Album{a}")
+        seeds = self.seeds()
+        first = mix_taste.choose_seeds(seeds, rng=random.Random(1))
+        second = mix_taste.choose_seeds(seeds, recent_ids={s.id for s in first}, rng=random.Random(2))
+        self.assertEqual(len(first), len(second))
+        self.assertEqual(len({s.artist_key for s in second}), len(second))
+
     def test_few_artists_give_fewer_mixes_rather_than_repeats(self):
         for t in range(10):
             add_plays(self.conn, "Only", f"Song{t}", 6, album="Album")

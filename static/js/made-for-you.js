@@ -68,13 +68,13 @@ function versionsHtml(state) {
     <form class="mfy-limits" data-mfy-limits>
       <div class="mfy-limit-group">
         <h5>Refresh Rate</h5>
-        ${limitField(settings, 'daily_hours', 'Daily Mix / Daily Mix+ every (hours)')}
-        ${limitField(settings, 'discover_days', 'Discover every (days)')}
+        ${limitField(settings, 'daily_hours', 'Daily Mix / Daily Mix+ every (hours)', 1, 168)}
+        ${limitField(settings, 'discover_days', 'Discover every (days)', 1, 90)}
       </div>
       <div class="mfy-limit-group">
         <h5>Length</h5>
         ${limitField(settings, 'mix_size', 'Tracks in each Daily Mix / Daily Mix+', 12, 100)}
-        ${limitField(settings, 'discover_size', 'Tracks in Discover')}
+        ${limitField(settings, 'discover_size', 'Tracks in Discover', 1, 200)}
       </div>
       <div class="mfy-limit-group">
         <h5>New tracks percent</h5>
@@ -83,8 +83,8 @@ function versionsHtml(state) {
       </div>
       <div class="mfy-limit-group">
         <h5>Disk Limit</h5>
-        ${limitField(settings, 'max_unheard', 'Stop downloading at this many unheard tracks')}
-        ${limitField(settings, 'max_trial_gb', 'Stop downloading at this quarantine size (GB)')}
+        ${limitField(settings, 'max_unheard', 'Stop downloading at this many unheard tracks', 1, 10000)}
+        ${limitField(settings, 'max_trial_gb', 'Stop downloading at this quarantine size (GB)', 1, 10000)}
         <p class="muted">In quarantine now${state.profile?.several ? ', every profile together' : ''}: ${(usage.bytes / 1024 ** 3).toFixed(1)} GB, ${plural(usage.unheard, 'unheard track')}.</p>
         ${state.profile?.several ? '<p class="muted">The same for every profile: they share the disk.</p>' : ''}
       </div>
