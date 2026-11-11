@@ -540,3 +540,23 @@ body.has-player .save-bar {
   text-align: center;
   user-select: all;
 }
+
+.nd-share {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  margin: 8px 0;
+}
+
+.settings-tabs {
+  justify-self: start;
+  flex-wrap: wrap;
+}
+
+.set-fieldset {
+  display: contents;
+}
+
+.settings-subject {
+  max-width: 320px;
+}

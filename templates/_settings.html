@@ -4,9 +4,18 @@
     <p class="page-lead">Where your music lives, how Navidrome sees it, and how hard the scanner may work.</p>
   </div>
 
-  <h2 class="settings-group span-12">Music and downloads</h2>
+  <div class="span-12 segmented settings-tabs" aria-label="Settings" data-settings-tabs>
+    <button type="button" data-space-tab="general" aria-pressed="true">General</button>
+    <button type="button" data-space-tab="accounts" aria-pressed="false">Accounts</button>
+    <button type="button" data-space-tab="stats" aria-pressed="false">Stats and sign-in</button>
+    {% if is_admin %}<button type="button" data-space-tab="users" aria-pressed="false">Users</button>{% endif %}
+  </div>
 
-  <form method="post" action="{{ url_for('system.config_view') }}" class="span-12 set-rows" id="settings-form">
+  <h2 class="settings-group span-12" data-space="general">Music and downloads</h2>
+  {% if not is_admin %}<p class="span-12 muted" data-space="general">These settings are the server's, for every account: an Admin changes them.</p>{% endif %}
+
+  <form method="post" action="{{ url_for('system.config_view') }}" class="span-12 set-rows" id="settings-form" data-space="general">
+    <fieldset class="set-fieldset" {% if not is_admin %}disabled{% endif %}>
     <div class="set-row">
 <section class="cell set-4" aria-labelledby="sources-title">
       <div class="cell-head">
@@ -186,17 +195,24 @@
       <p>You have unsaved changes.</p>
       <button type="submit" class="btn">Save settings</button>
     </div>
+    </fieldset>
   </form>
 
-  <h2 class="settings-group span-12">Accounts and connections</h2>
+  <h2 class="settings-group span-12" data-space="accounts">Navidrome and Deezer accounts</h2>
+  {% if is_admin %}
+  <label class="form-field span-12 settings-subject" data-space="accounts">
+    <span>Accounts of</span>
+    <select data-subject><option value="">You</option></select>
+  </label>
+  {% endif %}
 
-  <div class="span-12 set-rows">
+  <div class="span-12 set-rows" data-space="accounts">
     <div class="set-row">
 <section class="cell set-12" id="navidrome-accounts" aria-labelledby="nd-accounts-title">
       <div class="cell-head">
         <div>
           <h2 class="cell-title" id="nd-accounts-title">Navidrome accounts</h2>
-          <p class="cell-sub">One per Navidrome user this app works for. The library, the downloads and the folders stay shared; each browser or phone chooses its account at the top of the page.</p>
+          <p class="cell-sub">Your profiles, one per Navidrome user. A Navidrome user belongs to one account of this app only. The library, the downloads and the folders stay shared; each browser or phone chooses its profile at the top of the page.</p>
         </div>
         <button type="button" class="btn btn--sm" data-nd-add>Add an account</button>
       </div>
@@ -211,7 +227,7 @@
       <div class="cell-head">
         <div>
           <h2 class="cell-title" id="account-title">Deezer accounts</h2>
-          <p class="cell-sub">Each Navidrome profile follows the releases and mixes of one of them, the default one unless it chose another. The one marked for the downloads fetches the files for everyone.</p>
+          <p class="cell-sub">Each profile follows the releases and mixes of one of them, the default one unless it chose another. The one marked for your downloads fetches the files you ask for. Share one to let another account of this app use it.</p>
         </div>
         <button type="button" class="btn btn--sm" data-dz-add>Add an account</button>
       </div>
@@ -219,7 +235,13 @@
         <p class="muted">Checking…</p>
       </div>
     </section>
+    </div>
+  </div>
 
+  <h2 class="settings-group span-12" data-space="stats">Listening stats and sign-in</h2>
+
+  <div class="span-12 set-rows" data-space="stats">
+    <div class="set-row">
 <section class="cell set-12" aria-labelledby="listening-title">
       <div class="cell-head">
         <div>
@@ -238,7 +260,7 @@
       <div class="cell-head">
         <div>
           <h2 class="cell-title" id="security-title">Sign-in and other apps</h2>
-          <p class="cell-sub">Your password, the API token other apps use to read the release feed, and the webhook that tells CatBoard when it changed.</p>
+          <p class="cell-sub">Your password and recovery code, your devices, the API token other apps use to read the release feed of the profiles you choose, and the webhook that tells CatBoard when it changed.</p>
         </div>
       </div>
       <div class="cell-body set-security" data-security>
@@ -268,6 +290,27 @@
     </div>
   </div>
 
+  {% if is_admin %}
+  <h2 class="settings-group span-12" data-space="users">Users</h2>
+
+  <div class="span-12 set-rows" data-space="users">
+    <div class="set-row">
+<section class="cell set-12" aria-labelledby="users-title">
+      <div class="cell-head">
+        <div>
+          <h2 class="cell-title" id="users-title">Accounts of this app</h2>
+          <p class="cell-sub">Who signs in here. An Admin manages the Standard accounts, and only the Super-Admin the Admins. The Super-Admin, made at the first start, cannot be removed.</p>
+        </div>
+        <button type="button" class="btn btn--sm" data-user-add>Add an account</button>
+      </div>
+      <div class="cell-body" data-users>
+        <p class="muted">Loading…</p>
+      </div>
+    </section>
+    </div>
+  </div>
+  {% endif %}
+
   <h2 class="settings-group span-12">Maintenance</h2>
 
   <div class="span-12 set-rows">
@@ -282,8 +325,8 @@
           <p>Indexes new and changed files only. Use this after downloads.</p>
         </div>
         <div class="cache-action">
-          <button type="button" class="btn btn--ghost btn--block" data-action="cache-refresh" data-mode="full">Rebuild from scratch</button>
-          <p>Reads every file again. Slow on large libraries.</p>
+          <button type="button" class="btn btn--ghost btn--block" data-action="cache-refresh" data-mode="full" {% if not is_admin %}disabled{% endif %}>Rebuild from scratch</button>
+          <p>Reads every file again. Slow on large libraries.{% if not is_admin %} An Admin runs it.{% endif %}</p>
         </div>
         <div class="cache-action">
           <button type="button" class="btn btn--ghost btn--block" data-action="fix-metadata">Fix missing metadata</button>
@@ -307,6 +350,33 @@
     </section>
     </div>
 
+    <div class="set-row">
+<section class="cell set-12" aria-labelledby="mine-title">
+      <div class="cell-head">
+        <div>
+          <h2 class="cell-title" id="mine-title">Clear your profiles</h2>
+          <p class="cell-sub">Only what is yours: match results and covers of the playlists only your profiles have, and your profiles' playlists (one another account also has stays for it). Each button needs a second click.</p>
+        </div>
+      </div>
+      <div class="cell-body danger-list set-columns">
+        {% for what, label, hint in [
+          ('matches', 'Clear match results', 'Your playlists show every track as not checked.'),
+          ('covers', 'Clear covers', 'Forgets the cover images of your playlists.'),
+          ('playlists', 'Remove your playlists', 'From your profiles, with their match results.'),
+        ] %}
+        <div class="danger-item">
+          <div>
+            <strong>{{ label }}</strong>
+            <p>{{ hint }}</p>
+          </div>
+          <button type="button" class="btn btn--danger btn--sm" data-profile-clear="{{ what }}">{{ label.split(' ')[0] }}</button>
+        </div>
+        {% endfor %}
+      </div>
+    </section>
+    </div>
+
+    {% if is_admin %}
     <div class="set-row">
 <section class="cell set-12 cell--danger" aria-labelledby="danger-title">
       <div class="cell-head">
@@ -338,5 +408,6 @@
       </div>
     </section>
     </div>
+    {% endif %}
   </div>
 </div>

@@ -1,9 +1,10 @@
-// Settings: the Deezer accounts. Each Navidrome profile reads its releases and
-// Deezer mixes with one of them (the default one unless it chose another); one
-// account, marked "Use for download", fetches the files for everyone. ARLs are
-// only ever sent, never read back.
+// Settings: the Deezer accounts of an account of this app: its own, and those
+// shared with it (used, never changed). Each Navidrome profile reads its
+// releases and Deezer mixes with one of them; the one marked "Use for download"
+// fetches the files this account asks for. ARLs are only ever sent, never read back.
 
 import { armed, escapeHtml, fetchJSON, on, toast } from './core.js';
+import { checks, scoped } from './subject.js';
 
 const HELP = `
   <details class="account-help">
@@ -43,11 +44,38 @@ function downloadsNote(state) {
   }
   const format = FORMAT_LABEL[downloads.format] || downloads.format || 'the best quality it allows';
   const free = downloads.premium ? '' : ' A free account only downloads MP3 128: mark a premium one with <b>Use for download</b> for FLAC.';
-  return `<p class="muted">The downloads use <b>${escapeHtml(downloads.label)}</b>, in ${escapeHtml(format)}, for every profile.${free}</p>`;
+  return `<p class="muted">Your downloads use <b>${escapeHtml(downloads.label)}</b>, in ${escapeHtml(format)}.${free}</p>`;
 }
 
-function accountRow(account, state) {
+function shareHtml(account, people) {
+  const others = people.filter(p => p.id !== account.owner);
+  if (!others.length) return '<p class="muted">There is no other account in the app to share it with.</p>';
+  return `
+    <form class="nd-form" data-dz-share-form>
+      <p class="muted">They may use it for their profiles and downloads, never see its ARL.</p>
+      <div class="nd-share">${checks('users', others.map(p => ({ id: p.id, label: p.username })), account.shared_with || [], escapeHtml)}</div>
+      <div class="button-row">
+        <button type="submit" class="btn btn--sm">Save</button>
+        <button type="button" class="btn btn--ghost btn--sm" data-dz-cancel>Cancel</button>
+      </div>
+    </form>`;
+}
+
+function accountRow(account, state, sharing, people) {
   const only = state.accounts.length === 1;
+  if (!account.mine) {
+    return `
+    <div class="nd-account" data-dz-id="${escapeHtml(account.id)}">
+      <div class="nd-account-main">
+        <strong>${escapeHtml(account.label)}</strong>
+        <div class="chips"><span class="chip chip--info">Shared with you</span>
+          ${account.is_download ? '<span class="chip chip--partial">Your downloads</span>' : ''}</div>
+      </div>
+      <div class="nd-account-actions">
+        ${account.is_download ? '' : '<button type="button" class="btn btn--ghost btn--sm" data-dz-download>Use for download</button>'}
+      </div>
+    </div>`;
+  }
   // Until a first check, Deezer has not said what the account is: no plan badge.
   let status = account.checked_at ? planBadge(account) : '';
   if (account.error) status = `<span class="chip chip--miss" title="${escapeHtml(account.error)}">Cannot sign in</span>`;
@@ -63,14 +91,17 @@ function accountRow(account, state) {
         ${who ? `<span class="muted">${who}</span>` : ''}
         <div class="chips">
           ${account.is_default ? '<span class="chip chip--ok">Default</span>' : ''}
-          ${account.is_download ? '<span class="chip chip--partial" title="It fetches the files for every profile">Downloads</span>' : ''}
+          ${account.is_download ? '<span class="chip chip--partial" title="It fetches the files you download">Your downloads</span>' : ''}
+          ${(account.shared_with || []).length ? `<span class="chip">Shared with ${account.shared_with.length}</span>` : ''}
           ${status}
         </div>
         ${env}${error}
+        ${sharing ? shareHtml(account, people) : ''}
       </div>
       <div class="nd-account-actions">
         <button type="button" class="btn btn--ghost btn--sm" data-dz-check>Check</button>
         <button type="button" class="btn btn--ghost btn--sm" data-dz-edit>Edit</button>
+        <button type="button" class="btn btn--ghost btn--sm" data-dz-share>Share</button>
         ${account.is_default ? '' : '<button type="button" class="btn btn--ghost btn--sm" data-dz-default>Make default</button>'}
         ${account.is_download ? '' : '<button type="button" class="btn btn--ghost btn--sm" data-dz-download>Use for download</button>'}
         ${only ? '' : '<button type="button" class="btn btn--danger btn--sm" data-dz-delete>Remove</button>'}
@@ -110,18 +141,20 @@ export async function initAccount() {
   const cell = root.closest('section');
   let state = null;
   let editing = null; // null: no form, '': new account, 'dz2': that account
+  let sharing = null; // the account whose sharing is shown
+  let people = [];
 
   function render() {
     const form = editing === null ? '' : formHtml(editing ? state.accounts.find(a => a.id === editing) : null);
     const list = state.accounts.length
-      ? `<div class="nd-accounts">${state.accounts.map(a => accountRow(a, state)).join('')}</div>`
+      ? `<div class="nd-accounts">${state.accounts.map(a => accountRow(a, state, sharing === a.id, people)).join('')}</div>`
       : '<p class="muted">No Deezer account yet. Add one to download, and to follow the releases and mixes of your favorite artists.</p>';
     root.innerHTML = `${list}${form}<div class="nd-footer">${downloadsNote(state)}</div>`;
     root.querySelector('[data-dz-form] input[name="label"]')?.focus();
   }
 
   async function load() {
-    const { ok, data } = await fetchJSON('/api/deezer/accounts');
+    const { ok, data } = await fetchJSON(scoped('/api/deezer/accounts'));
     if (!ok) {
       root.innerHTML = `<p class="dz-warn">${escapeHtml(data?.error || 'Could not load the Deezer accounts.')}</p>`;
       return;
@@ -131,7 +164,7 @@ export async function initAccount() {
   }
 
   async function send(url, options, message) {
-    const { ok, data } = await fetchJSON(url, options);
+    const { ok, data } = await fetchJSON(scoped(url), options);
     if (!ok) {
       toast(data?.error || 'That did not work', { tone: 'error' });
       return false;
@@ -149,7 +182,27 @@ export async function initAccount() {
   });
   on(root, 'click', '[data-dz-cancel]', () => {
     editing = null;
+    sharing = null;
     render();
+  });
+  on(root, 'click', '[data-dz-share]', async (_, button) => {
+    if (!people.length) people = (await fetchJSON('/api/users/names')).data?.users || [];
+    sharing = button.closest('[data-dz-id]').dataset.dzId;
+    render();
+  });
+  on(root, 'submit', '[data-dz-share-form]', async (event, form) => {
+    event.preventDefault();
+    const id = form.closest('[data-dz-id]').dataset.dzId;
+    const chosen = [...form.querySelectorAll('input[name="users"]:checked')].map(input => input.value);
+    if (await send(`/api/deezer/accounts/${encodeURIComponent(id)}/share`, { method: 'PUT', json: { users: chosen } }, 'Sharing saved')) {
+      sharing = null;
+      render();
+    }
+  });
+  document.addEventListener('d2n:subject', () => {
+    editing = null;
+    sharing = null;
+    load();
   });
   on(root, 'click', '[data-dz-edit]', (_, button) => {
     editing = button.closest('[data-dz-id]').dataset.dzId;

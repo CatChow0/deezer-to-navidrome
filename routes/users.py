@@ -41,6 +41,12 @@ def list_route():
     return jsonify(_state())
 
 
+@users_bp.get("/api/users/names")
+def names_route():
+    """Every account's id and username, to share a Deezer account with: no more."""
+    return jsonify({"ok": True, "users": [{"id": u["id"], "username": u["username"]} for u in users.list_users()]})
+
+
 @users_bp.post("/api/users")
 @admin_only
 def create_route():

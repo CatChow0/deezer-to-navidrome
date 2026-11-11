@@ -3,6 +3,7 @@ from routes import users as web
 from routes.api_v1 import expose
 
 expose("/users", web.list_route, name="users")
+expose("/users/names", web.names_route, name="user_names")
 expose("/users", web.create_route, ("POST",), name="user_create")
 expose("/users/<user_id>", web.update_route, ("PATCH",), name="user_update")
 expose("/users/<user_id>", web.delete_route, ("DELETE",), name="user_delete")

@@ -1,8 +1,10 @@
-// Settings: password, the devices signed in through the API (the Android app),
-// the API token other apps (CatBoard) use, and the webhook URL CatBoard gives,
-// called when the release feed or the library index changed.
+// Settings: password and recovery code, the devices signed in through the API
+// (the Android app), the API token other apps (CatBoard) use with the profiles
+// it reads, and the webhook URL CatBoard gives, called when the release feed
+// or the library index changed. All of them are the signed-in account's own.
 
 import { armed, escapeHtml, fetchJSON, on, toast } from './core.js';
+import { checks } from './subject.js';
 
 const dateFormat = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' });
 const when = seconds => (seconds ? dateFormat.format(new Date(seconds * 1000)) : 'never');
@@ -24,6 +26,29 @@ function passwordBlock(status) {
         <input type="password" name="new" autocomplete="new-password" minlength="8" required>
       </label>
       <div class="button-row"><button type="submit" class="btn btn--sm">Change the password</button></div>
+    </form>
+  `;
+}
+
+function recoveryBlock() {
+  return `
+    <div class="security-block">
+      <h3>Recovery code</h3>
+      <p class="muted">With it, you choose a new password on the sign-in page if you forget yours. A new one stops the old one; it is shown only once.</p>
+      <div class="button-row"><button type="button" class="btn btn--ghost btn--sm" data-recovery-new>Make a new recovery code</button></div>
+      <p class="login-code" data-recovery-code hidden><code></code></p>
+    </div>
+  `;
+}
+
+function catboardBlock(status) {
+  if (status.profiles.length < 2) return '';
+  return `
+    <form class="security-block" data-catboard-form>
+      <h3>Profiles CatBoard reads</h3>
+      <p class="muted">The API token and the webhook are about the releases of these profiles, as one feed.</p>
+      <div class="nd-share">${checks('profiles', status.profiles, status.catboard_profiles, escapeHtml)}</div>
+      <div class="button-row"><button type="submit" class="btn btn--sm">Save</button></div>
     </form>
   `;
 }
@@ -87,7 +112,8 @@ function render(host, status, devices) {
     host.innerHTML = '<p class="muted">Sign-in is turned off (DISABLE_AUTH). Other apps can read the release feed without a token.</p>';
     return;
   }
-  host.innerHTML = passwordBlock(status) + devicesBlock(devices) + tokenBlock(status) + webhookBlock(status);
+  host.innerHTML = passwordBlock(status) + (status.account_from_env ? '' : recoveryBlock()) + devicesBlock(devices)
+    + tokenBlock(status) + catboardBlock(status) + webhookBlock(status);
 }
 
 async function load(host) {
@@ -117,7 +143,23 @@ export async function initSecurity() {
       if (!ok) return toast(data?.error || 'Not saved', { tone: 'error' });
       toast(url ? 'Webhook saved' : 'Webhook removed', { tone: 'ok' });
       await load(host);
+    } else if (form.matches('[data-catboard-form]')) {
+      const profiles = [...form.querySelectorAll('input[name="profiles"]:checked')].map(input => input.value);
+      const { ok, data } = await fetchJSON('/api/auth/catboard', { method: 'PUT', json: { profiles } });
+      if (!ok) return toast(data?.error || 'Not saved', { tone: 'error' });
+      toast('CatBoard reads these profiles', { tone: 'ok' });
+      await load(host);
     }
+  });
+
+  on(host, 'click', '[data-recovery-new]', async (_, button) => {
+    if (!armed(button, 'Click again: the old code stops working')) return;
+    const { ok, data } = await fetchJSON('/api/auth/recovery', { method: 'POST' });
+    if (!ok) return toast(data?.error || 'No new code', { tone: 'error' });
+    const out = host.querySelector('[data-recovery-code]');
+    out.querySelector('code').textContent = data.code;
+    out.hidden = false;
+    toast('Write this code down: it is shown only now', { tone: 'ok' });
   });
 
   on(host, 'click', '[data-token-reveal]', (_, button) => {

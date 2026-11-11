@@ -281,6 +281,11 @@ paths:
         "200": {$ref: "#/components/responses/Object"}
         "400": {$ref: "#/components/responses/Error"}
         "403": {$ref: "#/components/responses/Error"}
+  /api/v1/users/names:
+    get:
+      summary: Every account's id and username, to share a Deezer account with
+      responses:
+        "200": {$ref: "#/components/responses/Object"}
   /api/v1/users/{user_id}:
     patch:
       summary: Its username and its privilege (body username, role), as core/users.can allows

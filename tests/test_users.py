@@ -164,6 +164,17 @@ class Pages(Base):
         self.assertEqual(403, self.client.post("/api/mixes/settings", json={"max_trial_gb": 99}).status_code)
         self.assertEqual(403, self.client.get("/api/users").status_code)
 
+    def test_settings_show_a_standard_only_its_spaces(self):
+        self.sign_in("alice")
+        page = self.client.get("/config").get_data(as_text=True)
+        self.assertNotIn('data-space-tab="users"', page)
+        self.assertIn('class="set-fieldset" disabled', page)
+        self.assertNotIn("danger-title", page)
+        self.sign_in("admin")
+        page = self.client.get("/config").get_data(as_text=True)
+        self.assertIn('data-space-tab="users"', page)
+        self.assertNotIn('class="set-fieldset" disabled', page)
+
     def test_each_one_sees_and_picks_only_their_profiles(self):
         self.sign_in("alice")
         listed = self.client.get("/api/navidrome/accounts").get_json()["accounts"]
