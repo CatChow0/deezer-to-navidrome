@@ -98,9 +98,9 @@ class LivePlays(Base):
                                            headers={"Authorization": f"Token {token}"})
 
     def test_the_token_says_whose_play_it_is(self):
-        config.save_secret("scrobble_token", "alice-token-123")
+        config.save_secret("scrobble_token", "alice-token-12345")
         stats_ingest.set_scrobble_token("nd2", "bob-token-456")
-        self.assertEqual(self.post("alice-token-123", listen(1, "Alice song")).status_code, 200)
+        self.assertEqual(self.post("alice-token-12345", listen(1, "Alice song")).status_code, 200)
         self.assertEqual(self.post("bob-token-456", listen(2, "Bob song")).status_code, 200)
         self.assertEqual(self.post("nobody-789", listen(3, "Nobody")).status_code, 401)
         self.assertEqual(titles("nd1"), ["Alice song"])
@@ -109,10 +109,10 @@ class LivePlays(Base):
         self.assertEqual(check.get_json()["user_name"], "bob")
 
     def test_two_accounts_cannot_share_a_token(self):
-        config.save_secret("scrobble_token", "alice-token-123")
+        config.save_secret("scrobble_token", "alice-token-12345")
         with self.assertRaises(stats_ingest.TokenTaken):
-            stats_ingest.set_scrobble_token("nd2", "alice-token-123")
-        stats_ingest.set_scrobble_token("nd1", "alice-token-123")
+            stats_ingest.set_scrobble_token("nd2", "alice-token-12345")
+        stats_ingest.set_scrobble_token("nd1", "alice-token-12345")
 
     def test_the_environment_can_set_each_token(self):
         with mock.patch.dict(os.environ, {"SCROBBLE_TOKEN_ND2": "bob-from-env-1"}):
@@ -252,7 +252,7 @@ class Routes(Base):
         self.assertEqual([c.args[0] for c in cover.call_args_list], ["nd1", "nd2", "nd2"])
 
     def test_status_and_token_are_the_profiles(self):
-        config.save_secret("scrobble_token", "alice-token-123")
+        config.save_secret("scrobble_token", "alice-token-12345")
         self.client.post("/api/navidrome/active", json={"id": "nd2"})
         status = self.client.get("/api/stats/status").get_json()
         self.assertEqual((status["account"]["id"], status["account"]["username"], status["token"]), ("nd2", "bob", ""))
@@ -261,12 +261,12 @@ class Routes(Base):
         self.assertFalse(status["sources"]["maloja"]["used"])
         made = self.client.post("/api/stats/token", json={}).get_json()["token"]
         self.assertEqual(config.load_secret("scrobble_token_nd2"), made)
-        self.assertEqual(config.load_secret("scrobble_token"), "alice-token-123")
-        taken = self.client.post("/api/stats/token", json={"token": "alice-token-123"})
+        self.assertEqual(config.load_secret("scrobble_token"), "alice-token-12345")
+        taken = self.client.post("/api/stats/token", json={"token": "alice-token-12345"})
         self.assertEqual(taken.status_code, 409)
         self.assertEqual(self.client.delete("/api/stats/token").status_code, 200)
         self.assertEqual(config.load_secret("scrobble_token_nd2"), "")
-        self.assertEqual(config.load_secret("scrobble_token"), "alice-token-123")
+        self.assertEqual(config.load_secret("scrobble_token"), "alice-token-12345")
 
 
 class Shared(Base):

@@ -1,5 +1,5 @@
 """Signing in from a device, and the devices signed in."""
-from flask import g, request
+from flask import g, request, session
 
 from core import auth, devices
 from routes import auth as sign_in
@@ -34,19 +34,14 @@ def auth_login():
     if not auth.account_exists():
         return error("setup_needed", "This server has no account yet: create it first.", 409)
     data = body()
-    name = str(data.get("username") or "").strip()
-    keys = [f"user:{name.lower()}", f"ip:{request.remote_addr}"]
-    wait = max(auth.limiter.retry_after(k) for k in keys)
+    signed_in, wait = auth.attempt_login(str(data.get("username") or ""), str(data.get("password") or ""),
+                                         request.remote_addr)
     if wait:
         response = error("too_many_attempts", f"Too many attempts, try again in {wait} s.", 429, retry_after=wait)
         response.headers["Retry-After"] = str(wait)
         return response
-    if not auth.check_credentials(name, str(data.get("password") or "")):
-        for k in keys:
-            auth.limiter.failure(k)
+    if not signed_in:
         return error("wrong_credentials", "Wrong username or password.", 401)
-    for k in keys:
-        auth.limiter.success(k)
     return _signed_in(data)
 
 
@@ -70,11 +65,15 @@ def auth_setup():
 @api_v1_bp.post("/auth/logout")
 @replaces(sign_in.logout)
 def auth_logout():
-    """Signs this device out: its token stops working."""
+    """Signs this device out: its token stops working. Signed in with the web
+    session instead, that session ends."""
     device = getattr(g, "device", None)
     if device:
         devices.revoke(device["id"])
-    return ok({"signed_out": bool(device)})
+        return ok({"signed_out": True})
+    signed_out = bool(session.get("user"))
+    session.clear()
+    return ok({"signed_out": signed_out})
 
 
 @api_v1_bp.get("/devices")

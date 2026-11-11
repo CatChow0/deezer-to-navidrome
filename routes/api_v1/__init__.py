@@ -84,7 +84,7 @@ def media(value):
     return value
 
 
-def translate(response):
+def translate(response, cache=True):
     """A web route's answer in this API's format. Files, pictures, audio and
     streams pass as they are."""
     response = current_app.make_response(response)
@@ -105,7 +105,7 @@ def translate(response):
         data = {key: item for key, item in data.items() if key != "ok"}
     elif isinstance(data, list):
         data = {"items": data}
-    return ok(media(data), status=status, cache=request.method == "GET" and status == 200)
+    return ok(media(data), status=status, cache=cache and request.method == "GET" and status == 200)
 
 
 def _answer_of_its_blueprint(view, e):
@@ -119,8 +119,10 @@ def _answer_of_its_blueprint(view, e):
     return None
 
 
-def expose(rule, view, methods=("GET",), name=None):
-    """A web route's function under this prefix, in this API's format."""
+def expose(rule, view, methods=("GET",), name=None, cache=True):
+    """A web route's function under this prefix, in this API's format.
+    `cache=False` for an answer holding a secret (a token): no client may keep
+    it on disk."""
     def handler(**kwargs):
         try:
             answer = view(**kwargs)
@@ -128,7 +130,7 @@ def expose(rule, view, methods=("GET",), name=None):
             answer = _answer_of_its_blueprint(view, e)
             if answer is None:
                 raise
-        return translate(answer)
+        return translate(answer, cache=cache)
 
     endpoint = name or f"{view.__module__.rsplit('.', 1)[-1]}_{view.__name__}"
     handler.__name__ = endpoint

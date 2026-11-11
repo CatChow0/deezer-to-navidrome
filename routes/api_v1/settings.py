@@ -52,7 +52,7 @@ def settings_clear(what):
     return ok({"cleared": what, "message": system.clear(what)})
 
 
-expose("/settings/security", sign_in.status_route, name="settings_security")
+expose("/settings/security", sign_in.status_route, name="settings_security", cache=False)
 expose("/settings/password", sign_in.password_route, ("POST",), name="settings_password")
 expose("/settings/api-token", sign_in.token_route, ("POST",), name="settings_api_token")
 expose("/settings/webhook", sign_in.webhook_route, ("PUT", "DELETE"), name="settings_webhook")

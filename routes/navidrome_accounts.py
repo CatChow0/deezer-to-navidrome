@@ -125,7 +125,10 @@ def test_unsaved():
         creds["url"] = nd_accounts.clean_url(body.get("url"))
         if not creds["secret"] and body.get("id"):
             saved = nd_accounts.credentials(body["id"])
-            if saved["auth_type"] == creds["auth_type"]:
+            # The saved password only goes to the server and user it belongs to:
+            # never to an address typed in the form.
+            if saved["auth_type"] == creds["auth_type"] and nd_accounts.same_server(creds["url"], saved["url"]) \
+                    and creds["username"].lower() == saved["username"].lower():
                 creds["secret"] = saved["secret"]
     except nd_accounts.AccountError as e:
         return _error(e)

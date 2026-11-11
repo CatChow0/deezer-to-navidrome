@@ -62,6 +62,21 @@ class Client(unittest.TestCase):
         self.client().ping()
         self.assertEqual([r["method"] for r in self.server.requests[-2:]], ["POST", "GET"])
 
+    def test_an_api_key_never_goes_in_the_url(self):
+        self.server.accept_post = False
+        with self.assertRaises(subsonic.SubsonicError):
+            self.client(secret="KEY-SENTINEL-777", auth="apikey").ping()
+        self.assertEqual(["POST"], [r["method"] for r in self.server.requests])
+
+    def test_covers_also_work_without_form_post(self):
+        self.server.add_song("s1", "One", "A")
+        self.server.accept_post = False
+        try:
+            self.client().binary("getCoverArt", id="s1")
+        except subsonic.SubsonicError:
+            pass
+        self.assertEqual(["POST", "GET"], [r["method"] for r in self.server.requests[-2:]])
+
     def test_lists_go_as_repeated_parameters(self):
         self.server.add_song("s1", "One", "A")
         self.server.add_song("s2", "Two", "A")

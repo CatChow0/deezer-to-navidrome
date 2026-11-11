@@ -16,7 +16,7 @@ import threading
 import time
 from pathlib import Path
 
-from core import config, crypto
+from core import config, crypto, files
 
 ENV_MAIN = "DEEZER_ARL"
 ENV_DOWNLOAD = "DEEZER_ARL_PREMIUM"
@@ -53,15 +53,7 @@ def _read() -> dict:
 
 
 def _write(data: dict) -> None:
-    path = _path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    partial = path.with_name(f".{path.name}.part")
-    partial.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
-    try:
-        partial.chmod(0o600)
-    except OSError:
-        pass
-    os.replace(partial, path)
+    files.write_json(_path(), data, private=True)
 
 
 def _label(value, fallback) -> str:

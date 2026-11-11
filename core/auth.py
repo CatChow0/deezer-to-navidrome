@@ -51,14 +51,29 @@ def account_exists():
     return account_from_env() or bool(load_secret("app_username") and load_secret("app_password_hash"))
 
 
+_dummy_hash = []
+
+
+def _same(a: str, b: str) -> bool:
+    # Bytes: compare_digest refuses str holding anything but ASCII ("Hélène").
+    return hmac.compare_digest(a.encode("utf-8"), b.encode("utf-8"))
+
+
 def check_credentials(name, password):
     if not account_exists() or not name or not password:
         return False
-    if not hmac.compare_digest(name.strip().lower(), username().lower()):
-        return False
+    name_ok = _same(name.strip().lower(), username().lower())
     if account_from_env():
-        return hmac.compare_digest(password.encode(), os.environ["APP_PASSWORD"].encode())
-    return check_password_hash(load_secret("app_password_hash"), password)
+        return _same(password, os.environ["APP_PASSWORD"]) and name_ok
+    stored = load_secret("app_password_hash")
+    if not name_ok or not stored:
+        # The same work as a real check, so the time taken does not tell
+        # whether the username was right.
+        if not _dummy_hash:
+            _dummy_hash.append(generate_password_hash(secrets.token_hex(16)))
+        check_password_hash(_dummy_hash[0], password)
+        return False
+    return check_password_hash(stored, password)
 
 
 def set_account(name, password):
@@ -103,6 +118,8 @@ def token_ok(header, method, path):
 class LoginLimiter:
     """After 5 failures in 15 min a key waits 30 s, doubling up to 15 min."""
 
+    MAX_KEYS = 5000
+
     def __init__(self, max_failures=5, window=900, base_block=30, max_block=900):
         self.max_failures, self.window, self.base_block, self.max_block = max_failures, window, base_block, max_block
         self._entries = {}
@@ -126,9 +143,13 @@ class LoginLimiter:
                 entry["blocked_until"] = now + min(self.max_block, self.base_block * 2 ** entry["blocks"])
                 entry["blocks"] += 1
             self._entries[key] = entry
-            # forget old entries now and then
+            # forget old entries now and then, and never keep more than MAX_KEYS
             if len(self._entries) > 1000:
-                self._entries = {k: v for k, v in self._entries.items() if now - v["first"] < self.window}
+                self._entries = {k: v for k, v in self._entries.items()
+                                 if now - v["first"] < self.window or v.get("blocked_until", 0) > now}
+            if len(self._entries) > self.MAX_KEYS:
+                newest = sorted(self._entries.items(), key=lambda kv: kv[1]["first"])[-self.MAX_KEYS:]
+                self._entries = dict(newest)
 
     def success(self, key):
         with self._lock:
@@ -136,3 +157,26 @@ class LoginLimiter:
 
 
 limiter = LoginLimiter()
+# Every address at once, on one username: far more attempts allowed, so that
+# someone guessing from the internet cannot lock the owner out with a few tries.
+user_limiter = LoginLimiter(max_failures=50)
+
+
+def attempt_login(name, password, ip):
+    """(ok, wait): a sign-in checked against the limits. wait > 0: refused
+    without checking, try again in that many seconds."""
+    name = (name or "").strip()[:256]
+    pair = [f"ip:{ip}", f"user-ip:{name.lower()}|{ip}"]
+    user_key = f"user:{name.lower()}"
+    wait = max([limiter.retry_after(k) for k in pair] + [user_limiter.retry_after(user_key)])
+    if wait:
+        return False, wait
+    if check_credentials(name, password or ""):
+        for key in pair:
+            limiter.success(key)
+        user_limiter.success(user_key)
+        return True, 0
+    for key in pair:
+        limiter.failure(key)
+    user_limiter.failure(user_key)
+    return False, 0
