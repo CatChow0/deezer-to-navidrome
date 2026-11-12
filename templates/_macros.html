@@ -20,6 +20,7 @@
     <span class="placeholder" aria-hidden="true">{{ playlist.title[:1] }}</span>
     {% endif %}
     {% if playlist.kind == 'xp' %}<span class="tile-source">{{ {'spotify': 'Spotify', 'csv': 'CSV'}.get(playlist.source, 'Imported') }}</span>{% endif %}
+    {% if playlist.kind == 'mix' %}<span class="tile-source">Mix</span>{% endif %}
     <span class="chips" data-tile-chips></span>
   </span>
   <span class="tile-title">{{ playlist.title }}</span>

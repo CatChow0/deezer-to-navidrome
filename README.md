@@ -74,7 +74,7 @@ Two buttons in the topbar explain the app. **New** keeps the notes of each versi
 ### Playlists
 - **From Deezer** - Your Deezer account's playlists, private ones too: Loved tracks, those you made and your favorites, in one click; any public Deezer playlist by link or ID
 - **Spotify and CSV import** - Paste a Spotify link or import a CSV; each track is matched to Deezer, with **Find on Deezer** to pick it by hand
-- **Mixes** - Follow your Flow and the "made for you" mixes, or add the playlists Deezer recommends
+- **Mixes** - Follow your Flow and the "made for you" mixes from **From Deezer**, or add the playlists Deezer recommends; they sit with your playlists, marked **Mix**
 - **Match breakdown** - Each track is shown as *In library*, *Missing* or *Not checked*, with filters
 - **Quick scan / Full scan** - Re-check only what is missing, or everything
 - **Manual matching** - **Fix** a track: search your library and pick the right file, or mark it as not in your library
@@ -940,7 +940,7 @@ Open **Settings**, check the music folders and the Navidrome paths, make sure th
 
 #### 3. Add playlists
 
-On the Dashboard, **Playlists → From Deezer** lists the playlists of the profile's Deezer account (**Your playlists**: Loved tracks, those you made and your favorites, private ones too), the mixes Deezer makes for it (**Mixes**) and the playlists it recommends (**Recommended**): **Add** or **Follow** one. You can also paste a Spotify link or a public Deezer playlist's link or ID, or import a CSV (see [Playlists from other platforms](#other-platforms)). **Mixes → Choose mixes** opens the same panel on the mixes.
+On the Dashboard, **Playlists → From Deezer** lists the playlists of the profile's Deezer account (**Your playlists**: Loved tracks, those you made and your favorites, private ones too), the mixes Deezer makes for it (**Mixes**) and the playlists it recommends (**Recommended**): **Add** or **Follow** one. You can also paste a Spotify link or a public Deezer playlist's link or ID, or import a CSV (see [Playlists from other platforms](#other-platforms)). The mixes you follow sit with your playlists, marked **Mix**.
 
 #### 4. Scan
 

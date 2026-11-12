@@ -89,7 +89,6 @@ fun MadeForYouScreen(
     player: PreviewPlayer,
     onSettings: () -> Unit,
     onOpenPlaylist: (String) -> Unit,
-    onDeezerMixes: () -> Unit,
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
     val playlists by vm.playlists.collectAsStateWithLifecycle()
@@ -189,21 +188,6 @@ fun MadeForYouScreen(
                     )
                 }
             }
-
-            val followed = playlists.filter { it.kind == "mix" }
-            item(key = "deezer-head") {
-                SectionHeader(
-                    "Deezer mixes",
-                    subtitle = "Mixes Deezer makes for you. Their tracks change, and every scan picks up the current ones.",
-                    action = { D2nButton("Choose", onDeezerMixes, kind = ButtonKind.Ghost, small = true) },
-                )
-            }
-            if (followed.isEmpty()) {
-                item(key = "deezer-empty") {
-                    EmptyState("No mixes followed yet. Add a Deezer account in Settings, then choose the mixes to keep in your library.", actionLabel = "Choose mixes", onAction = onDeezerMixes)
-                }
-            }
-            items(followed, key = { "m-${it.id}" }) { tile -> PlaylistListRow(tile, onClick = { onOpenPlaylist(tile.id) }) }
         }
     }
 

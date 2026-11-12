@@ -170,7 +170,7 @@ import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
 @Serializable object MixSettingsRoute
 
-/** From Deezer, opened on a [io.github.catchow0.d2n.ui.madeforyou.DeezerTab]: from the Dashboard or Made for you. */
+/** From Deezer, opened on a [io.github.catchow0.d2n.ui.madeforyou.DeezerTab] (the Dashboard's Add a playlist). */
 @Serializable data class DeezerMixesRoute(val tab: String = "Mixes")
 
 @Serializable object StatsRoute
@@ -495,7 +495,6 @@ private fun Tabs(
                     graph.player,
                     onSettings = { inner.navigate(MixSettingsRoute) },
                     onOpenPlaylist = openPlaylist,
-                    onDeezerMixes = { inner.navigate(DeezerMixesRoute(DeezerTab.Mixes.name)) },
                 )
             }
             composable<MixSettingsRoute> { MixSettingsScreen(viewModel { MadeForYouViewModel(deps) }, onBack = back) }

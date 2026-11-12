@@ -70,13 +70,14 @@
         </div>
       </div>
       <div class="cell-body">
-        {% set regular = playlists | rejectattr('kind', 'in', ['mix', 'auto']) | list %}
+        {# The Deezer mixes followed (From Deezer → Mixes) sit with the playlists, marked Mix. #}
+        {% set regular = playlists | rejectattr('kind', 'equalto', 'auto') | list %}
         {% if regular %}
         <div class="tiles">
           {% for playlist in regular %}{{ tile(playlist) }}{% endfor %}
         </div>
         {% else %}
-        <p class="empty">No playlists yet. Pick your Deezer playlists with <b>From Deezer</b>, paste a Spotify or public Deezer link, or import a CSV.</p>
+        <p class="empty">No playlists yet. Pick your Deezer playlists and mixes with <b>From Deezer</b>, paste a Spotify or public Deezer link, or import a CSV.</p>
         {% endif %}
         {% if navidrome_playlists %}
         <div class="navidrome-own">
@@ -121,25 +122,6 @@
       </div>
     </section>
 
-    <section class="cell" aria-labelledby="mixes-title">
-      <div class="cell-head">
-        <div>
-          <h2 class="cell-title" id="mixes-title">Mixes</h2>
-          <p class="cell-sub">Mixes Deezer makes for you. Their tracks change, and every scan picks up the current ones.</p>
-        </div>
-        <button type="button" class="btn btn--ghost" data-action="choose-mixes" data-tab="mixes">Choose mixes</button>
-      </div>
-      <div class="cell-body">
-        {% set mixes = playlists | selectattr('kind', 'equalto', 'mix') | list %}
-        {% if mixes %}
-        <div class="tiles">
-          {% for playlist in mixes %}{{ tile(playlist) }}{% endfor %}
-        </div>
-        {% else %}
-        <p class="empty">No mixes followed yet. Add a Deezer account in Settings, then choose the mixes to keep in your library.</p>
-        {% endif %}
-      </div>
-    </section>
     {% endif %}
   </div>
 
