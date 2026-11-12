@@ -54,8 +54,9 @@ enum class SettingsPage(val title: String, val subtitle: String, val space: Sett
 fun SettingsHome(isAdmin: Boolean, onBack: () -> Unit, onPage: (SettingsPage) -> Unit) {
     ScreenScaffold(title = "Settings", onBack = onBack) {
         SettingsPage.entries.filter { isAdmin || !it.adminOnly }.groupBy { it.space }.forEach { (space, pages) ->
-            item(key = space.name) { SectionHeader(space.title) }
-            items(pages, key = { it.name }) { page ->
+            // A space and a page share some names (Users, Maintenance): a list's keys must differ.
+            item(key = "space-${space.name}") { SectionHeader(space.title) }
+            items(pages, key = { "page-${it.name}" }) { page ->
                 ListRow(title = page.title, subtitle = page.subtitle, onClick = { onPage(page) }, clickLabel = "Open")
             }
         }

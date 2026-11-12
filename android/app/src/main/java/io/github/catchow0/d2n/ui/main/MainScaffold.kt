@@ -50,6 +50,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavDestination.Companion.hasRoute
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
+import androidx.navigation.NavBackStackEntry
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -67,6 +68,7 @@ import io.github.catchow0.d2n.ui.activity.ActivityViewModel
 import io.github.catchow0.d2n.ui.activity.TaskScreen
 import io.github.catchow0.d2n.ui.activity.TaskViewModel
 import io.github.catchow0.d2n.ui.common.D2nViewModel
+import io.github.catchow0.d2n.ui.common.Motion
 import io.github.catchow0.d2n.ui.common.ScreenDeps
 import io.github.catchow0.d2n.ui.components.FitText
 import io.github.catchow0.d2n.ui.components.Aurora
@@ -253,6 +255,16 @@ class RunningTasksViewModel(deps: ScreenDeps) : D2nViewModel(deps) {
     }
 }
 
+/** The tab a screen is in, -1 for one over all of them (an album, Activity…). */
+private fun tabOf(entry: NavBackStackEntry): Int = TABS.indexOfFirst { tab -> entry.destination.hierarchy.any { it.hasRoute(tab.type) } }
+
+/** 1 from a tab to one further right, -1 to one further left, 0 within a tab. */
+private fun tabStep(from: NavBackStackEntry, to: NavBackStackEntry): Int {
+    val a = tabOf(from)
+    val b = tabOf(to)
+    return if (a >= 0 && b >= 0) b.compareTo(a) else 0
+}
+
 private fun NavHostController.openTab(tab: Tab, current: Tab?) {
     if (tab == current) {
         // The tab again: back to its first screen.
@@ -436,7 +448,14 @@ private fun Tabs(
     val back: () -> Unit = { inner.popBackStack() }
     val openPlaylist: (String) -> Unit = { inner.navigate(PlaylistRoute(it)) }
     val openSettings: (SettingsPage) -> Unit = { page -> inner.navigate(SettingsPageRoute(page.name)) }
-    NavHost(inner, startDestination = DashboardTab) {
+    NavHost(
+        inner,
+        startDestination = DashboardTab,
+        enterTransition = { tabStep(initialState, targetState).let { if (it != 0) Motion.slideIn(it) else Motion.popIn } },
+        exitTransition = { tabStep(initialState, targetState).let { if (it != 0) Motion.slideOut(it) else Motion.fadeAway } },
+        popEnterTransition = { tabStep(initialState, targetState).let { if (it != 0) Motion.slideIn(it) else Motion.fadeBack } },
+        popExitTransition = { tabStep(initialState, targetState).let { if (it != 0) Motion.slideOut(it) else Motion.popOut } },
+    ) {
         navigation<DashboardTab>(startDestination = DashboardRoute) {
             composable<DashboardRoute> {
                 DashboardScreen(

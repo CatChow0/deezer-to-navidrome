@@ -18,6 +18,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import io.github.catchow0.d2n.AppGraph
 import io.github.catchow0.d2n.data.StoredSession
+import io.github.catchow0.d2n.ui.common.Motion
 import io.github.catchow0.d2n.ui.main.MainScaffold
 import io.github.catchow0.d2n.ui.signin.FirstPasswordScreen
 import io.github.catchow0.d2n.ui.signin.FirstPasswordViewModel
@@ -72,7 +73,14 @@ fun Navigation(graph: AppGraph) {
     val nav = rememberNavController()
     // Why the phone is back on Sign-in, when the server signed it out.
     var notice by rememberSaveable { mutableStateOf<String?>(null) }
-    NavHost(nav, startDestination = start) {
+    NavHost(
+        nav,
+        startDestination = start,
+        enterTransition = { Motion.popIn },
+        exitTransition = { Motion.fadeAway },
+        popEnterTransition = { Motion.fadeBack },
+        popExitTransition = { Motion.popOut },
+    ) {
         composable<ServerRoute> {
             ServerScreen(viewModel { ServerViewModel({ probeServer(graph.bareClient, it) }, graph.store) }) { next ->
                 nav.goTo(
