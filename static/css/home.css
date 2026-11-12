@@ -149,6 +149,10 @@
   max-width: 460px;
 }
 
+.add-forms > .btn {
+  justify-self: start;
+}
+
 .add-form {
   display: flex;
   gap: 8px;
@@ -519,6 +523,11 @@
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
   gap: 2px 12px;
+}
+
+.pick-tabs {
+  margin-top: 14px;
+  flex-wrap: wrap;
 }
 
 .mix-picker-body {
