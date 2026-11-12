@@ -11,7 +11,7 @@ from core import account_context, deezer_accounts, users, webhook
 from routes.auth import may_manage, my_download_account, owner_only, refused, subject
 from core.config import create_task, push_task_event
 from core.deezer import follow_mix, give_to_account, load_playlists, mix_id
-from core.deezer_account import DeezerAccountError, account_status, available_mixes
+from core.deezer_account import DeezerAccountError, account_playlists, account_status, available_mixes
 from core.releases import is_stale, load_prefs, load_releases, lock_for, refresh_hours, refresh_releases, set_muted
 from core.webhook import notify
 
@@ -69,7 +69,8 @@ def _usable(view):
     """Choosing the download account: one this account may use, its own or shared with it."""
     @wraps(view)
     def guarded(account_id):
-        usable = {a["id"] for a in deezer_accounts.usable_by((subject() or {}).get("id") or "-")}
+        owner = subject()
+        usable = {a["id"] for a in deezer_accounts.usable_by(owner["id"])} if owner else set()
         return view(account_id) if account_id in usable else refused("This Deezer account is not shared with you.")
     return guarded
 
@@ -148,8 +149,12 @@ def default_account_route(account_id):
 @account_bp.post("/api/deezer/accounts/<account_id>/download")
 @_usable
 def download_account_route(account_id):
-    """The Deezer account this account of the app downloads with (its own, or one shared with it)."""
-    users.set_field(subject()["id"], "download_deezer", account_id)
+    """The Deezer account this account of the app downloads with (its own, or one shared with it).
+    With no account in the app (DISABLE_AUTH), the server's one, as before 1.20."""
+    if subject()["id"]:
+        users.set_field(subject()["id"], "download_deezer", account_id)
+    else:
+        deezer_accounts.set_download(account_id)
     state = _accounts_state()
     state["downloads"] = _download_status()
     return jsonify(state)
@@ -199,6 +204,11 @@ def mixes_route():
         mix["followed"] = mix["id"] in followed
     for playlist in found["playlists"]:
         playlist["followed"] = playlist["id"] in followed
+    # The account's own playlists; when its profile cannot be read, the mixes still show.
+    try:
+        found["yours"] = [{**p, "followed": p["id"] in followed} for p in account_playlists(deezer_account)]
+    except DeezerAccountError as e:
+        found["yours"], found["yours_error"] = [], str(e)
     return jsonify({"ok": True, **found})
 
 

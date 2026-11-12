@@ -7,6 +7,7 @@ from pathlib import Path
 from unittest import mock
 
 from core import config, deezer_account, deezer_accounts, deezer_dl, nd_accounts, releases
+from core.deezer_account import DeezerAccountError
 from core.deezer import load_playlists, save_playlists
 from tests.test_deezer_accounts import ARL, fake_login
 
@@ -137,10 +138,20 @@ class Api(unittest.TestCase):
         self.profile_with("dz2")
         found = {"mixes": [{"kind": "flow", "source_id": "chill", "title": "Chill", "subtitle": "", "group": "Flow"}],
                  "playlists": []}
-        with mock.patch("routes.account.available_mixes", return_value=found) as listed:
+        yours = [{"id": "123", "title": "Road trip", "subtitle": "", "picture": "", "tracks": 58, "group": "Created by you"}]
+        with mock.patch("routes.account.available_mixes", return_value=found) as listed, \
+                mock.patch("routes.account.account_playlists", return_value=yours) as own:
             data = self.client.get("/api/deezer/mixes").get_json()
         listed.assert_called_once_with("dz2")
+        own.assert_called_once_with("dz2")
         self.assertEqual(data["mixes"][0]["id"], "mix-dz2-flow-chill")
+        self.assertEqual([("123", False)], [(p["id"], p["followed"]) for p in data["yours"]])
+        # The profile page cannot be read: the mixes still show, and say why.
+        with mock.patch("routes.account.available_mixes", return_value=found), \
+                mock.patch("routes.account.account_playlists", side_effect=DeezerAccountError("no list")):
+            data = self.client.get("/api/deezer/mixes").get_json()
+        self.assertEqual(([], "no list"), (data["yours"], data["yours_error"]))
+        self.assertEqual(1, len(data["mixes"]))
         with mock.patch("core.deezer_account.mix_tracks", return_value=[]) as tracks:
             response = self.client.post("/api/deezer/mixes/follow", json={"kind": "flow", "source_id": "chill", "title": "Chill"})
         self.assertEqual(response.get_json()["id"], "mix-dz2-flow-chill")
