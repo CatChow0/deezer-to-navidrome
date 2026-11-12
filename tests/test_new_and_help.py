@@ -72,7 +72,7 @@ class WhatToChange(unittest.TestCase):
     def test_pending_actions_are_those_of_the_versions_not_read(self):
         from core.patch_notes import pending_actions, unread
 
-        self.assertEqual(["1.20.0", "1.19.0", "1.18.2", "1.18.1"], [r["version"] for r in unread("1.17.0")][:4])
+        self.assertEqual(["1.21.0", "1.20.0", "1.19.0", "1.18.2"], [r["version"] for r in unread("1.17.0")][:4])
         self.assertEqual({"1.20.0", "1.19.0", "1.18.0"}, {a["version"] for a in pending_actions("1.17.0")})
         self.assertEqual([], pending_actions(RELEASES[0]["version"]))
         self.assertEqual(len(RELEASES), len(unread(None)))
@@ -160,7 +160,8 @@ class Pages(unittest.TestCase):
         self.set_config({"notes_seen": config.WHATS_NEW_ID})
         page = self.page()
         panel = page[page.index('id="new-modal"'):page.index('id="help-modal"')]
-        newest = panel[panel.index(f'data-new-panel="{RELEASES[0]["version"]}"'):]
+        with_actions = next(r["version"] for r in RELEASES if r["actions"])
+        newest = panel[panel.index(f'data-new-panel="{with_actions}"'):]
         self.assertIn("To do", newest[:newest.index("note-details")])
         self.assertIn('data-copy-line="TRUSTED_PROXIES=1"', panel)
         self.assertIn("Nothing to change", panel)

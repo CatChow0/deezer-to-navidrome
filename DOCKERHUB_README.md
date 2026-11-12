@@ -2,7 +2,7 @@
 
 **Turn your Deezer playlists into Navidrome `.m3u8` playlists, match them against your local library, and download what is missing straight from Deezer.**
 
-[![Version](https://img.shields.io/badge/version-1.20.0-blue)](https://hub.docker.com/r/catchow/deezer-to-navidrome)
+[![Version](https://img.shields.io/badge/version-1.21.0-blue)](https://hub.docker.com/r/catchow/deezer-to-navidrome)
 [![Python 3.12](https://img.shields.io/badge/python-3.12-blue)](https://www.python.org/)
 [![Flask](https://img.shields.io/badge/flask-web%20app-brightgreen)](https://flask.palletsprojects.com/)
 [![GitHub](https://img.shields.io/badge/GitHub-source%20%26%20full%20docs-black)](https://github.com/CatChow0/deezer-to-navidrome)
@@ -195,7 +195,7 @@ M3U8 contains:  /deezer-dl/songs/Artist - Song.mp3   ← what Navidrome sees
 
 1. **Settings** → check music folders, Navidrome paths and the downloads folder; add your Deezer account
 2. **Rebuild from scratch** → build the library index
-3. **Add a playlist** (URL or ID) or **Choose mixes**
+3. **From Deezer**: add your Deezer playlists, or follow its mixes (a link or a CSV work too)
 4. **Full scan** → match tracks; writes `.m3u8` + `report.json` + `missing.txt`
 5. **Download missing** → then **Refresh library** and **Quick scan**
 6. *(Optional)* **Automation** → scan on a schedule and download what is missing

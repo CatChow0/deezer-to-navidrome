@@ -2,7 +2,7 @@
 
 **A self-hosted web app that turns your Deezer playlists into Navidrome `.m3u8` playlists, matches them against your local library, and downloads what is missing straight from Deezer.**
 
-[![Docker Image Version](https://img.shields.io/badge/version-1.20.0-blue)](https://hub.docker.com/r/catchow/deezer-to-navidrome)
+[![Docker Image Version](https://img.shields.io/badge/version-1.21.0-blue)](https://hub.docker.com/r/catchow/deezer-to-navidrome)
 [![Python 3.12](https://img.shields.io/badge/python-3.12-blue)](https://www.python.org/)
 [![Flask](https://img.shields.io/badge/flask-web%20app-brightgreen)](https://flask.palletsprojects.com/)
 
@@ -37,7 +37,7 @@
 
 Deezer-To-Navidrome bridges Deezer and self-hosted music servers like [Navidrome](https://www.navidrome.org/). It lets you:
 
-- **Import Deezer playlists** by ID or URL, and follow the mixes Deezer makes for you (Flow, "made for you")
+- **Import your Deezer playlists** from your account (yours, your favorites, Loved tracks, private ones too), and follow the mixes Deezer makes for you (Flow, "made for you")
 - **Import playlists from Spotify** (link or CSV export), matched to Deezer tracks
 - **Index your local library** and keep that index up to date
 - **Match tracks** against your files, and fix a wrong match by hand
@@ -72,7 +72,7 @@ The interface has four views: **Dashboard**, **Stats**, **Releases** and **Setti
 Two buttons in the topbar explain the app. **New** keeps the notes of each version, one tab each, and shows a dot after an upgrade until you open it. **Help** is a full guide with a search: how each part works, every setting, and what to do when something goes wrong, with live checks of your Deezer account and downloads folder.
 
 ### Playlists
-- **Deezer playlist import** - Add playlists by ID or URL
+- **From Deezer** - Your Deezer account's playlists, private ones too: Loved tracks, those you made and your favorites, in one click; any public Deezer playlist by link or ID
 - **Spotify and CSV import** - Paste a Spotify link or import a CSV; each track is matched to Deezer, with **Find on Deezer** to pick it by hand
 - **Mixes** - Follow your Flow and the "made for you" mixes, or add the playlists Deezer recommends
 - **Match breakdown** - Each track is shown as *In library*, *Missing* or *Not checked*, with filters
@@ -940,7 +940,7 @@ Open **Settings**, check the music folders and the Navidrome paths, make sure th
 
 #### 3. Add playlists
 
-On the Dashboard, paste a Deezer playlist URL or ID in **Playlists**, a Spotify playlist link, or import a CSV (see [Playlists from other platforms](#other-platforms)). With a connected account, **Mixes → Choose mixes** lets you follow your Flow and "made for you" mixes.
+On the Dashboard, **Playlists → From Deezer** lists the playlists of the profile's Deezer account (**Your playlists**: Loved tracks, those you made and your favorites, private ones too), the mixes Deezer makes for it (**Mixes**) and the playlists it recommends (**Recommended**): **Add** or **Follow** one. You can also paste a Spotify link or a public Deezer playlist's link or ID, or import a CSV (see [Playlists from other platforms](#other-platforms)). **Mixes → Choose mixes** opens the same panel on the mixes.
 
 #### 4. Scan
 
