@@ -94,7 +94,7 @@ data class DeezerMix(
     val followed: Boolean = false,
 )
 
-/** A playlist Deezer suggests on its home page. */
+/** A Deezer playlist: one of the account's own, or one Deezer suggests on its home page. */
 @Serializable
 data class DeezerPick(
     val id: FlexibleId = "",
@@ -103,12 +103,17 @@ data class DeezerPick(
     val picture: String = "",
     val group: String = "",
     val followed: Boolean = false,
+    val tracks: Int? = null,
 )
 
 @Serializable
 data class DeezerMixesAnswer(
     val mixes: List<DeezerMix> = emptyList(),
+    /** Recommended: the playlists of Deezer's home page. */
     val playlists: List<DeezerPick> = emptyList(),
+    /** The account's own: Loved tracks, those it made, its favorites. */
+    val yours: List<DeezerPick> = emptyList(),
+    @SerialName("yours_error") val yoursError: String? = null,
 )
 
 @Serializable

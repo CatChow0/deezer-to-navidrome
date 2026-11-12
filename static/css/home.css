@@ -142,11 +142,18 @@
   align-items: flex-start;
 }
 
+/* From Deezer and the link on one line, Import CSV and its hint under them */
 .add-forms {
   display: grid;
-  gap: 6px;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px 10px;
   flex: 1;
-  max-width: 460px;
+  max-width: 640px;
+}
+
+.add-forms .import-form {
+  grid-column: 1 / -1;
 }
 
 .add-form {
@@ -277,6 +284,7 @@
 
 @media (max-width: 560px) {
   .add-forms {
+    grid-template-columns: minmax(0, 1fr);
     max-width: none;
     flex-basis: 100%;
   }
@@ -519,6 +527,11 @@
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
   gap: 2px 12px;
+}
+
+.pick-tabs {
+  margin-top: 14px;
+  flex-wrap: wrap;
 }
 
 .mix-picker-body {

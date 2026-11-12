@@ -63,6 +63,8 @@ def download_account_of(user_id):
     chose, else the first it may use."""
     from core import deezer_accounts, users
 
+    if not user_id:
+        return deezer_accounts.download_id()  # no account in this app (DISABLE_AUTH): the server's one
     usable = [a["id"] for a in deezer_accounts.usable_by(user_id)]
     chosen = users.field(users.get(user_id), "download_deezer")
     return chosen if chosen in usable else (usable[0] if usable else None)

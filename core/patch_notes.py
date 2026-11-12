@@ -24,6 +24,13 @@ _AUTHELIA_BYPASS = [
 ]
 
 RELEASES = [
+    {"version": "1.21.0", "date": "2026-11-12", "title": "Your Deezer playlists in one click",
+     "highlights": [
+         "From Deezer lists your account's playlists: Loved tracks, yours and your favorites, private ones too.",
+         "Your playlists, Deezer's mixes and its recommendations in one panel, on the web and the phone.",
+         "Daily Mix and Daily Mix+ stay close to their seed: its artist, and those Deezer says are close.",
+     ],
+     "actions": []},
     {"version": "1.20.0", "date": "2026-11-12", "title": "Several accounts, each with its own profiles",
      "highlights": [
          "A Super-Admin, Admins and Standard accounts, each with its own profiles and Deezer accounts.",

@@ -154,14 +154,14 @@ def artist_ids(stats_conn) -> dict:
         "SELECT key, deezer_id FROM artists WHERE deezer_id IS NOT NULL AND deezer_source = 'track'")}
 
 
-def seed_pool(conn, seed, ids, now, api=_api) -> list:
+def seed_pool(conn, seed, ids, now, api=_api, related=None) -> list:
     """For an artist seed, that artist. For a track or album, its artists and the
-    ones Deezer says are close to its main artist."""
+    ones Deezer says are close to its main artist (`related`, when already read)."""
     main = ids.get(seed.artist_key)
     sources = [ids[a] for a in seed.artists if a in ids]
     if seed.kind != "artist" and main:
         try:
-            sources += [a["id"] for a in related_artists(conn, main, now, api)]
+            sources += [a["id"] for a in (related if related is not None else related_artists(conn, main, now, api))]
         except Exception as e:
             logger.warning("No related artists for %s: %s", seed.label, e)
     pool = []
@@ -171,6 +171,27 @@ def seed_pool(conn, seed, ids, now, api=_api) -> list:
         except Exception as e:
             logger.warning("No top tracks for artist %s: %s", source, e)
     return pool
+
+
+def near_artists(conn, seed, ids, now, api=_api):
+    """{artist key: closeness} around a track or album seed: its own artists 1.0,
+    those Deezer says are close to its main artist 0.7, theirs 0.4; and that first
+    circle as Deezer gives it, for seed_pool. Without Deezer, the seed's artists."""
+    near = {key: 1.0 for key in seed.artists}
+    main = ids.get(seed.artist_key)
+    if seed.kind == "artist" or not main:
+        return near, None
+    try:
+        first = related_artists(conn, main, now, api)
+        for artist in first:
+            for second in related_artists(conn, artist["id"], now, api):
+                near.setdefault(stats_db.name_key(second["name"]), 0.4)
+        for artist in first:
+            near[stats_db.name_key(artist["name"])] = max(near.get(stats_db.name_key(artist["name"]), 0), 0.7)
+        return near, first
+    except Exception as e:
+        logger.warning("No related artists for %s: %s", seed.label, e)
+        return near, None
 
 
 def habit_pool(conn, taste, ids, now, api=_api) -> list:

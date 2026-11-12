@@ -71,7 +71,8 @@ class DeezerSession:
         self.arl = arl
         self.http = http
         self.token = results.get("checkForm")
-        self.user = {"id": str(user["USER_ID"]), "name": user.get("BLOG_NAME") or ""}
+        self.user = {"id": str(user["USER_ID"]), "name": user.get("BLOG_NAME") or "",
+                     "loved": str(user.get("LOVEDTRACKS_ID") or "")}
         self.license_token = options.get("license_token")
         # The catalogue the account may download from: its subscription country.
         self.country = options.get("license_country") or results.get("COUNTRY") or ""
@@ -289,6 +290,39 @@ def available_mixes(account=None):
     return {"mixes": mixes, "playlists": playlists}
 
 
+def account_playlists(account=None):
+    """The account's own playlists, private ones too, read from its profile page:
+    Loved tracks first, then those it made, then those it added to its favorites."""
+    user = _session_for(account).user
+    results = _gw("deezer.pageProfile", {"USER_ID": user["id"], "tab": "playlists", "nb": GW_FAVORITES_LIMIT},
+                  account=account) or {}
+    tab = (results.get("TAB") or {}).get("playlists")
+    if not isinstance(tab, dict):
+        raise DeezerAccountError("the account's profile page holds no playlists list")
+    found = []
+    for p in tab.get("data") or []:
+        pid = str(p.get("PLAYLIST_ID") or "")
+        if not pid.isdigit():
+            continue
+        if pid == user.get("loved"):
+            group = "Loved tracks"
+        elif str(p.get("PARENT_USER_ID") or "") == user["id"]:
+            group = "Created by you"
+        else:
+            group = "Favorites"
+        tracks = p.get("NB_SONG")
+        found.append({
+            "id": pid,
+            "title": p.get("TITLE") or "",
+            "subtitle": "" if group != "Favorites" else (p.get("PARENT_USERNAME") or ""),
+            "picture": _cover_url(p.get("PLAYLIST_PICTURE"), p.get("PICTURE_TYPE") or "playlist", 250),
+            "tracks": int(tracks) if str(tracks or "").isdigit() else None,
+            "group": group,
+        })
+    order = {"Loved tracks": 0, "Created by you": 1, "Favorites": 2}
+    return sorted(found, key=lambda p: order[p["group"]])
+
+
 def _song_to_track(song, position):
     title = song.get("SNG_TITLE") or ""
     version = (song.get("VERSION") or "").strip()
@@ -324,7 +358,9 @@ def playlist_info(playlist_id, account=None):
     return {
         "id": str(playlist_id),
         "title": data["TITLE"],
-        "picture": _cover_url(data.get("PLAYLIST_PICTURE"), "playlist", 1000),
+        # A playlist of one's own often shows an album's cover: under /playlist/ its
+        # picture is Deezer's grey placeholder.
+        "picture": _cover_url(data.get("PLAYLIST_PICTURE"), data.get("PICTURE_TYPE") or "playlist", 1000),
         "track_count": int(count) if str(count or "").isdigit() else 0,
     }
 

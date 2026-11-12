@@ -327,14 +327,27 @@ class WithDownloads(Base):
             self.assertEqual(len(self.on_trial(rows)), 5)
             self.assertGreaterEqual(len(rows) - 5, 10)
 
-    def test_blend_replays_unheard_tracks_before_fetching_more(self):
+    def test_blend_replays_unheard_tracks_close_to_its_seed_before_fetching_more(self):
         self.set(mix_size=20, blend_new_percent=25, max_unheard=1000)
         mb.generate("nd1", ["blend"], now=NOW)
         before = len(self.queue.calls)
-        mb.generate("nd1", ["blend"], now=NOW + DAY)
+        # Deezer says the artists on trial are close to the next day's seeds.
+        on_trial = {mb._artist_key(r["artist"]): 0.7 for r in trial.active(self.conn, "nd1")}
+        near = lambda conn, seed, ids, now, api=None: ({**on_trial, **{a: 1.0 for a in seed.artists}}, [])
+        with mock.patch("core.mix_candidates.near_artists", side_effect=near):
+            mb.generate("nd1", ["blend"], now=NOW + DAY)
         self.assertEqual(len(self.queue.calls), before)
         for rows in self.blend_rows().values():
             self.assertEqual(len(self.on_trial(rows)), 5)
+
+    def test_a_track_on_trial_stays_out_of_a_mix_it_has_nothing_to_do_with(self):
+        self.set(mix_size=20, blend_new_percent=25, max_unheard=1000)
+        mb.generate("nd1", ["blend"], now=NOW)
+        first = {r["local_path"] for rows in self.blend_rows().values() for r in self.on_trial(rows)}
+        mb.generate("nd1", ["blend"], now=NOW + DAY)
+        second = {r["local_path"] for rows in self.blend_rows().values() for r in self.on_trial(rows)}
+        self.assertTrue(first and second)
+        self.assertFalse(first & second)
 
     def test_a_high_share_still_builds_mixes(self):
         self.set(mix_size=30, blend_new_percent=80, max_unheard=1000)

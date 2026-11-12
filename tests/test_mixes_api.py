@@ -265,7 +265,7 @@ class Api(unittest.TestCase):
                         {"id": "123", "title": "Mine", "picture": "x"}])
         with mock.patch("core.deezer.cache_cover", return_value=None):
             page = self.client.get("/", headers={"Accept": "text/html"}).data.decode()
-        made = page[page.index('id="mfy-section-title"'):page.index('id="mixes-title"')]
+        made = page[page.index('id="mfy-section-title"'):page.index('class="stack span-4 side"')]
         self.assertIn('data-playlist-id="auto-daily-1"', made)
         self.assertIn("Around X", made)
         self.assertNotIn('data-playlist-id="123"', made)

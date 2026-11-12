@@ -668,7 +668,7 @@ paths:
         "200": {$ref: "#/components/responses/Object"}
   /api/v1/deezer/mixes:
     get:
-      summary: The Flow and the mixes Deezer makes for the profile's Deezer account
+      summary: "The profile's Deezer account: its own playlists (yours: Loved tracks, created, favorites; yours_error when its profile cannot be read), the Flow and mixes Deezer makes for it (mixes), and the playlists it recommends (playlists)"
       parameters: [{$ref: "#/components/parameters/Profile"}]
       responses:
         "200": {$ref: "#/components/responses/Object"}

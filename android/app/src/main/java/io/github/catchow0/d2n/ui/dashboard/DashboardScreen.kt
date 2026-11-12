@@ -80,6 +80,7 @@ fun DashboardScreen(
     onOpenNavidrome: (account: String, id: String, name: String) -> Unit,
     shared: String?,
     onSharedTaken: () -> Unit,
+    onFromDeezer: () -> Unit = {},
 ) {
     val playlists by vm.playlists.collectAsStateWithLifecycle()
     val library by vm.library.collectAsStateWithLifecycle()
@@ -122,7 +123,7 @@ fun DashboardScreen(
             if (own.isEmpty()) {
                 item(key = "playlists-empty") {
                     EmptyState(
-                        "No playlists yet. Add a Deezer or Spotify playlist link, or import a CSV.",
+                        "No playlists yet. Pick your Deezer playlists, add a Spotify or public Deezer link, or import a CSV.",
                         actionLabel = "Add a playlist".takeIf { LocalOnline.current },
                         onAction = { adding = "" },
                     )
@@ -157,6 +158,10 @@ fun DashboardScreen(
                 vm.importCsv(name, bytes)
             },
             onDismiss = { adding = null },
+            onFromDeezer = {
+                adding = null
+                onFromDeezer()
+            },
         )
     }
 }
@@ -210,6 +215,7 @@ private fun AddPlaylistSheet(
     onAdd: (String) -> Unit,
     onImport: (String, ByteArray) -> Unit,
     onDismiss: () -> Unit,
+    onFromDeezer: () -> Unit,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -233,10 +239,16 @@ private fun AddPlaylistSheet(
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             Text("Add a playlist", Modifier.semantics { heading() }, style = MaterialTheme.typography.titleMedium)
+            D2nButton("From Deezer", onFromDeezer, Modifier.fillMaxWidth(), enabled = !busy)
+            Text(
+                "Your Deezer playlists, Loved tracks and favorites, private ones too. Or paste a link:",
+                style = MaterialTheme.typography.bodySmall,
+                color = D2nColors.Muted,
+            )
             D2nTextField(
                 link,
                 { link = it },
-                "Deezer or Spotify playlist link",
+                "Spotify or public Deezer playlist link",
                 placeholder = "https://www.deezer.com/playlist/…",
                 supporting = "A Deezer playlist ID works too.",
                 imeAction = ImeAction.Go,

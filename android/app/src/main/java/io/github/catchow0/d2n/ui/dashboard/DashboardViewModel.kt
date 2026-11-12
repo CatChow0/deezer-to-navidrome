@@ -17,7 +17,8 @@ import okhttp3.MultipartBody
 import okhttp3.RequestBody.Companion.toRequestBody
 
 /** Playlists that are the user's own: Made for you and Deezer's mixes have their tab. */
-fun PlaylistsAnswer.own() = playlists.filter { it.kind != "mix" && it.kind != "auto" }
+/** The playlists of the Dashboard: the Deezer mixes followed too, Made for you's apart. */
+fun PlaylistsAnswer.own() = playlists.filter { it.kind != "auto" }
 
 /** The dashboard: the profile's playlists, those made in Navidrome, and the library. */
 class DashboardViewModel(

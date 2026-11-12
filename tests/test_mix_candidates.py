@@ -116,6 +116,25 @@ class RelatedCache(Base):
         self.assertEqual(len(calls), 2)
 
 
+class NearArtists(Base):
+    def api(self, path, params=None):
+        circles = {"7": [(50, "Bad Bad Hats"), (51, "Hope Tala")], "50": [(60, "Raveena"), (51, "Hope Tala")], "51": []}
+        return {"data": [{"id": i, "name": n} for i, n in circles[path.split("/")[2]]]}
+
+    def test_the_seed_then_deezers_close_artists_then_theirs(self):
+        seed = mix_taste.Seed("track", "men i trust|show me how", "Show Me How", "men i trust", 1.0, artists={"men i trust"})
+        near, first = mc.near_artists(self.conn, seed, {"men i trust": "7"}, NOW, self.api)
+        self.assertEqual({"men i trust": 1.0, "bad bad hats": 0.7, "hope tala": 0.7, "raveena": 0.4}, near)
+        self.assertEqual(["50", "51"], [a["id"] for a in first])
+
+    def test_without_deezer_only_the_seeds_artists(self):
+        seed = mix_taste.Seed("track", "x|y", "Y", "x", 1.0, artists={"x"})
+        def failing(path, params=None):
+            raise ConnectionError("reset")
+        self.assertEqual(({"x": 1.0}, None), mc.near_artists(self.conn, seed, {"x": "7"}, NOW, failing))
+        self.assertEqual(({"x": 1.0}, None), mc.near_artists(self.conn, seed, {}, NOW, self.api))
+
+
 class Pools(Base):
     def fake_api(self, path, params=None):
         if path.endswith("/related"):

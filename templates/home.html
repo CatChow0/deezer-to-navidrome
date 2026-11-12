@@ -55,8 +55,9 @@
           <p class="cell-sub">Open a playlist to match it against your library and fetch what is missing.</p>
         </div>
         <div class="add-forms">
+          <button type="button" class="btn" data-action="choose-mixes" data-tab="yours">From Deezer</button>
           <form method="post" action="{{ url_for('playlists.add_playlist') }}" class="add-form" id="add-playlist-form">
-            <input type="text" name="playlist_input" placeholder="Deezer or Spotify playlist link" aria-label="Deezer or Spotify playlist link, or a Deezer playlist ID" required>
+            <input type="text" name="playlist_input" placeholder="Spotify or public Deezer playlist link" aria-label="Spotify or public Deezer playlist link, or a Deezer playlist ID" required>
             <button type="submit" class="btn btn--ghost">Add</button>
           </form>
           <form method="post" action="{{ url_for('playlists.import_csv_playlist') }}" enctype="multipart/form-data" class="import-form" id="import-csv-form">
@@ -69,13 +70,14 @@
         </div>
       </div>
       <div class="cell-body">
-        {% set regular = playlists | rejectattr('kind', 'in', ['mix', 'auto']) | list %}
+        {# The Deezer mixes followed (From Deezer → Mixes) sit with the playlists, marked Mix. #}
+        {% set regular = playlists | rejectattr('kind', 'equalto', 'auto') | list %}
         {% if regular %}
         <div class="tiles">
           {% for playlist in regular %}{{ tile(playlist) }}{% endfor %}
         </div>
         {% else %}
-        <p class="empty">No playlists yet. Paste a Deezer or Spotify playlist link above, or import a CSV.</p>
+        <p class="empty">No playlists yet. Pick your Deezer playlists and mixes with <b>From Deezer</b>, paste a Spotify or public Deezer link, or import a CSV.</p>
         {% endif %}
         {% if navidrome_playlists %}
         <div class="navidrome-own">
@@ -120,25 +122,6 @@
       </div>
     </section>
 
-    <section class="cell" aria-labelledby="mixes-title">
-      <div class="cell-head">
-        <div>
-          <h2 class="cell-title" id="mixes-title">Mixes</h2>
-          <p class="cell-sub">Mixes Deezer makes for you. Their tracks change, and every scan picks up the current ones.</p>
-        </div>
-        <button type="button" class="btn btn--ghost" data-action="choose-mixes">Choose mixes</button>
-      </div>
-      <div class="cell-body">
-        {% set mixes = playlists | selectattr('kind', 'equalto', 'mix') | list %}
-        {% if mixes %}
-        <div class="tiles">
-          {% for playlist in mixes %}{{ tile(playlist) }}{% endfor %}
-        </div>
-        {% else %}
-        <p class="empty">No mixes followed yet. Add a Deezer account in Settings, then choose the mixes to keep in your library.</p>
-        {% endif %}
-      </div>
-    </section>
     {% endif %}
   </div>
 
@@ -232,8 +215,9 @@
     <button type="button" class="icon-btn overlay-close" data-overlay-close aria-label="Close">×</button>
     <div class="overlay-scroll" data-overlay-content>
       <header class="modal-head">
-        <h2 class="detail-title" id="mix-picker-title">Choose mixes</h2>
-        <p class="detail-sub">Followed mixes appear on the Dashboard and are scanned like playlists.</p>
+        <h2 class="detail-title" id="mix-picker-title">From Deezer</h2>
+        <p class="detail-sub">The playlists and mixes of this profile's Deezer account, private ones too. What you add appears on the Dashboard and is scanned like any playlist.</p>
+        <div class="segmented pick-tabs" aria-label="From Deezer" data-pick-tabs></div>
       </header>
       <div class="mix-picker-body" data-mix-picker-body></div>
     </div>

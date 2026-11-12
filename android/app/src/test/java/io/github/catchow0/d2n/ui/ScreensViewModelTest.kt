@@ -101,8 +101,8 @@ class ScreensViewModelTest {
     }
 
     @Test
-    fun `the dashboard keeps Made for you and Deezer's mixes for their tab`() {
-        assertEquals(listOf("908622995", "xp-spotify-37i9dQZF1DXcBWIGoYBM5M"), playlists.own().map { it.id })
+    fun `the dashboard shows the Deezer mixes followed, Made for you stays in its tab`() {
+        assertEquals(listOf("908622995", "xp-spotify-37i9dQZF1DXcBWIGoYBM5M", "mix-flow-default"), playlists.own().map { it.id })
     }
 
     @Test
