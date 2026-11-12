@@ -568,7 +568,12 @@ body.has-player .save-bar {
 }
 
 .settings-android {
-  flex: 0 1 340px;
+  flex: 0 1 460px;
+  align-self: flex-end;
+}
+
+.settings-android .cell-body {
+  padding-top: 8px;
 }
 
 .settings-subject {

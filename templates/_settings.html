@@ -16,14 +16,17 @@
     </div>
 
     <section class="cell settings-android" id="android-app" aria-labelledby="android-title">
-      <h2 class="cell-title" id="android-title">Android app</h2>
-      <div class="cell-body android-app">
-        {% if android_app.available %}
-        <p>Version <b>{{ android_app.version }}</b> · {{ '%.1f' | format(android_app.size / 1048576) }} MB · build {{ android_app.build.commit }}</p>
-        <a class="btn btn--sm" href="{{ url_for('android.apk') }}" download title="Open this page on your phone to install it. Android asks once to allow installs from your browser.">Download the app</a>
-        {% else %}
-        <p class="muted">{{ android_app.reason }}</p>
-        {% endif %}
+      <div class="cell-head">
+        <div>
+          <h2 class="cell-title" id="android-title">Android app</h2>
+          {% if android_app.available %}
+          <p class="cell-sub">Version <b>{{ android_app.version }}</b> · {{ '%.1f' | format(android_app.size / 1048576) }} MB · build {{ android_app.build.commit }}</p>
+          {% endif %}
+        </div>
+        {% if android_app.available %}<a class="btn btn--sm" href="{{ url_for('android.apk') }}" download>Download the app</a>{% endif %}
+      </div>
+      <div class="cell-body">
+        <p class="cell-sub">{% if android_app.available %}Open this page on your phone to install it; it then updates itself from here.{% else %}{{ android_app.reason }}{% endif %}</p>
       </div>
     </section>
   </div>
