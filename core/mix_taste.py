@@ -324,7 +324,7 @@ def _is_filler(track, taste) -> bool:
     return bool(_FILLER.search(track.title)) and taste.track_plays.get(track.key, 0) < FILLER_KEEP_PLAYS
 
 
-def _suitability(track, taste, seed, seed_genres, seed_tempos):
+def _suitability(track, taste, seed, seed_genres, seed_tempos, near=None):
     """How well a track goes with a seed; None when it does not belong at all."""
     if _is_filler(track, taste):
         return None
@@ -332,8 +332,8 @@ def _suitability(track, taste, seed, seed_genres, seed_tempos):
     if seed_genres:
         genre = _genre_of(track, taste)
         if genre is None:
-            # Only the seed's own artists are trusted without a genre.
-            if track.artist_key not in seed.artists:
+            # Only the seed's own artists, and those close to it, are trusted without a genre.
+            if track.artist_key not in seed.artists and track.artist_key not in (near or {}):
                 return None
             factor *= UNKNOWN_GENRE_FACTOR
         elif genre not in seed_genres:
@@ -350,32 +350,9 @@ def _suitability(track, taste, seed, seed_genres, seed_tempos):
     return factor
 
 
-def pick_for_seed(taste, seed, owned, recent=frozenset(), size=MIX_SIZE, rng=None, minimum=MIN_MIX_SIZE) -> list:
-    """The mix around one seed. An artist mix is that artist: what you play, and
-    what you barely played. A track or album mix looks for the same genre and
-    tempo, with few tracks per artist, and an album's own artists first.
-
-    About two thirds are tracks you come back to and one third tracks you own and
-    barely played. A mix can be shorter than asked: better that than filling it
-    with tracks that do not belong. Under `minimum` it returns nothing."""
-    by_key = {track.key: track for track in owned}
-    if seed.kind == "artist":
-        candidates = [(t, 1.0) for t in owned if t.artist_key == seed.artist_key]
-        limit = lambda track: size
-    else:
-        total = sum(seed.genres.values())
-        seed_genres = {g for g, w in seed.genres.items() if w / total >= SEED_GENRE_MIN_SHARE} if total else set()
-        seed_tempos = [(by_key[k].bpm, w) for k, w in seed.tracks.items() if k in by_key]
-        candidates = []
-        for track in owned:
-            suit = _suitability(track, taste, seed, seed_genres, seed_tempos)
-            if suit is not None:
-                candidates.append((track, suit))
-        if seed.kind == "album":
-            limit = lambda track: PER_ALBUM_ARTIST if track.artist_key in seed.artists else PER_ARTIST
-        else:
-            limit = lambda track: PER_ARTIST
-
+def _orders(candidates, taste, rng):
+    """The tracks you come back to, and those you barely played, each in a
+    weighted random order."""
     familiar, fresh = [], []
     for track, suit in candidates:
         if taste.track_plays.get(track.key, 0) >= FAMILIAR_MIN_PLAYS:
@@ -383,19 +360,58 @@ def pick_for_seed(taste, seed, owned, recent=frozenset(), size=MIX_SIZE, rng=Non
             familiar.append((track, suit * (taste.track_score.get(track.key, 0) + 0.05)))
         else:
             fresh.append((track, suit * _affinity(taste.artist_score.get(track.artist_key, 0))))
-    familiar_order = _weighted_order([t for t, _ in familiar], [w for _, w in familiar], rng)
-    fresh_order = _weighted_order([t for t, _ in fresh], [w for _, w in fresh], rng)
-    not_recent = lambda order: [t for t in order if t.key not in recent]
+    return (_weighted_order([t for t, _ in familiar], [w for _, w in familiar], rng),
+            _weighted_order([t for t, _ in fresh], [w for _, w in fresh], rng))
 
+
+def pick_for_seed(taste, seed, owned, recent=frozenset(), size=MIX_SIZE, rng=None, minimum=MIN_MIX_SIZE, near=None) -> list:
+    """The mix around one seed. An artist mix is that artist: what you play, and
+    what you barely played. A track or album mix looks for the same genre and
+    tempo, with few tracks per artist, and an album's own artists first.
+
+    `near` ({artist key: closeness}, from Deezer's related artists): a track or
+    album mix takes those artists first, and genre and tempo alone only fill
+    what is left. Without it, genre and tempo decide alone.
+
+    About two thirds are tracks you come back to and one third tracks you own and
+    barely played. A mix can be shorter than asked: better that than filling it
+    with tracks that do not belong. Under `minimum` it returns nothing."""
+    by_key = {track.key: track for track in owned}
+    close, others = [], []
+    if seed.kind == "artist":
+        others = [(t, 1.0) for t in owned if t.artist_key == seed.artist_key]
+        limit = lambda track: size
+    else:
+        near = near or {}
+        total = sum(seed.genres.values())
+        seed_genres = {g for g, w in seed.genres.items() if w / total >= SEED_GENRE_MIN_SHARE} if total else set()
+        seed_tempos = [(by_key[k].bpm, w) for k, w in seed.tracks.items() if k in by_key]
+        for track in owned:
+            suit = _suitability(track, taste, seed, seed_genres, seed_tempos, near)
+            if suit is None:
+                continue
+            if track.artist_key in near:
+                close.append((track, suit * near[track.artist_key]))
+            else:
+                others.append((track, suit))
+        if seed.kind == "album":
+            limit = lambda track: PER_ALBUM_ARTIST if track.artist_key in seed.artists else PER_ARTIST
+        else:
+            limit = lambda track: PER_ARTIST
+
+    not_recent = lambda order: [t for t in order if t.key not in recent]
     mix = _Mix(limit)
     first = by_key.get(seed.key) if seed.kind == "track" else None
     if first:
         mix.add(first)
-    mix.fill(not_recent(familiar_order), round(size * FAMILIAR_SHARE) - len(mix.tracks))
-    mix.fill(not_recent(fresh_order), size - len(mix.tracks))
-    # Short of tracks: first the other kind, then what was recently proposed.
-    mix.fill(not_recent(familiar_order), size - len(mix.tracks))
-    mix.fill(familiar_order + fresh_order, size - len(mix.tracks))
+    # The artists close to the seed first; the others only fill what is left.
+    for group in (close, others):
+        familiar_order, fresh_order = _orders(group, taste, rng)
+        mix.fill(not_recent(familiar_order), round(size * FAMILIAR_SHARE) - len(mix.tracks))
+        mix.fill(not_recent(fresh_order), size - len(mix.tracks))
+        # Short of tracks: first the other kind, then what was recently proposed.
+        mix.fill(not_recent(familiar_order), size - len(mix.tracks))
+        mix.fill(familiar_order + fresh_order, size - len(mix.tracks))
     if len(mix.tracks) < minimum:
         return []
     return _spread(list(mix.tracks.values()), rng, first=first)

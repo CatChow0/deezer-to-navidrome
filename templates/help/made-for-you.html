@@ -25,7 +25,7 @@
     <p>At each refresh the app picks up to 4 seeds among what keeps coming back in your listening: at least a track, an album and an artist, never one artist twice, and not the same seed as the last time.</p>
     <table>
       <tbody>
-        <tr><td><b>Around a track</b></td><td>Tracks with a close tempo and the same genre, 2 at most per artist</td></tr>
+        <tr><td><b>Around a track</b></td><td>First the track's artist and the artists Deezer says are close to it (and theirs), then other tracks of the same genre only to fill; always a close tempo, 2 at most per artist</td></tr>
         <tr><td><b>Around an album</b></td><td>The same, with the artists on the album first, guests included</td></tr>
         <tr><td><b>All about an artist</b></td><td>That artist only: what you play, and what you barely played</td></tr>
       </tbody>
@@ -54,7 +54,7 @@
 
   <div class="doc-block">
     <h4>Quarantine</h4>
-    <p>Tracks these playlists download go to the <code>trial</code> folder inside your downloads folder, so Navidrome can play them. The <b>On trial</b> playlist has all of them, and Daily Mix+ replays unheard ones before fetching more.</p>
+    <p>Tracks these playlists download go to the <code>trial</code> folder inside your downloads folder, so Navidrome can play them. The <b>On trial</b> playlist has all of them, and Daily Mix+ replays unheard ones before fetching more, in a mix they belong to: their artist is the seed's, or close to it.</p>
     <table>
       <tbody>
         <tr><td>On trial</td><td>Just downloaded. It stays playable for 30 days by default</td></tr>
@@ -73,7 +73,7 @@
       <tbody>
         <tr><td><b>Refresh Rate</b></td><td>Daily Mix or Daily Mix+ every 24 hours, Discover every 7 days</td></tr>
         <tr><td><b>Length</b></td><td>30 tracks in each mix, and 30 in Discover</td></tr>
-        <tr><td><b>New tracks percent</b></td><td>33% of each Daily Mix+. Unheard tracks on trial take these places first, so at most 40 tracks are downloaded per refresh with 4 mixes of 30</td></tr>
+        <tr><td><b>New tracks percent</b></td><td>33% of each Daily Mix+. Unheard tracks on trial close to the mix's seed take these places first, so at most 40 tracks are downloaded per refresh with 4 mixes of 30</td></tr>
         <tr><td><b>Disk Limit</b></td><td>Downloads stop at 100 unheard tracks or 20 GB in quarantine, and Activity says so. These two count every profile together, as they share the disk</td></tr>
       </tbody>
     </table>

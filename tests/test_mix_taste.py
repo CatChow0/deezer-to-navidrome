@@ -197,6 +197,22 @@ class TrackMix(Base):
         picks = self.pick(owned(("Men I Trust", "Show Me How", 100, "Pop"), *self.similar()))
         self.assertEqual(picks[0].title, "Show Me How")
 
+    def test_artists_close_to_the_seed_come_before_favorites_of_the_same_genre(self):
+        for i in range(20):
+            add_plays(self.conn, f"Favorite{i}", "Hit", 10, genre="Pop")
+        library = owned(("Men I Trust", "Show Me How", 100, "Pop"), *[(f"Favorite{i}", "Hit", 100, "Pop") for i in range(20)],
+                        *[(f"Near{i // 2}", f"Song{i}", 100, "Pop") for i in range(6)])
+        near = {stats_db.name_key(f"Near{i}"): 0.7 for i in range(3)}
+        picks = self.pick(library, size=12, near=near)
+        self.assertEqual(6, len([p for p in picks if p.artist.startswith("Near")]))
+        # Too few close tracks: the others fill the mix, as before.
+        self.assertEqual(12, len(picks))
+
+    def test_without_close_artists_the_mix_is_as_before(self):
+        library = owned(("Men I Trust", "Show Me How", 100, "Pop"), *self.similar())
+        before = [p.key for p in self.pick(library)]
+        self.assertEqual(before, [p.key for p in self.pick(library, near={})])
+
     def test_only_close_tempo(self):
         library = owned(("Men I Trust", "Show Me How", 100, "Pop"), *self.similar(),
                         *[(f"Fast{i}", "Song", 134, "Pop") for i in range(40)])

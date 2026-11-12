@@ -335,6 +335,11 @@ def _interleave(base, extra) -> list:
     return result
 
 
+def _artist_key(artist) -> str:
+    names = stats_db.split_artists(artist or "")
+    return stats_db.name_key(names[0]) if names else ""
+
+
 def _trial_track(row) -> dict:
     return {"deezer_id": row["deezer_id"], "artist": row["artist"], "title": row["title"],
             "album": row["album"], "path": row["path"]}
@@ -360,6 +365,7 @@ class _Run:
         self.downloaded = 0
         self.emit = lambda message: None
         self.ids = mix_candidates.artist_ids(stats_conn)
+        self._near = {}
 
     def exclusions(self, **kw):
         # Not proposed again: what this profile already had in its quarantine, and
@@ -391,6 +397,12 @@ class _Run:
             return 0
         return min(wanted, room)
 
+    def near(self, seed):
+        """The artists close to this seed, and Deezer's first circle of them, read once per run."""
+        if seed.id not in self._near:
+            self._near[seed.id] = mix_candidates.near_artists(self.conn, seed, self.ids, self.now)
+        return self._near[seed.id]
+
     def seed_tempos(self, seed):
         by_key = {t.key: t for t in self.owned}
         return [(by_key[k].bpm, w) for k, w in seed.tracks.items() if k in by_key and by_key[k].bpm]
@@ -420,7 +432,8 @@ def build_daily(run) -> list:
     recent = run.recent("daily")
     for slot, seed in enumerate(run.choose("daily"), start=1):
         run.emit(f"Daily Mix {slot}: {seed.label}")
-        picks = mix_taste.pick_for_seed(run.taste, seed, run.owned, recent=recent, size=run.settings["mix_size"], rng=run.rng)
+        picks = mix_taste.pick_for_seed(run.taste, seed, run.owned, recent=recent, size=run.settings["mix_size"], rng=run.rng,
+                                        near=run.near(seed)[0])
         if not picks:
             continue
         slot = run.playlist_id("daily", len(built) + 1)
@@ -449,17 +462,21 @@ def build_blend(run) -> list:
     for index, seed in enumerate(seeds):
         # Between mixes: every file already downloaded has been registered on trial.
         run.emit(f"Daily Mix+ {index + 1}: {seed.label}")
-        ranked = mix_taste.pick_for_seed(run.taste, seed, run.owned, recent=recent, size=size, rng=run.rng, minimum=minimum)
+        near, related = run.near(seed)
+        ranked = mix_taste.pick_for_seed(run.taste, seed, run.owned, recent=recent, size=size, rng=run.rng, minimum=minimum,
+                                         near=near)
         if not ranked:
             continue
         picks, spare = ranked[:size - new_slots], ranked[size - new_slots:]
         slot = run.playlist_id("blend", len(built) + 1)
-        trial_tracks = [_trial_track(row) for row in unheard[:new_slots]]
-        unheard = unheard[new_slots:]
+        # A track on trial comes back in a mix it belongs to: its artist is the seed's, or close to it.
+        fitting = [row for row in unheard if _artist_key(row["artist"]) in near][:new_slots]
+        trial_tracks = [_trial_track(row) for row in fitting]
+        unheard = [row for row in unheard if row not in fitting]
         share = min(budget // max(1, len(seeds) - index), new_slots - len(trial_tracks))
         new_tracks = []
         if share > 0:
-            pool = mix_candidates.seed_pool(run.conn, seed, run.ids, run.now)
+            pool = mix_candidates.seed_pool(run.conn, seed, run.ids, run.now, related=related)
             per_artist = share if seed.kind == "artist" else mix_taste.PER_ARTIST
             chosen = mix_candidates.select(pool, run.exclusions(), share, per_artist, run.rng, run.seed_tempos(seed))
             new_tracks = download_to_trial(run.conn, run.account, chosen, share, slot, run.now)
