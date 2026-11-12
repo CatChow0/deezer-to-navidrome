@@ -1,14 +1,31 @@
 <div class="bento">
-  <div class="page-head span-12">
-    <h1 class="page-title">Settings</h1>
-    <p class="page-lead">Where your music lives, how Navidrome sees it, and how hard the scanner may work.</p>
-  </div>
+  {# The title and the spaces on the left, the Android app on the right, under every space. #}
+  <div class="span-12 settings-top">
+    <div class="settings-top-main">
+      <div class="page-head">
+        <h1 class="page-title">Settings</h1>
+        <p class="page-lead">Where your music lives, how Navidrome sees it, and how hard the scanner may work.</p>
+      </div>
 
-  <div class="span-12 segmented settings-tabs" aria-label="Settings" data-settings-tabs>
-    {% if is_admin %}<button type="button" data-space-tab="general" aria-pressed="true">General</button>{% endif %}
-    <button type="button" data-space-tab="accounts" aria-pressed="{{ 'false' if is_admin else 'true' }}">Accounts</button>
-    <button type="button" data-space-tab="stats" aria-pressed="false">Stats and sign-in</button>
-    {% if is_admin %}<button type="button" data-space-tab="users" aria-pressed="false">Users</button>{% endif %}
+      <div class="segmented settings-tabs" aria-label="Settings" data-settings-tabs>
+        {% if is_admin %}<button type="button" data-space-tab="general" aria-pressed="true">General</button>{% endif %}
+        <button type="button" data-space-tab="accounts" aria-pressed="{{ 'false' if is_admin else 'true' }}">Accounts</button>
+        <button type="button" data-space-tab="stats" aria-pressed="false">Stats and sign-in</button>
+        {% if is_admin %}<button type="button" data-space-tab="users" aria-pressed="false">Users</button>{% endif %}
+      </div>
+    </div>
+
+    <section class="cell settings-android" id="android-app" aria-labelledby="android-title">
+      <h2 class="cell-title" id="android-title">Android app</h2>
+      <div class="cell-body android-app">
+        {% if android_app.available %}
+        <p>Version <b>{{ android_app.version }}</b> · {{ '%.1f' | format(android_app.size / 1048576) }} MB · build {{ android_app.build.commit }}</p>
+        <a class="btn btn--sm" href="{{ url_for('android.apk') }}" download title="Open this page on your phone to install it. Android asks once to allow installs from your browser.">Download the app</a>
+        {% else %}
+        <p class="muted">{{ android_app.reason }}</p>
+        {% endif %}
+      </div>
+    </section>
   </div>
 
   {# The server's settings, for every account: only an Admin sees and changes them. #}
@@ -269,25 +286,6 @@
     </section>
     </div>
 
-    <div class="set-row">
-<section class="cell set-12" id="android-app" aria-labelledby="android-title">
-      <div class="cell-head">
-        <div>
-          <h2 class="cell-title" id="android-title">Android app</h2>
-          <p class="cell-sub">The app for your phone, built with this version of the server. It updates itself from here.</p>
-        </div>
-      </div>
-      <div class="cell-body android-app">
-        {% if android_app.available %}
-        <p>Version <b>{{ android_app.version }}</b> · {{ '%.1f' | format(android_app.size / 1048576) }} MB · build {{ android_app.build.commit }}</p>
-        <a class="btn" href="{{ url_for('android.apk') }}" download>Download the app</a>
-        <p class="muted">Open this page on your phone to install it. Android asks once to allow installs from your browser.</p>
-        {% else %}
-        <p class="muted">{{ android_app.reason }}</p>
-        {% endif %}
-      </div>
-    </section>
-    </div>
   </div>
 
   {% if is_admin %}

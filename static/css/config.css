@@ -548,9 +548,27 @@ body.has-player .save-bar {
   margin: 8px 0;
 }
 
+.settings-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.settings-top-main {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+
 .settings-tabs {
   justify-self: start;
   flex-wrap: wrap;
+}
+
+.settings-android {
+  flex: 0 1 340px;
 }
 
 .settings-subject {
