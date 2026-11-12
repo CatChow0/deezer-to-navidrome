@@ -358,7 +358,9 @@ def playlist_info(playlist_id, account=None):
     return {
         "id": str(playlist_id),
         "title": data["TITLE"],
-        "picture": _cover_url(data.get("PLAYLIST_PICTURE"), "playlist", 1000),
+        # A playlist of one's own often shows an album's cover: under /playlist/ its
+        # picture is Deezer's grey placeholder.
+        "picture": _cover_url(data.get("PLAYLIST_PICTURE"), data.get("PICTURE_TYPE") or "playlist", 1000),
         "track_count": int(count) if str(count or "").isdigit() else 0,
     }
 

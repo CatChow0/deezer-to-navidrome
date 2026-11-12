@@ -73,6 +73,32 @@ def deezer_accounts_from_secrets() -> int:
     return made
 
 
+def playlist_covers() -> int:
+    """1.21: Deezer playlists added through the account before then may show
+    Deezer's grey placeholder (an album's cover asked as a playlist's). Their
+    picture is forgotten once, and load_playlists() asks Deezer for it again."""
+    from core.config import COVERS_DIR, DATA_DIR
+    from core.deezer import modify_playlists
+
+    done = Path(DATA_DIR) / ".playlist-covers-1.21"
+    if done.exists():
+        return 0
+    fixed = []
+
+    def change(entries):
+        for entry in entries:
+            pid = str(entry.get("id") or "")
+            if pid.isdigit() and "/images/playlist/" in str(entry.get("picture") or ""):
+                entry["picture"] = ""
+                (COVERS_DIR / f"{pid}.jpg").unlink(missing_ok=True)
+                fixed.append(pid)
+        return entries
+
+    modify_playlists(change)
+    done.write_text("Deezer playlist covers asked again once, in 1.21.", encoding="utf-8")
+    return len(fixed)
+
+
 def app_accounts() -> bool:
     """1.20: the account of older versions becomes the Super-Admin, and owns
     every Navidrome and Deezer account, the download account and the devices."""
@@ -123,6 +149,12 @@ def run() -> None:
             logger.info("%s playlists now belong to the first Navidrome account", given)
     except Exception as e:
         logger.error("Could not give the playlists to the first Navidrome account: %s", e)
+    try:
+        asked = playlist_covers()
+        if asked:
+            logger.info("%s Deezer playlists will ask Deezer for their cover again", asked)
+    except Exception as e:
+        logger.error("Could not check the playlists' covers: %s", e)
     try:
         if app_accounts():
             logger.info("The account of this install is now its Super-Admin")

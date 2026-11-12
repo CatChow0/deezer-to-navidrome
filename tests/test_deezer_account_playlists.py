@@ -40,5 +40,33 @@ class AccountPlaylists(unittest.TestCase):
                 deezer_account.account_playlists()
 
 
+class Covers(unittest.TestCase):
+    def test_an_albums_cover_is_asked_as_such(self):
+        page = {"DATA": {"TITLE": "Initial D", "PLAYLIST_PICTURE": "alb", "PICTURE_TYPE": "cover", "NB_SONG": 12}}
+        with mock.patch.object(deezer_account, "_gw", return_value=page):
+            self.assertIn("/images/cover/alb/1000x1000", deezer_account.playlist_info(5)["picture"])
+
+    def test_playlists_saved_with_the_placeholder_ask_again_once(self):
+        import tempfile
+        from pathlib import Path
+
+        from core import migrations
+        from core.deezer import saved_entries, save_playlists
+
+        entries = [{"id": "5", "title": "Initial D", "picture": "https://e-cdns-images.dzcdn.net/images/playlist/alb/1000x1000.jpg"},
+                   {"id": "6", "title": "Pink", "picture": "https://e-cdns-images.dzcdn.net/images/cover/x/1000x1000.jpg"}]
+        save_playlists(entries)
+        self.addCleanup(save_playlists, [])
+        with tempfile.TemporaryDirectory() as folder:
+            covers = Path(folder)
+            (covers / "5.jpg").write_bytes(b"grey")
+            with mock.patch("core.config.COVERS_DIR", covers), mock.patch("core.config.DATA_DIR", covers):
+                self.assertEqual(1, migrations.playlist_covers())
+                self.assertEqual(["", entries[1]["picture"]], [e["picture"] for e in saved_entries()])
+                self.assertFalse((covers / "5.jpg").exists())
+                save_playlists(entries)
+                self.assertEqual(0, migrations.playlist_covers())
+
+
 if __name__ == "__main__":
     unittest.main()
