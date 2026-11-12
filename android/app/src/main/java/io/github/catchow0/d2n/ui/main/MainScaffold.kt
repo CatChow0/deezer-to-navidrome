@@ -83,6 +83,7 @@ import io.github.catchow0.d2n.ui.components.ScreenScaffold
 import io.github.catchow0.d2n.ui.dashboard.DashboardScreen
 import io.github.catchow0.d2n.ui.dashboard.DashboardViewModel
 import io.github.catchow0.d2n.ui.madeforyou.DeezerMixesScreen
+import io.github.catchow0.d2n.ui.madeforyou.DeezerTab
 import io.github.catchow0.d2n.ui.madeforyou.DeezerMixesViewModel
 import io.github.catchow0.d2n.ui.madeforyou.MadeForYouScreen
 import io.github.catchow0.d2n.ui.madeforyou.MadeForYouViewModel
@@ -169,7 +170,8 @@ import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
 @Serializable object MixSettingsRoute
 
-@Serializable object DeezerMixesRoute
+/** From Deezer, opened on a [io.github.catchow0.d2n.ui.madeforyou.DeezerTab]: from the Dashboard or Made for you. */
+@Serializable data class DeezerMixesRoute(val tab: String = "Mixes")
 
 @Serializable object StatsRoute
 
@@ -465,6 +467,7 @@ private fun Tabs(
                     onOpenNavidrome = { account, id, name -> inner.navigate(NavidromePlaylistRoute(account, id, name)) },
                     shared = shared,
                     onSharedTaken = { graph.sharedLink.value = null },
+                    onFromDeezer = { inner.navigate(DeezerMixesRoute(DeezerTab.Yours.name)) },
                 )
             }
             composable<SearchRoute> {
@@ -492,11 +495,10 @@ private fun Tabs(
                     graph.player,
                     onSettings = { inner.navigate(MixSettingsRoute) },
                     onOpenPlaylist = openPlaylist,
-                    onDeezerMixes = { inner.navigate(DeezerMixesRoute) },
+                    onDeezerMixes = { inner.navigate(DeezerMixesRoute(DeezerTab.Mixes.name)) },
                 )
             }
             composable<MixSettingsRoute> { MixSettingsScreen(viewModel { MadeForYouViewModel(deps) }, onBack = back) }
-            composable<DeezerMixesRoute> { DeezerMixesScreen(viewModel { DeezerMixesViewModel(deps) }, onBack = back) }
         }
         navigation<StatsTab>(startDestination = StatsRoute) {
             composable<StatsRoute> {
@@ -555,6 +557,9 @@ private fun Tabs(
                 val vm: HelpViewModel = if (help != null) viewModel(help) { HelpViewModel(deps) } else viewModel { HelpViewModel(deps) }
                 HelpSectionScreen(vm, entry.toRoute<HelpSectionRoute>().id, onBack = back)
             }
+        }
+        composable<DeezerMixesRoute> { entry ->
+            DeezerMixesScreen(viewModel { DeezerMixesViewModel(deps) }, DeezerTab.valueOf(entry.toRoute<DeezerMixesRoute>().tab), onBack = back)
         }
         composable<AlbumRoute> { entry ->
             val route = entry.toRoute<AlbumRoute>()
