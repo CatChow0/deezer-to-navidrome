@@ -5,6 +5,7 @@ from flask import Blueprint, jsonify, request
 
 from core.config import create_task, push_task_event, push_task_payload
 from core.dedup import apply_dedup_decisions, load_dedup_report, run_dedup_analysis
+from routes.auth import admin_only
 
 dedup_bp = Blueprint("dedup", __name__)
 
@@ -45,6 +46,7 @@ def dedup_report_route():
 
 
 @dedup_bp.post("/dedup/apply")
+@admin_only
 def dedup_apply_route():
     payload = request.get_json(silent=True) or {}
     decisions = payload.get("decisions", [])

@@ -25,7 +25,7 @@ class SignInViewModel(
     private val defaultDevice: String,
     private val ticker: suspend (Long) -> Unit = { delay(it) },
 ) : ViewModel() {
-    enum class Next { Main, Setup }
+    enum class Next { Main, Setup, FirstPassword }
 
     data class UiState(
         val username: String = "",
@@ -56,7 +56,8 @@ class SignInViewModel(
                 val signed = apiCall { api().login(Credentials(current.username.trim(), current.password, device)) }
                 store.setDeviceName(device)
                 store.setToken(signed.token)
-                _state.update { it.copy(busy = false, password = "", next = Next.Main) }
+                val next = if (signed.user?.mustChange == true) Next.FirstPassword else Next.Main
+                _state.update { it.copy(busy = false, password = "", next = next) }
             } catch (e: ApiError) {
                 _state.update { it.copy(busy = false) }
                 when {

@@ -12,6 +12,9 @@ import io.github.catchow0.d2n.data.ImportRequest
 import io.github.catchow0.d2n.data.NavidromeProfileFields
 import io.github.catchow0.d2n.data.NavidromeProfilesAnswer
 import io.github.catchow0.d2n.data.PasswordRequest
+import io.github.catchow0.d2n.data.ProfilesRequest
+import io.github.catchow0.d2n.data.UserName
+import io.github.catchow0.d2n.data.UsersRequest
 import io.github.catchow0.d2n.data.SecurityAnswer
 import io.github.catchow0.d2n.data.SettingsAnswer
 import io.github.catchow0.d2n.data.SettingsChange
@@ -223,6 +226,16 @@ class DeezerAccountsViewModel(deps: ScreenDeps) : D2nViewModel(deps) {
     fun useForDownloads(id: String) = act("download-$id", { downloadDeezerProfile(id) }, done = { Notice("Downloads now use this account") }, after = ::keep)
 
     fun delete(id: String, label: String) = act("delete-$id", { deleteDeezerProfile(id) }, done = { Notice("$label removed") }, after = ::keep)
+
+    private val _people = MutableStateFlow<List<UserName>>(emptyList())
+
+    /** The accounts of this app, to share one with. */
+    val people: StateFlow<List<UserName>> = _people
+
+    fun loadPeople() = act("people", { userNames() }, after = { _people.value = it.users })
+
+    fun share(id: String, users: List<String>) =
+        act("share-$id", { shareDeezerProfile(id, UsersRequest(users)) }, done = { Notice("Sharing saved") }, after = { keep(it); _formDone.update { n -> n + 1 } })
 }
 
 /** How Navidrome sends this app the profile's plays, and rebuilding the history. */
@@ -284,6 +297,11 @@ class SecurityViewModel(deps: ScreenDeps) : D2nViewModel(deps) {
     private val _passwordDone = MutableStateFlow(0)
     val passwordDone: StateFlow<Int> = _passwordDone
 
+    private val _recoveryCode = MutableStateFlow<String?>(null)
+
+    /** A new recovery code, shown once. */
+    val recoveryCode: StateFlow<String?> = _recoveryCode
+
     init {
         refresh()
     }
@@ -311,6 +329,16 @@ class SecurityViewModel(deps: ScreenDeps) : D2nViewModel(deps) {
     fun newToken() {
         act("api-token", { newApiToken() }, done = { Notice("New token created: update it in CatBoard") }, after = { answer ->
             _security.update { it.copy(value = it.value?.copy(token = answer.token)) }
+        })
+    }
+
+    fun newRecoveryCode() {
+        act("recovery", { newRecoveryCode() }, done = { Notice("Write this code down: it is shown only now") }, after = { _recoveryCode.value = it.code })
+    }
+
+    fun setCatboardProfiles(profiles: List<String>) {
+        act("catboard", { setCatboardProfiles(ProfilesRequest(profiles)) }, done = { Notice("CatBoard reads these profiles") }, after = { answer ->
+            _security.update { it.copy(value = it.value?.copy(catboardProfiles = answer.catboardProfiles)) }
         })
     }
 
@@ -348,6 +376,8 @@ class MaintenanceViewModel(deps: ScreenDeps) : D2nViewModel(deps) {
     fun scanDuplicates() = act("dedup", { scanDuplicates() }, done = { Notice("Duplicate scan started", it.taskId) })
 
     fun clear(what: String) = act("clear-$what", { clear(what) }, done = { Notice(it.message.ifBlank { "Cleared" }) })
+
+    fun clearProfiles(what: String) = act("profiles-$what", { clearProfiles(what) }, done = { Notice("${plural(it.cleared, "playlist")} cleared") })
 }
 
 /** The last duplicate report: which copy of each track to keep. */

@@ -1,11 +1,23 @@
 """The playlists a Navidrome user made by hand, shown read-only: their cover and
 their tracks, read from Navidrome as that user. A playlist of another user is
 never shown, even to an account that is an admin in Navidrome."""
-from flask import Blueprint, Response, jsonify
+from flask import Blueprint, Response, g, jsonify, request
 
-from core import crypto, nd_accounts, publish, subsonic
+from core import account_context, crypto, nd_accounts, publish, subsonic
+from routes.auth import refused
 
 navidrome_playlists_bp = Blueprint("navidrome_playlists", __name__)
+
+
+def profile_refused(account_id):
+    if account_id and account_id not in account_context.own_profiles(g.get("user")):
+        return refused("This profile is not yours.")
+    return None
+
+
+@navidrome_playlists_bp.before_request
+def _only_your_profiles():
+    return profile_refused((request.view_args or {}).get("account_id"))
 
 
 def _client(account_id):

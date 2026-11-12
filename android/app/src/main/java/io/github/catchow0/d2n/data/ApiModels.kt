@@ -23,7 +23,14 @@ data class Credentials(val username: String, val password: String, val device: S
 data class DeviceInfo(val id: String, val name: String)
 
 @Serializable
-data class SignedIn(val token: String, val device: DeviceInfo, val username: String)
+data class SignedIn(
+    val token: String,
+    val device: DeviceInfo,
+    val username: String,
+    val user: AppUser? = null,
+    /** After a setup, a new password chosen at the first sign-in: shown once. */
+    @SerialName("recovery_code") val recoveryCode: String? = null,
+)
 
 @Serializable
 data class SignedOut(@SerialName("signed_out") val signedOut: Boolean = false)
@@ -39,6 +46,8 @@ data class ServerInfo(
     @SerialName("auth_disabled") val authDisabled: Boolean = false,
     val profile: String? = null,
     val profiles: List<Profile> = emptyList(),
+    val user: AppUser? = null,
+    @SerialName("is_admin") val isAdmin: Boolean = false,
 )
 
 @Serializable

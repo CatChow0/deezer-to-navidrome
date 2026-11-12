@@ -63,6 +63,6 @@ def validate():
         return refused
     if account:
         found = nd_accounts.get(account) or {}
-        name = found.get("username") or found.get("label") or auth.username() or "navidrome"
+        name = found.get("username") or found.get("label") or "navidrome"
         return jsonify({"code": 200, "message": "Token valid.", "valid": True, "user_name": name})
     return jsonify({"code": 200, "message": "Token invalid.", "valid": False})

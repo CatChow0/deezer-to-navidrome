@@ -1,0 +1,28 @@
+<p>Several accounts in the app, each with its own profiles: a Super-Admin, Admins and Standard accounts, and Settings in spaces.</p>
+
+<h4 class="help-h note-h">Accounts</h4>
+<ul class="help-list">
+  <li><strong>Three privileges.</strong> The account made at the first start is the <b>Super-Admin</b>, never removed. An <b>Admin</b> manages the Standard accounts and the server's settings; only the Super-Admin makes an Admin Standard again. A <b>Standard</b> account has its own profiles, never the server's settings.</li>
+  <li><strong>Settings → Users</strong> (Admins) adds an account with a temporary password, chosen again by its user at the first sign-in. It edits an account's username, privilege and password, and removes one, giving its Navidrome and Deezer accounts to another account or removing them with it.</li>
+  <li><strong>Your own profiles.</strong> Each account has its Navidrome accounts, Deezer accounts, downloads account, API token, CatBoard webhook and devices. The picker shows your own profiles only, and a playlist is reached only from a profile it is on. A Navidrome user belongs to one account of the app.</li>
+  <li><strong>Sharing a Deezer account.</strong> <b>Share</b> lets other accounts use one of yours for their profiles and downloads; they never see its ARL.</li>
+  <li><strong>CatBoard.</strong> Choose the profiles your token reads: <code>/api/releases</code> answers their feeds as one, so CatBoard needs no change.</li>
+</ul>
+
+<h4 class="help-h note-h">Forgot your password</h4>
+<ul class="help-list">
+  <li><strong>Recovery codes.</strong> Each account has one, shown once: at the first sign-in, then each time it is made again in <b>Sign-in and other apps</b>, by an Admin for a Standard, or by the Super-Admin for an Admin.</li>
+  <li><strong>Forgot your password?</strong> on the sign-in page takes the username, the code and a new password. The Super-Admin without its code can have a one-time code written in <code>recovery-code.txt</code> in the data folder, valid 15 minutes.</li>
+</ul>
+
+<h4 class="help-h note-h">Settings</h4>
+<ul class="help-list">
+  <li><strong>Four spaces.</strong> <b>General</b> (Admins), <b>Accounts</b>, <b>Stats and sign-in</b> and <b>Users</b> (Admins), with <b>Maintenance</b> under each.</li>
+  <li><strong>Maintenance.</strong> Rebuild from scratch, applying duplicates, Made for you's disk limits and Reset data are for the Admins. <b>Clear your profiles</b> clears the match results, covers or playlists of your own profiles only.</li>
+</ul>
+
+<h4 class="help-h note-h">From 1.19 and the Android app</h4>
+<ul class="help-list">
+  <li><strong>Nothing to redo.</strong> Your account becomes the Super-Admin and keeps every profile, Deezer account, token and webhook; your devices stay signed in.</li>
+  <li><strong>Android app.</strong> The same spaces in Settings, Users for the Admins, sharing a Deezer account, Forgot your password and choosing your password at the first sign-in.</li>
+</ul>

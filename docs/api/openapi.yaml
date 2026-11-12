@@ -269,6 +269,83 @@ paths:
               schema: {$ref: "#/components/schemas/SignedIn"}
         "400": {$ref: "#/components/responses/Error"}
         "409": {$ref: "#/components/responses/Error"}
+  /api/v1/users:
+    get:
+      summary: The accounts of this app, with what the asker may do to each (Admins only)
+      responses:
+        "200": {$ref: "#/components/responses/Object"}
+        "403": {$ref: "#/components/responses/Error"}
+    post:
+      summary: A Standard or Admin account (body username, password, role), with a temporary password changed at its first sign-in
+      responses:
+        "200": {$ref: "#/components/responses/Object"}
+        "400": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+  /api/v1/users/names:
+    get:
+      summary: Every account's id and username, to share a Deezer account with
+      responses:
+        "200": {$ref: "#/components/responses/Object"}
+  /api/v1/users/{user_id}:
+    patch:
+      summary: Its username and its privilege (body username, role), as core/users.can allows
+      parameters: [{name: user_id, in: path, required: true, schema: {type: string}}]
+      responses:
+        "200": {$ref: "#/components/responses/Object"}
+        "403": {$ref: "#/components/responses/Error"}
+    delete:
+      summary: Removes the account; its Navidrome and Deezer accounts go to `heir` (body or query), else are removed with it
+      parameters: [{name: user_id, in: path, required: true, schema: {type: string}}]
+      responses:
+        "200": {$ref: "#/components/responses/Object"}
+        "403": {$ref: "#/components/responses/Error"}
+  /api/v1/users/{user_id}/password:
+    post:
+      summary: A temporary password for this account (body password); its devices are signed out
+      parameters: [{name: user_id, in: path, required: true, schema: {type: string}}]
+      responses:
+        "200": {$ref: "#/components/responses/Object"}
+        "403": {$ref: "#/components/responses/Error"}
+  /api/v1/users/{user_id}/recovery:
+    post:
+      summary: A new recovery code for this account, shown once
+      parameters: [{name: user_id, in: path, required: true, schema: {type: string}}]
+      responses:
+        "200": {$ref: "#/components/responses/Object"}
+        "403": {$ref: "#/components/responses/Error"}
+  /api/v1/profiles/clear/{what}:
+    post:
+      summary: Clears the match results, playlists or covers (what) of the asker's own profiles only
+      parameters: [{name: what, in: path, required: true, schema: {type: string, enum: [matches, playlists, covers]}}]
+      responses:
+        "200": {$ref: "#/components/responses/Object"}
+        "400": {$ref: "#/components/responses/Error"}
+  /api/v1/me:
+    get:
+      summary: The account signed in (role, must_change) and whether it is an Admin
+      responses:
+        "200": {$ref: "#/components/responses/Object"}
+  /api/v1/auth/first-password:
+    post:
+      summary: The own password of an account made by an Admin (body password); answers a new device token and the recovery code, shown once
+      responses:
+        "201": {$ref: "#/components/responses/Object"}
+        "400": {$ref: "#/components/responses/Error"}
+  /api/v1/auth/forgot:
+    post:
+      summary: A new password with the recovery code (body username, code, password); answers the new recovery code. Limited like a sign-in
+      security: []
+      responses:
+        "200": {$ref: "#/components/responses/Object"}
+        "400": {$ref: "#/components/responses/Error"}
+        "429": {$ref: "#/components/responses/Error"}
+  /api/v1/auth/forgot/superadmin:
+    post:
+      summary: Writes a one-time code, valid 15 minutes, in the server's data folder, for the Super-Admin
+      security: []
+      responses:
+        "200": {$ref: "#/components/responses/Object"}
+        "400": {$ref: "#/components/responses/Error"}
   /api/v1/auth/logout:
     post:
       summary: Sign this device out; its token stops working
@@ -576,6 +653,13 @@ paths:
       parameters: [{$ref: "#/components/parameters/AccountId"}]
       responses:
         "200": {$ref: "#/components/responses/Object"}
+  /api/v1/deezer/accounts/{account_id}/share:
+    put:
+      summary: The accounts of this app this Deezer account is shared with (body users); they may use it, never see its ARL
+      parameters: [{$ref: "#/components/parameters/AccountId"}]
+      responses:
+        "200": {$ref: "#/components/responses/Object"}
+        "403": {$ref: "#/components/responses/Error"}
   /api/v1/deezer/accounts/{account_id}/download:
     post:
       summary: Use this account for the downloads
@@ -1203,6 +1287,16 @@ paths:
       responses:
         "200": {$ref: "#/components/responses/Object"}
         "502": {$ref: "#/components/responses/Error"}
+  /api/v1/settings/recovery-code:
+    post:
+      summary: A new recovery code for the account signed in, shown once
+      responses:
+        "200": {$ref: "#/components/responses/Object"}
+  /api/v1/settings/catboard:
+    put:
+      summary: The profiles this account's API token and webhook are about (body profiles); none chosen means all of its own
+      responses:
+        "200": {$ref: "#/components/responses/Object"}
   /api/v1/scheduler:
     get:
       summary: The profile's playlists scanned on a schedule, and when they run next

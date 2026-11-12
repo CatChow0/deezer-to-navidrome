@@ -486,13 +486,18 @@ def _quiet_unlink(path: Path) -> None:
         logger.warning("Could not delete %s: %s", path, e)
 
 
-def delete_playlist_cache(playlist_id: str):
-    _quiet_unlink(COVERS_DIR / f"{playlist_id}.jpg")
-    # Under the lock: a scan of another playlist may be saving the same file.
+def forget_preview(playlist_id: str):
+    """One playlist's match results. Under the lock: a scan of another playlist
+    may be saving the same file."""
     with _preview_lock:
         state = load_preview_state()
         if state.pop(str(playlist_id), None) is not None:
             save_preview_state(state)
+
+
+def delete_playlist_cache(playlist_id: str):
+    _quiet_unlink(COVERS_DIR / f"{playlist_id}.jpg")
+    forget_preview(playlist_id)
     if get_crossplatform_state(playlist_id) is not None:
         modify_crossplatform_state(playlist_id, lambda old: None)
 

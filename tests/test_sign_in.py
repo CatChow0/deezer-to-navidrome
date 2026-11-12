@@ -44,12 +44,15 @@ class AnyUsername(Base):
         self.assertEqual(401, self.login("ünknown").status_code)
 
     def test_the_stored_account_with_accents(self):
-        with mock.patch.object(auth, "account_from_env", return_value=False), \
-                mock.patch.object(auth, "load_secret", side_effect=lambda n: {
-                    "app_username": "José", "app_password_hash": auth.generate_password_hash(PASSWORD)}.get(n, "")):
-            self.assertTrue(auth.check_credentials("josé", PASSWORD))
-            self.assertFalse(auth.check_credentials("josé", "wrong-password"))
-            self.assertFalse(auth.check_credentials("other", PASSWORD))
+        from pathlib import Path
+
+        from core import config, users
+
+        self.addCleanup(lambda: (Path(config.DATA_DIR) / "users.json").unlink(missing_ok=True))
+        users.create("José", PASSWORD, users.ADMIN, must_change=False)
+        self.assertEqual("José", users.check("josé", PASSWORD)["username"])
+        self.assertIsNone(users.check("josé", "wrong-password"))
+        self.assertIsNone(users.check("other", PASSWORD))
 
 
 class NextPage(Base):

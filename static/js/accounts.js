@@ -4,6 +4,7 @@
 
 import { armed, escapeHtml, fetchJSON, on, toast } from './core.js';
 import { runServerTask } from './activity.js';
+import { scoped } from './subject.js';
 import { showView } from './views.js';
 
 const plural = (count, word) => `${count} ${word}${count === 1 ? '' : 's'}`;
@@ -238,7 +239,8 @@ export function initNavidromeAccounts() {
   }
 
   async function load() {
-    const [{ ok, data }, deezer] = await Promise.all([fetchJSON('/api/navidrome/accounts'), fetchJSON('/api/deezer/accounts')]);
+    const [{ ok, data }, deezer] = await Promise.all([fetchJSON(scoped('/api/navidrome/accounts')),
+      fetchJSON(scoped('/api/deezer/accounts'))]);
     if (!ok) {
       root.innerHTML = `<p class="nd-warn">${escapeHtml(data?.error || 'Could not load the accounts.')}</p>`;
       return;
@@ -262,7 +264,7 @@ export function initNavidromeAccounts() {
   }
 
   async function send(url, options, done) {
-    const { ok, data } = await fetchJSON(url, options);
+    const { ok, data } = await fetchJSON(scoped(url), options);
     if (!ok) {
       toast(data?.error || 'That did not work', { tone: 'error' });
       return null;
@@ -295,7 +297,7 @@ export function initNavidromeAccounts() {
     button.disabled = true;
     out.innerHTML = '<p class="muted">Testing…</p>';
     const body = { ...formValues(form), id: form.dataset.ndFormId || '' };
-    const { ok, data } = await fetchJSON('/api/navidrome/accounts/test', { json: body });
+    const { ok, data } = await fetchJSON(scoped('/api/navidrome/accounts/test'), { json: body });
     button.disabled = false;
     out.innerHTML = ok ? testSummary(data.test) : `<p class="nd-warn">${escapeHtml(data?.error || 'The test failed.')}</p>`;
   });
@@ -319,7 +321,7 @@ export function initNavidromeAccounts() {
     const out = row.querySelector('[data-nd-test-result]');
     button.disabled = true;
     out.innerHTML = '<p class="muted">Testing…</p>';
-    const { ok, data } = await fetchJSON(`/api/navidrome/accounts/${encodeURIComponent(row.dataset.ndId)}/test`, { method: 'POST' });
+    const { ok, data } = await fetchJSON(scoped(`/api/navidrome/accounts/${encodeURIComponent(row.dataset.ndId)}/test`), { method: 'POST' });
     button.disabled = false;
     if (!ok) {
       out.innerHTML = `<p class="nd-warn">${escapeHtml(data?.error || 'The test failed.')}</p>`;
@@ -336,7 +338,7 @@ export function initNavidromeAccounts() {
     const out = row.querySelector('[data-nd-test-result]');
     button.disabled = true;
     out.innerHTML = '<p class="muted">Looking at what would change…</p>';
-    const { ok, data } = await fetchJSON(`/api/navidrome/accounts/${encodeURIComponent(account.id)}/switch`);
+    const { ok, data } = await fetchJSON(scoped(`/api/navidrome/accounts/${encodeURIComponent(account.id)}/switch`));
     button.disabled = false;
     out.innerHTML = ok ? switchHtml(account, data.preview) : `<p class="nd-warn">${escapeHtml(data?.error || 'That did not work')}</p>`;
   });
@@ -348,7 +350,7 @@ export function initNavidromeAccounts() {
     const account = state.accounts.find(a => a.id === row.dataset.ndId);
     if (!armed(button, 'Click again to switch')) return;
     button.disabled = true;
-    const result = await runServerTask(`Playlists as ${account.label}`, `/api/navidrome/accounts/${encodeURIComponent(account.id)}/switch`);
+    const result = await runServerTask(`Playlists as ${account.label}`, scoped(`/api/navidrome/accounts/${encodeURIComponent(account.id)}/switch`));
     await load();
     if (!result?.error) toast(`${account.label}: playlists published as ${account.username}`);
   });
@@ -365,6 +367,10 @@ export function initNavidromeAccounts() {
       toast(`${account.label} removed`);
       if (picker) window.location.reload();
     });
+  });
+  document.addEventListener('d2n:subject', () => {
+    editing = null;
+    load();
   });
 
   load();

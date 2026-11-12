@@ -35,22 +35,30 @@ import io.github.catchow0.d2n.ui.components.SectionHeader
 import io.github.catchow0.d2n.ui.components.remote
 import io.github.catchow0.d2n.ui.theme.D2nColors
 
-/** The pages of Settings, as the web groups them. */
-enum class SettingsPage(val title: String, val subtitle: String) {
-    Music("Music and downloads", "Folders, Navidrome paths, downloads, performance and the release feed"),
-    Navidrome("Navidrome accounts", "One per Navidrome user: the profiles of the picker"),
-    Deezer("Deezer accounts", "Releases, Deezer mixes and the downloads"),
-    Listening("Listening stats", "How Navidrome sends this app your plays"),
-    Security("Sign-in and other apps", "Password, API token, webhook and devices"),
-    Maintenance("Maintenance", "Library index, metadata, repairs and duplicates"),
-    Reset("Reset data", "Clear the index, match results or playlists"),
+/** The spaces of Settings, as the web shows them; Maintenance is under all of them there. */
+enum class SettingsSpace(val title: String) { General("General"), Accounts("Accounts"), Stats("Stats and sign-in"), Users("Users"), Maintenance("Maintenance") }
+
+/** The pages of Settings. An [adminOnly] one is the server's, for every account. */
+enum class SettingsPage(val title: String, val subtitle: String, val space: SettingsSpace, val adminOnly: Boolean = false) {
+    Music("Music and downloads", "Folders, Navidrome paths, downloads, performance and the release feed", SettingsSpace.General, adminOnly = true),
+    Navidrome("Navidrome accounts", "Your profiles, one per Navidrome user", SettingsSpace.Accounts),
+    Deezer("Deezer accounts", "Releases, Deezer mixes, your downloads and sharing", SettingsSpace.Accounts),
+    Listening("Listening stats", "How Navidrome sends this app your plays", SettingsSpace.Stats),
+    Security("Sign-in and other apps", "Password, recovery code, API token, webhook and devices", SettingsSpace.Stats),
+    Users("Accounts of this app", "Add, edit and remove who signs in here", SettingsSpace.Users, adminOnly = true),
+    Maintenance("Maintenance", "Library index, metadata, repairs, duplicates and your profiles", SettingsSpace.Maintenance),
+    Reset("Reset data", "Clear the index, match results or playlists", SettingsSpace.Maintenance, adminOnly = true),
 }
 
 @Composable
-fun SettingsHome(onBack: () -> Unit, onPage: (SettingsPage) -> Unit) {
+fun SettingsHome(isAdmin: Boolean, onBack: () -> Unit, onPage: (SettingsPage) -> Unit) {
     ScreenScaffold(title = "Settings", onBack = onBack) {
-        items(SettingsPage.entries) { page ->
-            ListRow(title = page.title, subtitle = page.subtitle, onClick = { onPage(page) }, clickLabel = "Open")
+        SettingsPage.entries.filter { isAdmin || !it.adminOnly }.groupBy { it.space }.forEach { (space, pages) ->
+            // A space and a page share some names (Users, Maintenance): a list's keys must differ.
+            item(key = "space-${space.name}") { SectionHeader(space.title) }
+            items(pages, key = { "page-${it.name}" }) { page ->
+                ListRow(title = page.title, subtitle = page.subtitle, onClick = { onPage(page) }, clickLabel = "Open")
+            }
         }
     }
 }
@@ -182,7 +190,7 @@ private fun Workers(label: String, key: String, value: Int?, choices: Map<String
 
 /** The library index, the metadata, the repairs and the duplicates. */
 @Composable
-fun MaintenanceScreen(vm: MaintenanceViewModel, onBack: () -> Unit, onDuplicates: () -> Unit) {
+fun MaintenanceScreen(vm: MaintenanceViewModel, isAdmin: Boolean, onBack: () -> Unit, onDuplicates: () -> Unit) {
     val busy by vm.busy.collectAsStateWithLifecycle()
     val online = LocalOnline.current
     var ask by remember { mutableStateOf<String?>(null) }
@@ -191,18 +199,34 @@ fun MaintenanceScreen(vm: MaintenanceViewModel, onBack: () -> Unit, onDuplicates
             SectionHeader("Library index")
             GlassCard(Modifier.fillMaxWidth()) {
                 Action("Refresh library", "Indexes new and changed files only. Use this after downloads.", "refresh" in busy || !online, vm::refreshLibrary)
-                Action("Rebuild from scratch", "Reads every file again. Slow on large libraries.", "rebuild" in busy || !online) { ask = "rebuild" }
+                Action("Rebuild from scratch", "Reads every file again. Slow on large libraries." + if (isAdmin) "" else " An Admin runs it.", "rebuild" in busy || !online || !isAdmin) { ask = "rebuild" }
                 Action("Fix missing metadata", "Finds the tempo and genre your files lack and adds them to their tags. Existing values are kept.", "metadata" in busy || !online) { ask = "metadata" }
                 Action("Repair downloads", "Replaces the damaged files saved by versions 1.10.0 to 1.11.0 (noise, skips). Only broken files are downloaded again.", "repair" in busy || !online, vm::repairDownloads)
             }
         }
-        item(key = "dedup") {
-            SectionHeader("Duplicates", subtitle = "Copies of the same track in your library: keep the best one, move the others aside.")
-            GlassCard(Modifier.fillMaxWidth()) {
-                Action("Find duplicates", "Scans the library index. Open the report once the scan is done.", "dedup" in busy || !online, vm::scanDuplicates)
-                D2nButton("Open the last report", onDuplicates, kind = ButtonKind.Ghost, small = true)
+        if (isAdmin) {
+            item(key = "dedup") {
+                SectionHeader("Duplicates", subtitle = "Copies of the same track in your library: keep the best one, move the others aside.")
+                GlassCard(Modifier.fillMaxWidth()) {
+                    Action("Find duplicates", "Scans the library index. Open the report once the scan is done.", "dedup" in busy || !online, vm::scanDuplicates)
+                    D2nButton("Open the last report", onDuplicates, kind = ButtonKind.Ghost, small = true)
+                }
             }
         }
+        item(key = "mine") {
+            SectionHeader("Clear your profiles", subtitle = "Only what is yours: match results and covers of the playlists only your profiles have, and your profiles' playlists (one another account also has stays for it).")
+            GlassCard(Modifier.fillMaxWidth()) {
+                PROFILE_CLEARS.forEach { (what, label, help) ->
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        D2nButton(label, { ask = "profiles-$what" }, Modifier.fillMaxWidth(), kind = ButtonKind.Danger, enabled = online && "profiles-$what" !in busy)
+                        FieldNote(help)
+                    }
+                }
+            }
+        }
+    }
+    PROFILE_CLEARS.firstOrNull { ask == "profiles-${it.first}" }?.let { (what, label, help) ->
+        ConfirmDialog("$label?", "$help This cannot be undone.", label.substringBefore(' '), { vm.clearProfiles(what) }, { ask = null })
     }
     when (ask) {
         "rebuild" -> ConfirmDialog("Rebuild the index?", "Every file is read again: slow on large libraries.", "Rebuild", vm::rebuildLibrary, { ask = null }, danger = false)
@@ -217,6 +241,13 @@ private fun Action(label: String, help: String, disabled: Boolean, onClick: () -
         FieldNote(help)
     }
 }
+
+/** The clears of your own profiles, as the web says them. */
+private val PROFILE_CLEARS = listOf(
+    Triple("matches", "Clear match results", "Your playlists show every track as not checked."),
+    Triple("covers", "Clear covers", "Forgets the cover images of your playlists."),
+    Triple("playlists", "Remove your playlists", "From your profiles, with their match results."),
+)
 
 /** What each Reset clears, as the web says it. */
 private val RESETS = listOf(

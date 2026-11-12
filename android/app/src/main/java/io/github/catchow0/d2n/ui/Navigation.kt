@@ -18,7 +18,12 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import io.github.catchow0.d2n.AppGraph
 import io.github.catchow0.d2n.data.StoredSession
+import io.github.catchow0.d2n.ui.common.Motion
 import io.github.catchow0.d2n.ui.main.MainScaffold
+import io.github.catchow0.d2n.ui.signin.FirstPasswordScreen
+import io.github.catchow0.d2n.ui.signin.FirstPasswordViewModel
+import io.github.catchow0.d2n.ui.signin.ForgotScreen
+import io.github.catchow0.d2n.ui.signin.ForgotViewModel
 import io.github.catchow0.d2n.ui.signin.ServerScreen
 import io.github.catchow0.d2n.ui.signin.ServerViewModel
 import io.github.catchow0.d2n.ui.signin.SetupScreen
@@ -27,6 +32,7 @@ import io.github.catchow0.d2n.ui.signin.SignInScreen
 import io.github.catchow0.d2n.ui.signin.SignInViewModel
 import io.github.catchow0.d2n.ui.signin.probeServer
 import io.github.catchow0.d2n.ui.theme.D2nColors
+import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 
 @Serializable
@@ -40,6 +46,12 @@ object SetupRoute
 
 @Serializable
 object MainRoute
+
+@Serializable
+object FirstPasswordRoute
+
+@Serializable
+object ForgotRoute
 
 /** Where the app opens: the server, sign-in, or inside. */
 fun startOf(session: StoredSession): Any = when {
@@ -61,7 +73,14 @@ fun Navigation(graph: AppGraph) {
     val nav = rememberNavController()
     // Why the phone is back on Sign-in, when the server signed it out.
     var notice by rememberSaveable { mutableStateOf<String?>(null) }
-    NavHost(nav, startDestination = start) {
+    NavHost(
+        nav,
+        startDestination = start,
+        enterTransition = { Motion.popIn },
+        exitTransition = { Motion.fadeAway },
+        popEnterTransition = { Motion.fadeBack },
+        popExitTransition = { Motion.popOut },
+    ) {
         composable<ServerRoute> {
             ServerScreen(viewModel { ServerViewModel({ probeServer(graph.bareClient, it) }, graph.store) }) { next ->
                 nav.goTo(
@@ -80,9 +99,29 @@ fun Navigation(graph: AppGraph) {
                 notice = notice,
                 onNext = { next ->
                     notice = null
-                    nav.goTo(if (next == SignInViewModel.Next.Setup) SetupRoute else MainRoute)
+                    nav.goTo(
+                        when (next) {
+                            SignInViewModel.Next.Setup -> SetupRoute
+                            SignInViewModel.Next.FirstPassword -> FirstPasswordRoute
+                            SignInViewModel.Next.Main -> MainRoute
+                        },
+                    )
                 },
                 onOtherServer = { nav.goTo(ServerRoute) },
+                onForgot = { nav.navigate(ForgotRoute) },
+            )
+        }
+        composable<ForgotRoute> {
+            ForgotScreen(viewModel { ForgotViewModel(graph::requireApi) }, onBack = { nav.goTo(SignInRoute) })
+        }
+        composable<FirstPasswordRoute> {
+            FirstPasswordScreen(
+                viewModel { FirstPasswordViewModel(graph::requireApi, graph.store, graph.defaultDevice) },
+                onDone = { nav.goTo(MainRoute) },
+                onSignOut = {
+                    graph.scope.launch { graph.store.setToken(null) }
+                    nav.goTo(SignInRoute)
+                },
             )
         }
         composable<SetupRoute> {
@@ -101,6 +140,7 @@ fun Navigation(graph: AppGraph) {
                     nav.goTo(SignInRoute)
                 },
                 onOtherServer = { nav.goTo(ServerRoute) },
+                onMustChange = { nav.goTo(FirstPasswordRoute) },
             )
         }
     }

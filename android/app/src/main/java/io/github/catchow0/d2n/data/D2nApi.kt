@@ -27,6 +27,15 @@ interface D2nApi {
     @POST("api/v1/auth/logout")
     suspend fun logout(): SignedOut
 
+    @POST("api/v1/auth/first-password")
+    suspend fun firstPassword(@Body body: NewPassword): SignedIn
+
+    @POST("api/v1/auth/forgot")
+    suspend fun forgot(@Body body: ForgotRequest): ForgotAnswer
+
+    @POST("api/v1/auth/forgot/superadmin")
+    suspend fun forgotSuperAdmin(): SuperAdminCode
+
     @GET("api/v1/info")
     suspend fun info(): ServerInfo
 
@@ -218,6 +227,12 @@ interface D2nApi {
     @POST("api/v1/deezer/accounts/{id}/check")
     suspend fun checkDeezerProfile(@Path("id") id: String): DeezerProfilesAnswer
 
+    @PUT("api/v1/deezer/accounts/{id}/share")
+    suspend fun shareDeezerProfile(@Path("id") id: String, @Body body: UsersRequest): DeezerProfilesAnswer
+
+    @GET("api/v1/users/names")
+    suspend fun userNames(): UserNamesAnswer
+
     @GET("api/v1/settings/security")
     suspend fun security(): SecurityAnswer
 
@@ -235,6 +250,12 @@ interface D2nApi {
 
     @POST("api/v1/settings/webhook/test")
     suspend fun testWebhook(): WebhookTestAnswer
+
+    @POST("api/v1/settings/recovery-code")
+    suspend fun newRecoveryCode(): CodeAnswer
+
+    @PUT("api/v1/settings/catboard")
+    suspend fun setCatboardProfiles(@Body body: ProfilesRequest): CatboardAnswer
 
     @GET("api/v1/devices")
     suspend fun devices(): DevicesAnswer
@@ -271,6 +292,29 @@ interface D2nApi {
 
     @POST("api/v1/dedup/apply")
     suspend fun applyDuplicates(@Body body: DuplicateApply): DuplicateApplyAnswer
+
+    @POST("api/v1/profiles/clear/{what}")
+    suspend fun clearProfiles(@Path("what") what: String): ProfilesCleared
+
+    // ── The accounts of the app (Admins) ────────────────────────────────────
+
+    @GET("api/v1/users")
+    suspend fun users(): UsersAnswer
+
+    @POST("api/v1/users")
+    suspend fun createUser(@Body body: NewUser): UsersAnswer
+
+    @retrofit2.http.PATCH("api/v1/users/{id}")
+    suspend fun updateUser(@Path("id") id: String, @Body body: UserChange): UsersAnswer
+
+    @retrofit2.http.HTTP(method = "DELETE", path = "api/v1/users/{id}", hasBody = true)
+    suspend fun deleteUser(@Path("id") id: String, @Body body: HeirRequest): UsersAnswer
+
+    @POST("api/v1/users/{id}/password")
+    suspend fun setUserPassword(@Path("id") id: String, @Body body: NewPassword): UsersAnswer
+
+    @POST("api/v1/users/{id}/recovery")
+    suspend fun newUserRecoveryCode(@Path("id") id: String): CodeAnswer
 
     // ── New and Help ────────────────────────────────────────────────────────
 

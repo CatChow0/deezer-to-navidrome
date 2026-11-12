@@ -29,10 +29,14 @@ fun SetupScreen(vm: SetupViewModel, server: String?, onNext: (SetupViewModel.Nex
     }
     SignInFrame {
         Brand()
+        state.recoveryCode?.let { code ->
+            RecoveryCode(code, lead = "Your account is ready.", onContinue = vm::goIn)
+            return@SignInFrame
+        }
         Text("Create your account", style = MaterialTheme.typography.headlineSmall)
         server?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = D2nColors.Faint) }
         Text(
-            "This account protects the app. Other apps, like CatBoard, use an API token you get in Settings afterwards.",
+            "This first account is the Super-Admin: it adds the other accounts in Settings → Users. Other apps, like CatBoard, use an API token you get in Settings afterwards.",
             style = MaterialTheme.typography.bodyMedium,
             color = D2nColors.Muted,
         )

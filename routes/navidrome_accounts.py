@@ -5,16 +5,21 @@ them out, and test errors are redacted by core/subsonic."""
 from flask import Blueprint, jsonify, request, session
 
 from core import account_context, crypto, navidrome_db, nd_accounts, subsonic
+from routes.auth import may_manage, owner_only, subject
 
 navidrome_accounts_bp = Blueprint("navidrome_accounts", __name__)
 BASE = "/api/navidrome"
+
+
+_mine = owner_only(nd_accounts.get, "Navidrome")
 
 
 def _state():
     from core import publish
 
     users = navidrome_db.users()
-    accounts = [nd_accounts.public(a) for a in nd_accounts.list_accounts()]
+    owner = subject()
+    accounts = [nd_accounts.public(a) for a in nd_accounts.accounts_of(owner["id"])] if owner else []
     for account in accounts:
         account["sync"] = publish.sync_report(account["id"])
     return {
@@ -40,23 +45,26 @@ def _fields():
 
 
 @navidrome_accounts_bp.get(f"{BASE}/accounts")
+@_mine
 def accounts():
     return jsonify(_state())
 
 
 @navidrome_accounts_bp.post(f"{BASE}/accounts")
+@_mine
 def create():
     fields = _fields()
     if fields is None:
         return _error("Expected an account")
     try:
-        account = nd_accounts.create(fields)
+        account = nd_accounts.create({**fields, "owner": subject()["id"]})
     except nd_accounts.AccountError as e:
         return _error(e)
     return jsonify({**_state(), "created": account["id"]})
 
 
 @navidrome_accounts_bp.patch(f"{BASE}/accounts/<account_id>")
+@_mine
 def update(account_id):
     fields = _fields()
     if fields is None:
@@ -69,6 +77,7 @@ def update(account_id):
 
 
 @navidrome_accounts_bp.delete(f"{BASE}/accounts/<account_id>")
+@_mine
 def delete(account_id):
     try:
         nd_accounts.delete(account_id)
@@ -80,6 +89,7 @@ def delete(account_id):
 
 
 @navidrome_accounts_bp.post(f"{BASE}/accounts/<account_id>/default")
+@_mine
 def make_default(account_id):
     try:
         nd_accounts.set_default(account_id)
@@ -99,6 +109,7 @@ def _run_test(creds):
 
 
 @navidrome_accounts_bp.post(f"{BASE}/accounts/<account_id>/test")
+@_mine
 def test_saved(account_id):
     """Tests the account as saved, and keeps what was learnt."""
     try:
@@ -123,7 +134,7 @@ def test_unsaved():
              "auth_type": body.get("auth_type") or "password", "secret": str(body.get("secret") or "")}
     try:
         creds["url"] = nd_accounts.clean_url(body.get("url"))
-        if not creds["secret"] and body.get("id"):
+        if not creds["secret"] and body.get("id") and may_manage((nd_accounts.get(body["id"]) or {}).get("owner")):
             saved = nd_accounts.credentials(body["id"])
             # The saved password only goes to the server and user it belongs to:
             # never to an address typed in the form.
@@ -143,6 +154,7 @@ def test_unsaved():
 
 
 @navidrome_accounts_bp.get(f"{BASE}/accounts/<account_id>/switch")
+@_mine
 def switch_preview(account_id):
     from core import publish
 
@@ -153,6 +165,7 @@ def switch_preview(account_id):
 
 
 @navidrome_accounts_bp.post(f"{BASE}/accounts/<account_id>/switch")
+@_mine
 def switch_start(account_id):
     """Runs as a task: Activity shows it, and it can take a while."""
     import threading

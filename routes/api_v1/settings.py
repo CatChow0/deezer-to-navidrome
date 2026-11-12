@@ -5,6 +5,7 @@ from core.config import whats_new_state
 from routes import auth as sign_in
 from routes import system
 from routes.api_v1 import COVERED, api_v1_bp, body, error, expose, ok, replaces
+from routes.auth import admin_only
 
 # Settings that are lists, and what each item is.
 _LISTS = {"scan_dirs": str, "host_to_navidrome_roots": dict}
@@ -23,6 +24,7 @@ def settings_get():
 
 
 @api_v1_bp.put("/settings")
+@admin_only
 def settings_save():
     """Only the settings sent change; the others keep their value."""
     data = body()
@@ -45,6 +47,7 @@ def settings_save():
 @api_v1_bp.post("/settings/clear/<what>")
 @replaces(system.clear_library_cache_route, system.clear_preview_state_route, system.clear_playlists_route,
           system.clear_all_route, system.clear_dedup_report_route, system.clear_dedup_choices_route)
+@admin_only
 def settings_clear(what):
     """Reset data: library-cache, preview-state, playlists, all, dedup-report or dedup-choices."""
     if what not in system.CLEARS:
@@ -57,6 +60,8 @@ expose("/settings/password", sign_in.password_route, ("POST",), name="settings_p
 expose("/settings/api-token", sign_in.token_route, ("POST",), name="settings_api_token")
 expose("/settings/webhook", sign_in.webhook_route, ("PUT", "DELETE"), name="settings_webhook")
 expose("/settings/webhook/test", sign_in.webhook_test_route, ("POST",), name="settings_webhook_test")
+expose("/settings/recovery-code", sign_in.recovery_route, ("POST",), name="settings_recovery_code", cache=False)
+expose("/settings/catboard", sign_in.catboard_route, ("PUT",), name="settings_catboard")
 expose("/scheduler", system.scheduler_status, name="scheduler")
 expose("/version", system.latest_version_route, name="version")
 # The version alone: in /version and /info.

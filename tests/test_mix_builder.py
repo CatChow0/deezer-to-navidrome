@@ -217,7 +217,7 @@ class FakeQueue:
         self.failing = {str(i) for i in failing}
         self.calls = []
 
-    def __call__(self, kind, music_id, on_done=None, base_dir=None):
+    def __call__(self, kind, music_id, on_done=None, base_dir=None, deezer_account=None):
         self.calls.append((music_id, base_dir))
         task = mock.Mock(music_id=music_id)
         if str(music_id) in self.failing:
@@ -257,7 +257,7 @@ class Downloading(Base):
     def test_a_download_arriving_after_the_wait_is_not_left_behind(self):
         late = []
 
-        def slow(kind, music_id, on_done=None, base_dir=None):
+        def slow(kind, music_id, on_done=None, base_dir=None, deezer_account=None):
             late.append((music_id, base_dir, on_done))
 
         with mock.patch.object(mb, "DOWNLOAD_TIMEOUT", 0.05):
@@ -269,7 +269,7 @@ class Downloading(Base):
         self.assertFalse(path.exists())
 
     def test_a_file_another_track_has_is_not_taken_by_a_second_one(self):
-        def same_name(kind, music_id, on_done=None, base_dir=None):
+        def same_name(kind, music_id, on_done=None, base_dir=None, deezer_account=None):
             path = Path(base_dir) / "Artist - Song.flac"
             path.write_bytes(b"audio")
             on_done(mock.Mock(music_id=music_id), {"path": str(path)}, None)

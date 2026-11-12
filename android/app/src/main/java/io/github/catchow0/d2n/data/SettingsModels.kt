@@ -174,6 +174,10 @@ data class DeezerProfile(
     @SerialName("is_download") val isDownload: Boolean = false,
     @SerialName("checked_at") val checkedAt: Double = 0.0,
     val error: String = "",
+    /** False for one another account shared with you: you use it, never change it. */
+    val mine: Boolean = true,
+    val owner: String = "",
+    @SerialName("shared_with") val sharedWith: List<String> = emptyList(),
 )
 
 @Serializable
@@ -210,6 +214,9 @@ data class SecurityAnswer(
     val token: String? = null,
     @SerialName("token_from_env") val tokenFromEnv: Boolean = false,
     @SerialName("webhook_url") val webhookUrl: String? = null,
+    /** The profiles the API token and the webhook are about (CatBoard). */
+    @SerialName("catboard_profiles") val catboardProfiles: List<String> = emptyList(),
+    val profiles: List<Profile> = emptyList(),
 )
 
 @Serializable

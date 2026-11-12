@@ -35,6 +35,19 @@
       </div>
     </section>
 
+    {% if not nd_profile %}
+    <section class="cell" aria-labelledby="no-profile-title">
+      <div class="cell-head">
+        <div>
+          <h2 class="cell-title" id="no-profile-title">Add your Navidrome account</h2>
+          <p class="cell-sub">Your playlists, Made for you and your mixes are those of your Navidrome profiles: add your Navidrome account, and a Deezer account, to start.</p>
+        </div>
+      </div>
+      <div class="cell-body">
+        <a class="btn" href="{{ url_for('system.config_view') }}#settings/accounts">Open Settings → Accounts</a>
+      </div>
+    </section>
+    {% else %}
     <section class="cell" aria-labelledby="playlists-title">
       <div class="cell-head cell-head--top">
         <div>
@@ -126,6 +139,7 @@
         {% endif %}
       </div>
     </section>
+    {% endif %}
   </div>
 
   <aside class="stack span-4 side">

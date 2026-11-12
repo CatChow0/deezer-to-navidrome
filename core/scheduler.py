@@ -114,7 +114,11 @@ def _run_playlist(pl, cfg):
     if pl.get("auto_download_after_scan"):
         from core import deezer_dl
 
-        if deezer_dl.download_arl():
+        from core import account_context
+        from core.deezer import accounts_for
+
+        owners = accounts_for(pid)
+        if deezer_dl.download_arl(account_context.download_account_of_profile(owners[0]) if owners else None):
             try:
                 n = submit_missing_downloads(pid)
                 if n:

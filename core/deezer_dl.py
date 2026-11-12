@@ -13,6 +13,7 @@ import os
 import re
 import tempfile
 import threading
+from contextlib import contextmanager
 from binascii import a2b_hex, b2a_hex
 from pathlib import Path
 
@@ -36,8 +37,11 @@ BLOCK_SIZE = 2048
 # description in MP3, field name in FLAC), so a file can be traced back.
 DEEZER_ID_TAG = "DEEZER_TRACK_ID"
 
-_session = DeezerSession()
+# One logged-in session per Deezer account that downloads, and the account of
+# the download running on this thread (see using()).
+_sessions = {}
 _session_lock = threading.Lock()
+_current = threading.local()
 
 
 class DeezerDownloadError(RuntimeError):
@@ -53,23 +57,44 @@ def _log(message):
 
 # ── Session ───────────────────────────────────────────────────────────────────
 
-def download_arl():
-    """The ARL of the account marked "Use for download", else of the default one."""
+@contextmanager
+def using(account_id):
+    """The downloads on this thread go through this Deezer account: the one of
+    the account of this app that asked for them (account_context)."""
+    previous = getattr(_current, "account", None)
+    _current.account = account_id
+    try:
+        yield
+    finally:
+        _current.account = previous
+
+
+def download_account():
+    """The account the downloads on this thread use, else the one marked for
+    the downloads (code that has no account of this app to ask for)."""
     from core import deezer_accounts
 
-    account_id = deezer_accounts.download_id()
+    return getattr(_current, "account", None) or deezer_accounts.download_id()
+
+
+def download_arl(account_id=None):
+    from core import deezer_accounts
+
+    account_id = account_id or download_account()
     return deezer_accounts.arl(account_id) if account_id else ""
 
 
 def session():
-    """A logged-in session for the download account."""
-    arl = download_arl()
+    """A logged-in session for the Deezer account downloading on this thread."""
+    account_id = download_account()
+    arl = download_arl(account_id)
     if not arl:
         raise DeezerDownloadError("No Deezer account for the downloads: add one in Settings → Deezer accounts.")
     with _session_lock:
-        if _session.arl != arl or _session.http is None:
-            _session.login(arl)
-        return _session
+        current = _sessions.setdefault(account_id, DeezerSession())
+        if current.arl != arl or current.http is None:
+            current.login(arl)
+        return current
 
 
 def account_info():
@@ -90,7 +115,7 @@ def account_info():
 
 def forget_sessions():
     with _session_lock:
-        _session.reset()
+        _sessions.clear()
 
 
 # ── Metadata ──────────────────────────────────────────────────────────────────

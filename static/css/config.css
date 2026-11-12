@@ -529,3 +529,53 @@ body.has-player .save-bar {
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+.login-code code {
+  display: block;
+  padding: 12px;
+  border-radius: var(--r-control);
+  background: var(--glass-raised);
+  font-size: var(--step-1);
+  letter-spacing: 0.08em;
+  text-align: center;
+  user-select: all;
+}
+
+.nd-share {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  margin: 8px 0;
+}
+
+.settings-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.settings-top-main {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+
+.settings-tabs {
+  justify-self: start;
+  flex-wrap: wrap;
+}
+
+.settings-android {
+  flex: 0 1 460px;
+  align-self: flex-end;
+}
+
+.settings-android .cell-body {
+  padding-top: 8px;
+}
+
+.settings-subject {
+  max-width: 320px;
+}

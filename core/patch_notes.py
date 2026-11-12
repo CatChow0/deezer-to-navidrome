@@ -24,6 +24,17 @@ _AUTHELIA_BYPASS = [
 ]
 
 RELEASES = [
+    {"version": "1.20.0", "date": "2026-11-12", "title": "Several accounts, each with its own profiles",
+     "highlights": [
+         "A Super-Admin, Admins and Standard accounts, each with its own profiles and Deezer accounts.",
+         "Forgot your password? A recovery code for each account.",
+         "Settings in spaces: General, Accounts, Stats and sign-in, and Users.",
+     ],
+     "actions": [
+         {"level": "recommended", "when": "Everyone",
+          "do": "Make your recovery code in Settings → Stats and sign-in → Sign-in and other apps, and keep it somewhere safe.",
+          "lines": [], "file": "app"},
+     ]},
     {"version": "1.19.0", "date": "2026-11-11", "title": "Safer files, sign-in and downloads",
      "highlights": [
          "Saved playlists, scans and settings can no longer be wiped by two saves at once.",

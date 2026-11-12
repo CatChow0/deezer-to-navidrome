@@ -4,6 +4,7 @@ from flask import Blueprint, flash, jsonify, redirect, request, url_for
 
 from core.config import create_task, push_task_event
 from core.webhook import notify
+from routes.auth import admin_only
 from core.library import (
     library_snapshot,
     search_library,
@@ -27,6 +28,7 @@ def library_search_route():
 
 
 @cache_bp.post("/cache/rebuild")
+@admin_only
 def cache_rebuild_route():
     try:
         result = rebuild_library_cache_full()
@@ -57,6 +59,7 @@ def _library_task(title, name, work, done):
 
 
 @cache_bp.post("/cache/full/start")
+@admin_only
 def cache_full_start():
     return _library_task("Full library rebuild", "Full library cache rebuild", rebuild_library_cache_full_with_progress,
                          lambda result: f"Full rebuild done: {result['count']} entries")
