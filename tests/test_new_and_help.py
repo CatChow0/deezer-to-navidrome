@@ -72,7 +72,7 @@ class WhatToChange(unittest.TestCase):
     def test_pending_actions_are_those_of_the_versions_not_read(self):
         from core.patch_notes import pending_actions, unread
 
-        self.assertEqual(["1.21.2", "1.21.1", "1.21.0", "1.20.0"], [r["version"] for r in unread("1.17.0")][:4])
+        self.assertEqual(["1.21.3", "1.21.2", "1.21.1", "1.21.0"], [r["version"] for r in unread("1.17.0")][:4])
         self.assertEqual({"1.21.2", "1.20.0", "1.19.0", "1.18.0"}, {a["version"] for a in pending_actions("1.17.0")})
         self.assertEqual([], pending_actions(RELEASES[0]["version"]))
         self.assertEqual(len(RELEASES), len(unread(None)))
