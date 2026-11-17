@@ -33,6 +33,11 @@
   </div>
 
   <div class="doc-block">
+    <h4>An album folder mixes the explicit and clean versions</h4>
+    <p>Before 1.21.1, the explicit and clean versions of an album (or two albums with one title) went to the same folder, and the second download skipped the tracks whose file names the first already had. <b>Repair downloads</b> sorts them too: each file says which Deezer track it is, so the files of each release go to the folder a download gives it now (<code>Artist - Album (Clean)</code>, or <code>Artist - Album [Deezer ID]</code>), and each album is queued again for the tracks it misses. Clean albums get the album version <i>Clean</i>, so Navidrome keeps them apart. Nothing is deleted; files saved before 1.11.1 carry no Deezer ID and stay where they are. Then run <b>Refresh library</b> and a <b>Quick scan</b>.</p>
+  </div>
+
+  <div class="doc-block">
     <h4>Downloaded tracks still show as Missing</h4>
     <p>The library index does not know the new files yet. Run <b>Refresh library</b>, then a <b>Quick scan</b> of the playlist. With automation, the next automatic scan picks them up.</p>
   </div>

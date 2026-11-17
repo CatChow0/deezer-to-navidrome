@@ -24,16 +24,24 @@ _AUTHELIA_BYPASS = [
 ]
 
 RELEASES = [
+    {"version": "1.21.2", "date": "2026-11-17", "title": "Repair downloads sorts the mixed album folders",
+     "highlights": [
+         "Repair downloads sorts the album folders where the explicit and clean versions got mixed.",
+         "Each album is then downloaded again, for the tracks it misses only.",
+         "Clean albums downloaded before get their album version, so Navidrome keeps them apart.",
+     ],
+     "actions": [
+         {"level": "recommended", "when": "If you downloaded the explicit and the clean version of one album",
+          "do": "Run Repair downloads (Settings → Library index), then Refresh library and a Quick scan.",
+          "lines": [], "file": "app"},
+     ]},
+    # Its action (delete the mixed folder, download again) became 1.21.2's.
     {"version": "1.21.1", "date": "2026-11-17", "title": "Explicit and clean versions in their own folders",
      "highlights": [
          "The clean version of an album goes to its own folder, never into the explicit one's.",
          "Two albums with one title, by one artist, no longer share a folder either.",
      ],
-     "actions": [
-         {"level": "recommended", "when": "If you downloaded the explicit and the clean version of one album",
-          "do": "Delete its folder in the downloads folder's albums, then download each version again.",
-          "lines": [], "file": "app"},
-     ]},
+     "actions": []},
     {"version": "1.21.0", "date": "2026-11-12", "title": "Your Deezer playlists in one click",
      "highlights": [
          "From Deezer lists your account's playlists: Loved tracks, yours and your favorites, private ones too.",
