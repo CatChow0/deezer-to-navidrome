@@ -34,11 +34,14 @@
     <h4>Where files go</h4>
 <pre class="help-code">&lt;downloads folder&gt;/
 ├── albums/
-│   └── Artist - Album/
-│       ├── 01 - Artist Title.flac
-│       └── 02 - Artist Title.flac
+│   ├── Artist - Album/
+│   │   ├── 01 - Artist Title.flac
+│   │   └── 02 - Artist Title.flac
+│   └── Artist - Album (Clean)/
 └── songs/
-    └── Artist - Title.flac</pre>
+    ├── Artist - Title.flac
+    └── Artist - Title (Clean).flac</pre>
+    <p>The censored version of an album or a single says <i>(Clean)</i>, so it never shares a folder or a name with the explicit one, and its tags carry the album version <i>Clean</i>, so Navidrome shows two albums. A folder that already holds another release with the same name (an album downloaded before, another album with this title) is left as it is: the new one goes to <code>Artist - Album [Deezer ID]</code>, and a single to <code>Artist - Title [Deezer ID]</code>.</p>
     <p>The folder is set in <b>Settings → Downloads</b>. Left empty, it is the music folder named <code>deezer-dl</code>. Settings shows the folder actually used, and warns if it does not exist or cannot be written to. Mount it as a volume, or the files stay inside the container.</p>
   </div>
 

@@ -2,7 +2,7 @@
 
 **A self-hosted web app that turns your Deezer playlists into Navidrome `.m3u8` playlists, matches them against your local library, and downloads what is missing straight from Deezer.**
 
-[![Docker Image Version](https://img.shields.io/badge/version-1.21.0-blue)](https://hub.docker.com/r/catchow/deezer-to-navidrome)
+[![Docker Image Version](https://img.shields.io/badge/version-1.21.1-blue)](https://hub.docker.com/r/catchow/deezer-to-navidrome)
 [![Python 3.12](https://img.shields.io/badge/python-3.12-blue)](https://www.python.org/)
 [![Flask](https://img.shields.io/badge/flask-web%20app-brightgreen)](https://flask.palletsprojects.com/)
 
@@ -727,6 +727,10 @@ location / {
 ### Upgrading
 
 Pull the new image and restart: `docker compose pull && docker compose up -d`. Settings, playlists and histories carry over; the app updates what it keeps at its first start. **New**, in the app, shows what changed and starts with what to change, all versions you skipped together. The same list:
+
+#### 1.21.1
+
+- *Recommended, if you downloaded the explicit and the clean version of one album*: before 1.21.1 both went to the same folder and their tracks got mixed. Delete that folder in the downloads folder's `albums`, then download each version again: the clean one goes to `Artist - Album (Clean)`.
 
 #### 1.20.0
 

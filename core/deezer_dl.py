@@ -130,11 +130,43 @@ def _clean_filename(name):
 MAX_NAME_BYTES = 200
 
 
-def _fit(name: str) -> str:
+def _fit(name: str, suffix: str = "") -> str:
+    """`name` cut to fit the disk, then `suffix`, kept whole."""
+    room = MAX_NAME_BYTES - len(suffix.encode("utf-8"))
     data = name.encode("utf-8")
-    if len(data) <= MAX_NAME_BYTES:
-        return name
-    return data[:MAX_NAME_BYTES].decode("utf-8", "ignore").rstrip(" .")
+    if len(data) > room:
+        name = data[:room].decode("utf-8", "ignore").rstrip(" .")
+    return name + suffix
+
+
+# Deezer's EXPLICIT_LYRICS_STATUS of a version whose explicit lyrics were
+# edited out: the censored version of an explicit release.
+EDITED = 3
+
+# A title that already says it is the censored version.
+_SAYS_CLEAN = re.compile(r"[(\[]\s*(clean|edited)\b", re.IGNORECASE)
+
+
+def _lyrics_status(content):
+    try:
+        return int((content or {}).get("EXPLICIT_LYRICS_STATUS"))
+    except (TypeError, ValueError, AttributeError):
+        return None
+
+
+def is_censored(song) -> bool:
+    """The censored version of an explicit track."""
+    return _lyrics_status(song.get("EXPLICIT_TRACK_CONTENT")) == EDITED
+
+
+def _clean_mark(name, censored):
+    """The censored version has the explicit one's title: without a mark, both
+    would get one folder or one file name."""
+    return f"{name} (Clean)" if censored and not _SAYS_CLEAN.search(name) else name
+
+
+def _id_suffix(deezer_id, wanted):
+    return f" [{deezer_id}]" if wanted and deezer_id else ""
 
 
 def song_title(song) -> str:
@@ -148,7 +180,10 @@ def song_title(song) -> str:
     return title
 
 
-def track_filename(song, extension, with_number=False):
+def track_filename(song, extension, with_number=False, with_id=False):
+    """In an album, the folder already says which version it is. A single says
+    "(Clean)" when it is the censored version; `with_id` adds the track's ID,
+    for a name another track already has."""
     artist = _clean_filename(song.get("ART_NAME") or "Unknown artist")
     title = _clean_filename(song_title(song) or "Unknown title")
     if with_number:
@@ -157,13 +192,45 @@ def track_filename(song, extension, with_number=False):
         # Track 3 of the second disc is not track 3 of the first.
         prefix = f"{disc}-{number:02d}" if disc > 1 else f"{number:02d}"
         return f"{_fit(f'{prefix} - {artist} {title}')}.{extension}"
-    return f"{_fit(f'{artist} - {title}')}.{extension}"
+    name = f"{artist} - {_clean_mark(title, is_censored(song))}"
+    return f"{_fit(name, _id_suffix(song.get('SNG_ID'), with_id))}.{extension}"
 
 
-def album_folder(song):
+def album_folder(song, with_id=False):
+    """"Artist - Album", "(Clean)" for the censored version; `with_id` adds the
+    album's ID, for a name another release already has."""
     artist = _clean_filename(song.get("ALB_ART_NAME") or song.get("ART_NAME") or "Unknown artist")
     album = _clean_filename(song.get("ALB_TITLE") or "Unknown album")
-    return _fit(f"{artist} - {album}")
+    name = f"{artist} - {_clean_mark(album, song.get('ALB_CENSORED'))}"
+    return _fit(name, _id_suffix(song.get("ALB_ID"), with_id))
+
+
+AUDIO_SUFFIXES = (".flac", ".mp3")
+
+
+def file_deezer_id(path) -> str:
+    """The Deezer track ID a downloaded file carries, "" when it has none."""
+    try:
+        if Path(path).suffix.lower() == ".flac":
+            values = FLAC(path).get(DEEZER_ID_TAG.lower()) or []
+            return str(values[0]) if values else ""
+        tags = MP3(path).tags
+        frame = tags.get("TXXX:" + DEEZER_ID_TAG) if tags else None
+        return str(frame.text[0]) if frame and frame.text else ""
+    except Exception:
+        return ""
+
+
+def _holds_other_tracks(folder, song_ids) -> bool:
+    """Whether the folder has files of tracks outside `song_ids`: another
+    release with the same name. A file without our tag (downloaded before
+    1.11.1, or added by hand) says nothing either way."""
+    try:
+        entries = list(folder.iterdir())
+    except OSError:
+        return False
+    return any(entry.suffix.lower() in AUDIO_SUFFIXES and not entry.name.startswith(".")
+               and file_deezer_id(entry) not in ("", *song_ids) for entry in entries)
 
 
 # ── Cipher ────────────────────────────────────────────────────────────────────
@@ -227,10 +294,14 @@ def _write_tags(path, song, is_flac):
     disc_number = song.get("DISK_NUMBER")
     released = song.get("PHYSICAL_RELEASE_DATE") or song.get("DIGITAL_RELEASE_DATE")
     genre = _album_genre(song)
+    # Navidrome tells two releases with one title apart by their album version:
+    # without it, the clean and explicit versions merge into one album.
+    album_version = "Clean" if song.get("ALB_CENSORED", is_censored(song)) else None
 
     if is_flac:
         audio = FLAC(path)
-        for key, value in (("artist", artist), ("albumartist", album_artist), ("title", title), ("album", album)):
+        for key, value in (("artist", artist), ("albumartist", album_artist), ("title", title), ("album", album),
+                           ("albumversion", album_version)):
             if value:
                 audio[key] = value
         if track_number:
@@ -262,6 +333,8 @@ def _write_tags(path, song, is_flac):
         audio["TIT2"] = TIT2(encoding=3, text=title)
     if album:
         audio["TALB"] = TALB(encoding=3, text=album)
+    if album_version:
+        audio["TXXX:ALBUMVERSION"] = TXXX(encoding=3, desc="ALBUMVERSION", text=album_version)
     if track_number:
         audio["TRCK"] = TRCK(encoding=3, text=str(track_number))
     if disc_number:
@@ -447,9 +520,13 @@ def fetch_album(album_id):
     if not songs:
         raise DeezerDownloadError(f"Deezer has no track for album {album_id}")
     album = results.get("DATA") or {}
+    # Marked edited, or with an edited track: the censored version.
+    censored = _lyrics_status(album.get("EXPLICIT_ALBUM_CONTENT")) == EDITED or any(map(is_censored, songs))
     for song in songs:
         song.setdefault("ALB_ART_NAME", album.get("ART_NAME"))
         song.setdefault("ALB_TITLE", album.get("TITLE"))
+        song.setdefault("ALB_ID", str(album_id))
+        song["ALB_CENSORED"] = censored
     return songs
 
 
@@ -466,6 +543,9 @@ def download_track(track_id, base_dir=None, on_start=None, on_bytes=None, on_not
     extension = "flac" if session().sound_format() == "FLAC" else "mp3"
     base = Path(base_dir) if base_dir else download_dir() / "songs"
     target = base / track_filename(song, extension)
+    if target.exists() and file_deezer_id(target) not in ("", str(song.get("SNG_ID") or "")):
+        # Another track has this name: the other version of the same title.
+        target = base / track_filename(song, extension, with_id=True)
     already = target.exists()
     if on_start:
         on_start(song, already)
@@ -488,6 +568,11 @@ def download_album(album_id, base_dir=None, on_track=None, on_start=None, on_not
     extension = "flac" if session().sound_format() == "FLAC" else "mp3"
     root = Path(base_dir) if base_dir else download_dir() / "albums"
     folder = root / album_folder(songs[0])
+    if _holds_other_tracks(folder, {str(song.get("SNG_ID")) for song in songs}):
+        # Another release with this name is there (the other version, or
+        # another album with this title): sharing its folder would mix the
+        # two, and skip every track whose file name they share.
+        folder = root / album_folder(songs[0], with_id=True)
     folder.mkdir(parents=True, exist_ok=True)
 
     downloaded = []
