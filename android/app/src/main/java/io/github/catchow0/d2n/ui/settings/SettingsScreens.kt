@@ -201,7 +201,7 @@ fun MaintenanceScreen(vm: MaintenanceViewModel, isAdmin: Boolean, onBack: () -> 
                 Action("Refresh library", "Indexes new and changed files only. Use this after downloads.", "refresh" in busy || !online, vm::refreshLibrary)
                 Action("Rebuild from scratch", "Reads every file again. Slow on large libraries." + if (isAdmin) "" else " An Admin runs it.", "rebuild" in busy || !online || !isAdmin) { ask = "rebuild" }
                 Action("Fix missing metadata", "Finds the tempo and genre your files lack and adds them to their tags. Existing values are kept.", "metadata" in busy || !online) { ask = "metadata" }
-                Action("Repair downloads", "Replaces the damaged files saved by versions 1.10.0 to 1.11.0 (noise, skips). Only broken files are downloaded again.", "repair" in busy || !online, vm::repairDownloads)
+                Action("Repair downloads", "Replaces the damaged files saved by versions 1.10.0 to 1.11.0 (noise, skips), and sorts the album folders where the explicit and clean versions were mixed before 1.21.1. Only what is missing is downloaded again.", "repair" in busy || !online, vm::repairDownloads)
             }
         }
         if (isAdmin) {

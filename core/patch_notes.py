@@ -24,6 +24,11 @@ _AUTHELIA_BYPASS = [
 ]
 
 RELEASES = [
+    {"version": "1.21.3", "date": "2026-11-18", "title": "Repair downloads explained in the Android app",
+     "highlights": [
+         "The Android app says what Repair downloads does now: it also sorts the mixed album folders.",
+     ],
+     "actions": []},
     {"version": "1.21.2", "date": "2026-11-17", "title": "Repair downloads sorts the mixed album folders",
      "highlights": [
          "Repair downloads sorts the album folders where the explicit and clean versions got mixed.",
