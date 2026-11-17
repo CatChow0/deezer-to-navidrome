@@ -391,46 +391,75 @@ def whats_new_seen_route():
     return jsonify({"ok": True})
 
 
+def _albums_message(albums):
+    """What sorting the album folders did, in one sentence part."""
+    parts = []
+    if albums["sorted"]:
+        parts.append(f"{len(albums['sorted'])} mixed folder{'s' if len(albums['sorted']) != 1 else ''} sorted")
+    if albums["tagged"]:
+        parts.append(f"{albums['tagged']} clean file{'s' if albums['tagged'] != 1 else ''} tagged")
+    if albums["refill"]:
+        parts.append(f"{len(albums['refill'])} album{'s' if len(albums['refill']) != 1 else ''} queued for their missing tracks")
+    if albums["left"]:
+        parts.append(f"{len(albums['left'])} left in place (already in the other folder)")
+    if albums["errors"]:
+        parts.append(f"{len(albums['errors'])} folder errors")
+    return f"albums: {', '.join(parts)}" if parts else "albums: none mixed"
+
+
 @system_bp.post("/deezer-dl/repair/start")
 def repair_downloads_start():
     """Finds the files the faulty decryption of 1.10.0 to 1.11.0 broke, and
-    downloads them again."""
-    from core import download_repair
+    downloads them again; then sorts the album folders where two releases with
+    one name were mixed before 1.21.1 (core/download_sort.py)."""
+    from core import download_repair, download_sort
 
     account = my_download_account()
     if not deezer_dl.download_arl(account):
         return jsonify({"ok": False, "error": "Add a Deezer account first, in Settings → Deezer accounts: the files are downloaded again"}), 400
-    if download_repair.is_running():
+    if download_repair.is_running() or download_sort.is_running():
         return jsonify({"ok": False, "error": "A repair is already running"}), 409
     task_id = create_task("Repair downloads", kind="download", cancellable=True)
-
-    def runner():
-        try:
-            with deezer_dl.using(account):
-                summary = download_repair.repair_downloads(
-                    progress=lambda message, percent: push_task_event(task_id, message, stage="repair", progress=percent,
-                                                                      check_cancel=False),
-                    should_stop=lambda: cancel_requested(task_id),
-                )
-        except Exception as e:
-            push_task_event(task_id, f"Repair failed: {e}", stage="error", done=True, error=True)
-            return
-        repaired, unknown, errors = summary["repaired"], summary["unknown"], summary["errors"]
-        if summary.get("cancelled"):
-            finish_cancelled(task_id, f"Cancelled: {summary['fine'] + len(repaired)} files checked, {len(repaired)} repaired. Click again to go on from there")
-            return
-        parts = [f"{len(repaired)} repaired", f"{summary['fine']} already fine"]
-        if unknown:
-            parts.append(f"{len(unknown)} not found on Deezer")
-        if errors:
-            parts.append(f"{len(errors)} errors")
-        message = f"Checked {summary['checked']} files: {', '.join(parts)}"
-        if repaired:
-            message += ". Refresh the library so Navidrome reads them again"
-        push_task_event(task_id, message, stage="done", progress=100, done=True, error=bool(errors) and not repaired)
-
-    threading.Thread(target=runner, daemon=True).start()
+    threading.Thread(target=_run_repair, args=(task_id, account), daemon=True).start()
     return jsonify({"task_id": task_id})
+
+
+def _run_repair(task_id, account):
+    from core import download_repair, download_sort
+
+    def progress(message, percent):
+        push_task_event(task_id, message, stage="repair", progress=percent, check_cancel=False)
+
+    albums = None
+    try:
+        with deezer_dl.using(account):
+            summary = download_repair.repair_downloads(progress=progress, should_stop=lambda: cancel_requested(task_id))
+            if not summary.get("cancelled"):
+                albums = download_sort.sort_albums(progress=progress, should_stop=lambda: cancel_requested(task_id))
+    except Exception as e:
+        push_task_event(task_id, f"Repair failed: {e}", stage="error", done=True, error=True)
+        return
+    # A sorted folder is no longer mixed, so a later click would not queue
+    # its albums: they are queued now, even when the rest was cancelled.
+    for album in (albums or {}).get("refill") or []:
+        _start_download("album", album["id"], album["label"], deezer_account=account)
+    repaired, unknown, errors = summary["repaired"], summary["unknown"], summary["errors"]
+    if summary.get("cancelled"):
+        finish_cancelled(task_id, f"Cancelled: {summary['fine'] + len(repaired)} files checked, {len(repaired)} repaired. Click again to go on from there")
+        return
+    if albums["cancelled"]:
+        finish_cancelled(task_id, f"Cancelled while sorting the albums: {_albums_message(albums)}. Click again to go on from there")
+        return
+    parts = [f"{len(repaired)} repaired", f"{summary['fine']} already fine"]
+    if unknown:
+        parts.append(f"{len(unknown)} not found on Deezer")
+    if errors:
+        parts.append(f"{len(errors)} errors")
+    message = f"Checked {summary['checked']} files: {', '.join(parts)}; {_albums_message(albums)}"
+    if repaired or albums["moved"] or albums["tagged"]:
+        message += ". Refresh the library so Navidrome reads them again"
+    push_task_event(task_id, message, stage="done", progress=100, done=True,
+                    error=bool(errors or albums["errors"]) and not (repaired or albums["sorted"]))
 
 
 @system_bp.route("/deezer-dl/track/<track_id>", methods=["POST"])

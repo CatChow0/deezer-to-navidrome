@@ -2,7 +2,7 @@
 
 **A self-hosted web app that turns your Deezer playlists into Navidrome `.m3u8` playlists, matches them against your local library, and downloads what is missing straight from Deezer.**
 
-[![Docker Image Version](https://img.shields.io/badge/version-1.21.1-blue)](https://hub.docker.com/r/catchow/deezer-to-navidrome)
+[![Docker Image Version](https://img.shields.io/badge/version-1.21.2-blue)](https://hub.docker.com/r/catchow/deezer-to-navidrome)
 [![Python 3.12](https://img.shields.io/badge/python-3.12-blue)](https://www.python.org/)
 [![Flask](https://img.shields.io/badge/flask-web%20app-brightgreen)](https://flask.palletsprojects.com/)
 
@@ -728,9 +728,9 @@ location / {
 
 Pull the new image and restart: `docker compose pull && docker compose up -d`. Settings, playlists and histories carry over; the app updates what it keeps at its first start. **New**, in the app, shows what changed and starts with what to change, all versions you skipped together. The same list:
 
-#### 1.21.1
+#### 1.21.2
 
-- *Recommended, if you downloaded the explicit and the clean version of one album*: before 1.21.1 both went to the same folder and their tracks got mixed. Delete that folder in the downloads folder's `albums`, then download each version again: the clean one goes to `Artist - Album (Clean)`.
+- *Recommended, if you downloaded the explicit and the clean version of one album*: before 1.21.1 both went to the same folder and their tracks got mixed. Run **Repair downloads** (Settings → Library index): it sorts them into their own folders and downloads what each one misses (see [Troubleshooting](#troubleshooting)), then **Refresh library** and a **Quick scan**.
 
 #### 1.20.0
 
@@ -1243,6 +1243,10 @@ The `Android` stage builds the app before the image, keeps the APK as a build ar
 Versions 1.10.0 to 1.11.0 decrypted the downloads wrongly (8 wrong bytes every 6 KB). Update, then run **Settings → Library index → Repair downloads**: it checks every file of the downloads folder saved since 1.10.0, downloads it again, and replaces it only if it is byte for byte what the faulty versions produced, keeping its tags. Files it cannot identify on Deezer, and files that are fine (from another downloader, for instance), are left as they are. Then run **Refresh library**.
 
 New downloads also carry the Deezer id of the track in a `DEEZER_TRACK_ID` tag.
+
+### An album folder mixes the explicit and clean versions
+
+Before 1.21.1, the explicit and clean versions of an album (or two albums with one title) went to the same folder, and the second download skipped the tracks whose file names the first already had. **Repair downloads** sorts them too: it reads each file's `DEEZER_TRACK_ID`, moves the files of each release to the folder a download gives it now (`Artist - Album (Clean)`, or `Artist - Album [Deezer ID]`), and queues each album again for the tracks it misses. Clean albums get the album version *Clean*, so Navidrome keeps them apart from the explicit ones. Nothing is deleted; files without the tag stay where they are. Then run **Refresh library** and a **Quick scan**.
 
 ### Downloads fail
 

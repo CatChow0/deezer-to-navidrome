@@ -1,0 +1,10 @@
+<p>Repair downloads now sorts the album folders where two versions of an album got mixed before 1.21.1.</p>
+
+<ul class="help-list">
+  <li><strong>Mixed folders sorted.</strong> Each downloaded file says which Deezer track it is, so its album is known. The files of each release go to the folder a download gives it now: the explicit one keeps <code>Artist - Album</code>, the clean one gets <code>Artist - Album (Clean)</code>, another album with the same title <code>Artist - Album [Deezer ID]</code>.</li>
+  <li><strong>Missing tracks fetched.</strong> Each sorted album is queued again and downloads only the tracks it lacks, shown in <b>Activity</b>.</li>
+  <li><strong>Clean albums apart in Navidrome.</strong> Clean albums downloaded before 1.21.1 get the album version <i>Clean</i> in their tags, where they are, so Navidrome does not merge them with an explicit one downloaded later.</li>
+  <li><strong>Nothing deleted.</strong> Files saved before 1.11.1 carry no Deezer ID, and a file already in its new folder is never overwritten: they stay where they are. Then run <b>Refresh library</b> and a <b>Quick scan</b>. The button is also in <b>Settings → Library index</b>.</li>
+  <li><strong>Update.</strong> The Android app offers this version from your server; nothing changes in it.</li>
+</ul>
+<p><button type="button" class="btn btn--sm" data-action="repair-downloads">Repair downloads</button></p>
