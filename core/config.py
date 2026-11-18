@@ -230,7 +230,9 @@ def list_tasks(allow=None):
     """The tasks of Activity; `allow(task)` keeps the ones the asker may see."""
     _prune_tasks()
     with _tasks_lock:
-        tasks = [t for t in TASKS.values() if t["visible"] and (allow is None or allow(t))]
+        visible = [t for t in TASKS.values() if t["visible"]]
+    # `allow` outside the lock: it may read files, and every task waits on this lock.
+    tasks = [t for t in visible if allow is None or allow(t)]
     return [task_summary(t) for t in sorted(tasks, key=lambda t: t["created_at"], reverse=True)]
 
 

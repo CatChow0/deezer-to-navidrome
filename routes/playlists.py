@@ -23,6 +23,7 @@ from core.deezer import (
     convert_playlist,
     fetch_deezer_playlist_info,
     load_playlists,
+    saved_entries,
     mark_preview_rows_downloaded,
     rematch_track,
 )
@@ -61,10 +62,10 @@ def playlist_refused(playlist_id):
     server's accounts)."""
     if not playlist_id:
         return None
-    playlist = next((p for p in load_playlists() if p["id"] == playlist_id), None)
-    if playlist is None:
+    if not any(str(e.get("id")) == playlist_id for e in saved_entries()):
         return refused("No such playlist.", 404)
-    if not account_context.may_see_playlist(playlist):
+    # Not load_playlists(): this runs before every playlist route and must not wait on Deezer.
+    if not account_context.may_see_playlist({"accounts": accounts_for(playlist_id)}):
         return refused("This playlist is not on your profiles.")
     return None
 
@@ -80,7 +81,7 @@ def dashboard_playlists(account):
     An account of this app without a profile yet has none."""
     if not account:
         return [], []
-    playlists = [p for p in load_playlists() if not p.get("accounts") or account in p["accounts"]]
+    playlists = [p for p in load_playlists(refresh=True) if not p.get("accounts") or account in p["accounts"]]
     handmade = []
     if account:
         names = publish.custom_titles(account)

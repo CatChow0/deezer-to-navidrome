@@ -217,14 +217,15 @@ def fetch_deezer_playlist_info(playlist_id: str, profiles=None):
     }
 
 
-def cache_cover(playlist):
+def cache_cover(playlist, fetch=True):
     playlist_id = playlist["id"]
     picture = playlist.get("picture") or ""
     target = COVERS_DIR / f"{playlist_id}.jpg"
 
     if target.exists():
         return target.name
-    if not picture:
+    key = f"cover:{playlist_id}"
+    if not fetch or not picture or time.time() - _refresh_failed_at.get(key, 0) < _REFRESH_BACKOFF:
         return None
 
     try:
@@ -233,6 +234,7 @@ def cache_cover(playlist):
         target.write_bytes(r.content)
         return target.name
     except Exception:
+        _refresh_failed_at[key] = time.time()  # a dead link is not tried again on each page
         return None
 
 
@@ -349,7 +351,10 @@ def _missing_details(pid, title, picture):
     return {"title": title or info.get("title") or "", "picture": picture or info.get("picture") or ""}
 
 
-def load_playlists():
+def load_playlists(refresh=False):
+    """The saved playlists. Without `refresh` nothing leaves the machine: a missing
+    title or cover stays missing. `refresh` (the dashboard, the scheduler) asks
+    Deezer for them, which can take many seconds."""
     ensure_dirs()
     playlists = []
     refreshed = {}
@@ -360,7 +365,7 @@ def load_playlists():
             continue
         title = str(item.get("title", "")).strip()
         picture = str(item.get("picture", "")).strip()
-        found = _missing_details(pid, title, picture)
+        found = _missing_details(pid, title, picture) if refresh else None
         if found and (found["title"] != title or found["picture"] != picture):
             refreshed[pid] = found
             title, picture = found["title"], found["picture"]
@@ -398,7 +403,7 @@ def load_playlists():
         modify_playlists(change)
 
     for p in playlists:
-        p["cover_cached"] = cache_cover(p)
+        p["cover_cached"] = cache_cover(p, fetch=refresh)
 
     return playlists
 
