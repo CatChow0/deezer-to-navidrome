@@ -256,6 +256,21 @@ def _decrypt(data, key):
     return bytes(out)
 
 
+def _decrypt_stream(chunks, key):
+    """`_decrypt` for a download read in pieces: the same bytes, with one block
+    of the file in memory instead of the whole of it."""
+    pending, index = b"", 0
+    for chunk in chunks:
+        pending += chunk
+        while len(pending) >= BLOCK_SIZE:
+            block, pending = pending[:BLOCK_SIZE], pending[BLOCK_SIZE:]
+            if index % 3 == 0:
+                block = Blowfish.new(key.encode(), Blowfish.MODE_CBC, CIPHER_IV).decrypt(block)
+            index += 1
+            yield block
+    yield pending
+
+
 # ── Tags ──────────────────────────────────────────────────────────────────────
 
 def _cover(song):
@@ -475,13 +490,6 @@ def download_song(song, target, on_bytes=None, on_note=None):
     resp = s.http.get(url, stream=True, timeout=120)
     resp.raise_for_status()
     total = int(resp.headers.get("Content-Length") or 0)
-    chunks, received = [], 0
-    for chunk in resp.iter_content(64 * 1024):
-        chunks.append(chunk)
-        received += len(chunk)
-        if on_bytes:
-            on_bytes(received, total)
-    payload = _decrypt(b"".join(chunks), _cipher_key(source["SNG_ID"]))
 
     target.parent.mkdir(parents=True, exist_ok=True)
     # A name of its own: two downloads of one track at once must not share a
@@ -489,8 +497,14 @@ def download_song(song, target, on_bytes=None, on_note=None):
     # without its tags.
     fd, temporary = tempfile.mkstemp(dir=target.parent, prefix=".", suffix=".part")
     try:
+        received = 0
         with os.fdopen(fd, "wb") as handle:
-            handle.write(payload)
+            # Decrypted and written as it arrives: no copy of the whole file in memory.
+            for block in _decrypt_stream(resp.iter_content(64 * 1024), _cipher_key(source["SNG_ID"])):
+                handle.write(block)
+                received += len(block)
+                if on_bytes:
+                    on_bytes(received, total)
         os.chmod(temporary, 0o644)
         try:
             _write_tags(Path(temporary), song, sound_format == "FLAC")

@@ -26,6 +26,10 @@ ENV DATA_DIR=/data
 
 EXPOSE 8080
 
+# /health is open to anyone; wget is BusyBox's. Without it a hung app stays "running".
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+  CMD wget -q -O /dev/null http://127.0.0.1:8080/health || exit 1
+
 ENTRYPOINT ["/app/docker-entrypoint.sh"]
 # Threads let task streams (SSE) stay open without blocking the other requests.
 CMD ["gunicorn", "--worker-class", "gthread", "--threads", "16", "--timeout", "0", "-b", "0.0.0.0:8080", "app:app"]

@@ -201,5 +201,16 @@ class Tags(unittest.TestCase):
         self.assertEqual(str(ID3(path)["TXXX:ALBUMVERSION"]), "Clean")
 
 
+class StreamedDecryption(unittest.TestCase):
+    def test_pieces_of_any_size_give_the_bytes_of_the_whole(self):
+        data = bytes(range(256)) * 100 + b"tail"  # 12.5 blocks: the last one is partial
+        key = deezer_dl._cipher_key("123")
+        whole = deezer_dl._decrypt(data, key)
+        for size in (1, 7, 2048, 5000, len(data)):
+            with self.subTest(size=size):
+                pieces = (data[i:i + size] for i in range(0, len(data), size))
+                self.assertEqual(whole, b"".join(deezer_dl._decrypt_stream(pieces, key)))
+
+
 if __name__ == "__main__":
     unittest.main()

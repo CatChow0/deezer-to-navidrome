@@ -264,12 +264,22 @@ class DownloadQueue:
             summary["replaced"] += result["replaced"]
         return summary
 
-    def snapshot(self):
+    def snapshot(self, allow=None):
+        """The tasks as the page reads them; `allow(task)` keeps the ones the asker may see."""
         with self.lock:
-            # The old entries are dropped so the list does not grow forever.
-            if len(self.tasks) > 200:
-                self.tasks = self.tasks[-200:]
-            return [t.as_dict() for t in self.tasks]
+            # The oldest finished entries are dropped so the list does not grow
+            # forever. Never a waiting or running one: it would vanish from the
+            # page, and asking for it again would queue it a second time.
+            excess = sum(t.settled for t in self.tasks) - 200
+            if excess > 0:
+                kept = []
+                for t in self.tasks:
+                    if t.settled and excess > 0:
+                        excess -= 1
+                    else:
+                        kept.append(t)
+                self.tasks = kept
+            return [t.as_dict() for t in self.tasks if allow is None or allow(t)]
 
 
 _queue = None
@@ -300,5 +310,5 @@ def enqueue_download(kind, music_id, on_done=None, on_progress=None, base_dir=No
                                deezer_account=deezer_account)
 
 
-def queue_snapshot():
-    return get_queue().snapshot()
+def queue_snapshot(allow=None):
+    return get_queue().snapshot(allow)

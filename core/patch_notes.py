@@ -24,6 +24,13 @@ _AUTHELIA_BYPASS = [
 ]
 
 RELEASES = [
+    {"version": "1.21.5", "date": "2026-11-18", "title": "Safer sessions, tasks and downloads",
+     "highlights": [
+         "Each account sees and stops only its own tasks and downloads; Admins see all.",
+         "A big download queue no longer forgets the downloads waiting in it.",
+         "Downloads no longer hold a whole track in memory; the image reports whether it is healthy.",
+     ],
+     "actions": []},
     {"version": "1.21.4", "date": "2026-11-18", "title": "Image security fixes",
      "highlights": [
          "The image takes Alpine's security fixes when it is built: no critical flaw left, half the high ones gone.",

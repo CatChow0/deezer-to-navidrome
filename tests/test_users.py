@@ -101,6 +101,30 @@ class Passwords(Base):
         self.assertTrue(users.check("root", "a-new-long-password"))
         self.assertFalse(path.exists())
 
+    def test_asking_again_keeps_the_code_that_is_still_valid(self):
+        path = users.write_superadmin_code(now=1000)
+        text = path.read_text(encoding="utf-8")
+        users.write_superadmin_code(now=1000 + users.RECOVERY_SECONDS - 1)
+        self.assertEqual(text, path.read_text(encoding="utf-8"))
+        users.write_superadmin_code(now=1000 + users.RECOVERY_SECONDS + 1)
+        self.assertNotEqual(text, path.read_text(encoding="utf-8"))
+
+    def test_a_wrong_password_of_the_env_account_costs_a_hash_check_too(self):
+        with mock.patch.dict(os.environ, {"APP_USERNAME": "boss", "APP_PASSWORD": "env-password-long"}), \
+                mock.patch.object(users, "check_password_hash") as hashing:
+            self.assertIsNone(users.check("boss", "wrong"))
+            self.assertEqual(1, hashing.call_count)
+            self.assertIsNone(users.check("nobody", "wrong"))
+            self.assertEqual(2, hashing.call_count)
+
+    def test_a_damaged_devices_file_is_set_aside_not_overwritten(self):
+        file = Path(config.DATA_DIR) / "devices.json"
+        file.write_text("{not json", encoding="utf-8")
+        self.addCleanup(lambda: [p.unlink() for p in file.parent.glob("devices.json.corrupt-*")])
+        token, _ = devices.create("Pixel", "", self.alice["id"])
+        self.assertTrue(devices.verify(f"Bearer {token}"))
+        self.assertEqual(1, len(list(file.parent.glob("devices.json.corrupt-*"))))
+
     def test_a_new_password_signs_the_devices_out(self):
         token, _ = devices.create("Pixel", "", self.alice["id"])
         self.assertTrue(devices.verify(f"Bearer {token}"))

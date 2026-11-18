@@ -117,14 +117,22 @@ def check(name, password):
     as a wrong password: the time taken does not tell which one was wrong."""
     user = by_name(name)
     if user and user.get("from_env"):
-        return user if password and _same(password, os.environ["APP_PASSWORD"]) else None
+        if password and _same(password, os.environ["APP_PASSWORD"]):
+            return user
+        _burn_time(password)
+        return None
     stored = (user or {}).get("password_hash")
     if not stored or not password:
-        if not _dummy:
-            _dummy.append(generate_password_hash(secrets.token_hex(16)))
-        check_password_hash(_dummy[0], password or "")
+        _burn_time(password)
         return None
     return user if check_password_hash(stored, password) else None
+
+
+def _burn_time(password) -> None:
+    """A hash check on nothing, so a refusal costs the same whatever was wrong."""
+    if not _dummy:
+        _dummy.append(generate_password_hash(secrets.token_hex(16)))
+    check_password_hash(_dummy[0], password or "")
 
 
 def stamp(user) -> str:
@@ -269,7 +277,15 @@ def write_superadmin_code(now=None) -> Path:
     if not superadmin() or superadmin().get("from_env"):
         raise UserError("No Super-Admin password to recover here.")
     path = Path(config.DATA_DIR) / RECOVERY_FILE
-    expires = int(now or time.time()) + RECOVERY_SECONDS
+    now = int(now or time.time())
+    try:
+        # This page is open to anyone: while a code is valid, asking again must
+        # not replace it under the Super-Admin who is about to read it.
+        if int(path.read_text(encoding="utf-8").split()[1]) > now:
+            return path
+    except (OSError, ValueError, IndexError):
+        pass
+    expires = now + RECOVERY_SECONDS
     files.write_atomic(path, f"{secrets.token_hex(8).upper()}\n{expires}\n", private=True)
     return path
 

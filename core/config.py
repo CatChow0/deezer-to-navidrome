@@ -110,6 +110,13 @@ class TaskCancelled(Exception):
     """Raised by a task's next progress report once someone asked it to stop."""
 
 
+def _asker_id():
+    """The account whose request starts a task; None for the app's own (the scheduler)."""
+    from flask import g, has_request_context
+
+    return (g.get("user") or {}).get("id") or None if has_request_context() else None
+
+
 def create_task(title="Task", kind="task", playlist_id=None, visible=True, cancellable=False):
     """`visible` tasks are listed in Activity; small ones (single downloads) are not.
     `cancellable` is only for tasks known to stop cleanly at a progress report."""
@@ -118,6 +125,7 @@ def create_task(title="Task", kind="task", playlist_id=None, visible=True, cance
     with _tasks_lock:
         TASKS[task_id] = {
             "id": task_id,
+            "owner": _asker_id(),
             "title": title,
             "kind": kind,
             "playlist_id": str(playlist_id) if playlist_id else None,
@@ -218,10 +226,11 @@ def task_summary(task):
     )}
 
 
-def list_tasks():
+def list_tasks(allow=None):
+    """The tasks of Activity; `allow(task)` keeps the ones the asker may see."""
     _prune_tasks()
     with _tasks_lock:
-        tasks = [t for t in TASKS.values() if t["visible"]]
+        tasks = [t for t in TASKS.values() if t["visible"] and (allow is None or allow(t))]
     return [task_summary(t) for t in sorted(tasks, key=lambda t: t["created_at"], reverse=True)]
 
 

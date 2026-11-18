@@ -2,7 +2,7 @@
 
 **A self-hosted web app that turns your Deezer playlists into Navidrome `.m3u8` playlists, matches them against your local library, and downloads what is missing straight from Deezer.**
 
-[![Docker Image Version](https://img.shields.io/badge/version-1.21.4-blue)](https://hub.docker.com/r/catchow/deezer-to-navidrome)
+[![Docker Image Version](https://img.shields.io/badge/version-1.21.5-blue)](https://hub.docker.com/r/catchow/deezer-to-navidrome)
 [![Python 3.12](https://img.shields.io/badge/python-3.12-blue)](https://www.python.org/)
 [![Flask](https://img.shields.io/badge/flask-web%20app-brightgreen)](https://flask.palletsprojects.com/)
 
@@ -408,7 +408,7 @@ Both back up the profile's history first (the last 3, as `stats.db.bak-*` in `DA
 | `config.json` | App configuration | Survives restarts |
 | `secrets.json` | Session key; before 1.20, the account's password hash, API token and webhook URL | Survives restarts |
 | `users.json` | The accounts of the app: password and recovery code hashes, API token and webhook URL encrypted, the profiles CatBoard reads | Survives restarts |
-| `recovery-code.txt` | The Super-Admin's one-time code, when asked for on the Forgot page | Deleted once used, or after 15 min |
+| `recovery-code.txt` | The Super-Admin's one-time code, when asked for on the Forgot page | Deleted once used, or after 15 min; asking again keeps it while valid |
 | `navidrome_accounts.json` | Navidrome accounts, their passwords encrypted | Survives restarts |
 | `devices.json` | The devices signed in through the API, each with its account, a digest of each token | Survives restarts |
 | `deezer_accounts.json` | Deezer accounts, their ARLs encrypted | Survives restarts |
@@ -667,6 +667,8 @@ D2N_ENCRYPTION_KEY=
 docker compose up -d
 ```
 
+The image checks itself: `docker ps` shows `healthy` once `/health` answers, and `unhealthy` when the app hangs (a `restart: unless-stopped` policy does not restart it by itself).
+
 4. **Open the web UI** at `http://localhost:8080` and create your account.
 
 5. **Add your Deezer account** in **Settings → Deezer accounts** (optional, but needed for downloads, mixes and the release feed).
@@ -859,9 +861,10 @@ The web interface asks for a sign-in. On the first visit, the app asks you to cr
 
 - **Three privileges.** The Super-Admin, never removed, manages everyone. An **Admin** manages the Standard accounts and the server's settings; only the Super-Admin makes an Admin Standard again, and Admins do not change each other. A **Standard** account has its own profiles and settings, and never the server's.
 - **Settings → Users** (Admins) adds an account with a temporary password: its user chooses their own at the first sign-in. It edits an account's username, privilege and password, and removes one: its Navidrome and Deezer accounts go to another account, or with it.
+- **Each account its own tasks.** **Activity** and the download queue show the tasks and downloads an account started (its downloads account, for the queue), and only it, or an Admin, can stop them; Admins see all of them. What the app starts itself, such as an automatic scan, is shown to everyone.
 - **Each account its own profiles.** Its Navidrome accounts, its Deezer accounts, its downloads account, its API token, CatBoard webhook and devices. A Navidrome user belongs to one account of the app only; a Deezer account can be shared (**Share**), and is then used, never changed, by the others. The picker at the top shows your own profiles only, Admins too: an Admin manages another account's in **Settings → Accounts → Accounts of**.
 - **Admins only:** the General settings, Rebuild from scratch, applying duplicates, Made for you's disk limits and Reset data. Everyone: Refresh library, Fix missing metadata, Repair downloads, and **Clear your profiles**.
-- **Forgot your password?** Each account has a **recovery code**, shown once, at the first sign-in, then when made again in **Settings → Sign-in and other apps** (or by an Admin for a Standard, by the Super-Admin for an Admin). On the sign-in page, **Forgot your password?** takes the username, the code and a new password. The Super-Admin without its code can have a one-time code written in `data/recovery-code.txt`, valid 15 minutes.
+- **Forgot your password?** Each account has a **recovery code**, shown once, at the first sign-in, then when made again in **Settings → Sign-in and other apps** (or by an Admin for a Standard, by the Super-Admin for an Admin). On the sign-in page, **Forgot your password?** takes the username, the code and a new password. The Super-Admin without its code can have a one-time code written in `data/recovery-code.txt`, valid 15 minutes; asking again while it is valid shows the same file, so nobody can replace it under you.
 - **From an older version.** Your account becomes the Super-Admin and keeps everything: its profiles, Deezer accounts, token, webhook and signed-in devices.
 
 - After 5 failed sign-ins in 15 minutes, the address waits 30 s, then twice as long after each new failure (up to 15 min). Failures on one username from everywhere at once wait after 50, so someone guessing from the internet cannot lock you out. Behind a reverse proxy, set `TRUSTED_PROXIES` so each visitor's own address is counted.

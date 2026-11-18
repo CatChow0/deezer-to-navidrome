@@ -88,6 +88,18 @@ def latest_version_route():
 STREAM_SEGMENT_SECONDS = 45
 
 
+def may_see(task) -> bool:
+    """A task is its starter's, and an Admin's; one the app started itself (no owner) is everyone's."""
+    owner = task.get("owner")
+    return not owner or owner == (me() or {}).get("id") or users.can(me(), "admin")
+
+
+def task_of(task_id):
+    """The task, or None when there is none or it is another account's."""
+    task = TASKS.get(task_id)
+    return task if task and may_see(task) else None
+
+
 @system_bp.get("/tasks/<task_id>/stream")
 def task_stream(task_id):
     # EventSource sends Last-Event-ID when it reconnects by itself; "from" is
@@ -98,7 +110,7 @@ def task_stream(task_id):
 
     def generate():
         yield "retry: 1500\n\n"
-        if task_id not in TASKS:
+        if task_of(task_id) is None:
             yield 'data: {"type":"status","message":"Task not found","done":true,"error":true}\n\n'
             return
         deadline = time.monotonic() + STREAM_SEGMENT_SECONDS
@@ -120,7 +132,7 @@ def task_stream(task_id):
 
 @system_bp.post("/api/tasks/<task_id>/cancel")
 def cancel_task_route(task_id):
-    if task_id not in TASKS:
+    if task_of(task_id) is None:
         return jsonify({"ok": False, "error": "Unknown task"}), 404
     if not request_cancel(task_id):
         return jsonify({"ok": False, "error": "This task cannot be stopped"}), 409
@@ -129,7 +141,7 @@ def cancel_task_route(task_id):
 
 @system_bp.get("/api/tasks")
 def tasks_route():
-    return jsonify({"ok": True, "tasks": list_tasks()})
+    return jsonify({"ok": True, "tasks": list_tasks(allow=may_see)})
 
 
 # What Settings edits, for the form and the API.
@@ -473,7 +485,10 @@ def deezer_dl_queue():
 
     Same shape as the queue of the separate downloader, so the pages reading
     it did not have to change."""
-    return jsonify(download_queue.queue_snapshot())
+    # Each account sees the downloads of its own Deezer account; an Admin sees all.
+    mine = my_download_account()
+    allow = None if users.can(me(), "admin") else (lambda task: task.deezer_account == mine)
+    return jsonify(download_queue.queue_snapshot(allow))
 
 
 @system_bp.post("/deezer-dl/download/start")

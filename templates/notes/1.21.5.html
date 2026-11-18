@@ -1,0 +1,11 @@
+<p>Fixes found by a code audit.</p>
+
+<ul class="help-list">
+  <li><strong>Your own tasks.</strong> Activity and the download queue show what you started, and only you or an Admin can stop it. What the app starts itself, like an automatic scan, stays visible to everyone.</li>
+  <li><strong>Download queue.</strong> A long queue (a few hundred tracks) no longer drops the downloads still waiting from the list, so asking again does not download them twice.</li>
+  <li><strong>Memory.</strong> A track is decrypted and saved as it arrives, instead of being kept whole in memory: several downloads at once need much less.</li>
+  <li><strong>Sign-in.</strong> The sign-in takes as long for the account set by <code>APP_USERNAME</code> as for any other, and asking again for the Super-Admin's recovery file keeps the code still valid.</li>
+  <li><strong>Devices.</strong> A damaged <code>devices.json</code> is set aside instead of being replaced, which would have signed every phone out.</li>
+  <li><strong>Docker.</strong> The image now has a health check: <code>docker ps</code> shows <code>healthy</code> or <code>unhealthy</code>.</li>
+  <li><strong>Update.</strong> Pull the new image: there is nothing to change in your settings.</li>
+</ul>
