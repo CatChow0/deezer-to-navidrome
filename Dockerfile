@@ -7,9 +7,13 @@ ENV PYTHONUNBUFFERED=1
 
 WORKDIR /app
 
-# Decodes audio for the tempo analysis. The link is the name the Python binding looks for.
+# The upgrade: the python image is rebuilt less often than Alpine fixes its
+# packages (openssl, zlib, musl, krb5...), so each build takes the fixes out.
+# libsndfile decodes audio for the tempo analysis. The link is the name the Python binding looks for.
 # su-exec: the switch to PUID / PGID (docker-entrypoint.sh).
-RUN apk add --no-cache libsndfile su-exec && ln -s "$(ls /usr/lib/libsndfile.so.* | head -1)" /usr/lib/libsndfile.so
+RUN apk upgrade --no-cache \
+ && apk add --no-cache libsndfile su-exec \
+ && ln -s "$(ls /usr/lib/libsndfile.so.* | head -1)" /usr/lib/libsndfile.so
 
 COPY requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r /app/requirements.txt

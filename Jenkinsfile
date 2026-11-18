@@ -67,7 +67,12 @@ pipeline {
         // Only the commit tag here. A "latest" built locally can be swapped for the
         // one on Docker Hub by any pull on this Docker host (a compose pull, an
         // updater) before it is pushed: 1.15.0 shipped with the 1.14.0 image that way.
-        sh 'docker build --pull -t $IMAGE:$SHA .'
+        // The SBOM and the provenance (Docker Scout's supply chain attestations)
+        // ride with the image: docker push and the imagetools copy below keep
+        // them. They need the containerd image store on this Docker host (the
+        // default since Docker Engine 29); without it BuildKit stops here with
+        // "Attestation is not supported for the docker driver".
+        sh 'docker build --pull --sbom=true --provenance=mode=max -t $IMAGE:$SHA .'
       }
     }
 
