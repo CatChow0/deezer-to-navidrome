@@ -18,6 +18,8 @@ android/.gradle/
 android/.kotlin/
 # The APK and app.json the build writes, which the server image picks up
 /dist/
+# The JUnit reports of the tests, for the build page of Jenkins
+/reports/
 
 # Your settings and credentials
 .env

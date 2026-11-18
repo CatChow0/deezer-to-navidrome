@@ -12,8 +12,9 @@ here="$(cd "$(dirname "$0")" && pwd)"
 root="$(cd "$here/../.." && { pwd -W 2>/dev/null || pwd; })"
 out="$root/dist/android"
 
-# Whatever fails below, no APK from an earlier build stays to be shipped.
-rm -rf "$out"
+# Whatever fails below, no APK from an earlier build stays to be shipped, nor
+# reports of earlier tests.
+rm -rf "$out" "$root/reports/android"
 
 if [ -z "${D2N_KEYSTORE_FILE:-}" ] || [ ! -f "$D2N_KEYSTORE_FILE" ]; then
   echo "build-apk: set D2N_KEYSTORE_FILE to the signing key (release.jks)." >&2
@@ -47,4 +48,9 @@ for file in deezer-to-navidrome.apk app.json; do
     exit 1
   fi
 done
+# The tests' JUnit reports go to reports/ (the build page's graph), not into the app's folder.
+if [ -d "$out/test-reports" ]; then
+  mkdir -p "$root/reports"
+  mv "$out/test-reports" "$root/reports/android"
+fi
 echo "build-apk: $out holds the app $version ($commit, built $built_at)."

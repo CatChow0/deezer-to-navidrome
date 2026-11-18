@@ -24,6 +24,12 @@ _AUTHELIA_BYPASS = [
 ]
 
 RELEASES = [
+    {"version": "1.22.1", "date": "2026-11-18", "title": "Tests run in the build, with their graph",
+     "highlights": [
+         "Every build now runs the Python tests before an image can be published.",
+         "Jenkins shows the test results graph, as it does for CatBoard.",
+     ],
+     "actions": []},
     {"version": "1.22.0", "date": "2026-11-18", "title": "The library refreshes itself after downloads",
      "highlights": [
          "Once the downloads are over, the library is indexed by itself, one time for the whole batch.",

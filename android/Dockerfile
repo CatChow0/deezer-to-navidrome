@@ -52,3 +52,6 @@ RUN --mount=type=cache,target=/root/.gradle \
 
 FROM scratch AS out
 COPY --from=build /src/app/build/d2n/ /
+# The unit tests' JUnit reports: build-apk.sh moves them out of the app's folder, to
+# reports/android, for the build page's graph.
+COPY --from=build /src/app/build/test-results/testDebugUnitTest/ /test-reports/

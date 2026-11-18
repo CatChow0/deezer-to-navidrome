@@ -11,6 +11,8 @@ README.md
 DOCKERHUB_README.md
 tests
 docs
+# The JUnit reports a build leaves in the workspace
+reports
 .superpowers
 # The Android sources: only the APK they produce (dist/) goes in the image
 android
