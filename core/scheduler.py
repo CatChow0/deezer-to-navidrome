@@ -200,7 +200,7 @@ def _one_pass(stop):
     except Exception as e:
         logger.error(f"[stats] Could not start the lookups: {e}")
 
-    playlists = load_playlists()
+    playlists = load_playlists(refresh=True)
     _sync_state_from_playlists(playlists)
 
     _refresh_releases_if_stale()

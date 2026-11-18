@@ -24,6 +24,13 @@ _AUTHELIA_BYPASS = [
 ]
 
 RELEASES = [
+    {"version": "1.21.7", "date": "2026-11-18", "title": "Playlist pages no longer wait on Deezer",
+     "highlights": [
+         "Opening or acting on a playlist no longer waits for Deezer or a cover download.",
+         "Activity no longer freezes the other tasks while it lists them.",
+         "A cover link that does not answer is tried again an hour later, not on each page.",
+     ],
+     "actions": []},
     {"version": "1.21.6", "date": "2026-11-18", "title": "Accounts no longer reach each other's data",
      "highlights": [
          "An account without a Deezer account of its own no longer uses another user's one.",

@@ -99,10 +99,9 @@ def may_see(task) -> bool:
     if owner:
         return False
     from core import account_context
-    from core.deezer import load_playlists
+    from core.deezer import accounts_for
 
-    entry = next((p for p in load_playlists() if p["id"] == pid), None)
-    return entry is not None and account_context.may_see_playlist(entry)
+    return account_context.may_see_playlist({"accounts": accounts_for(pid)})
 
 
 def task_of(task_id):

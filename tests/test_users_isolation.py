@@ -109,6 +109,45 @@ class Audit(Base):
         self.sign_in("bob")
         self.assertIn(task, [t["id"] for t in self.client.get("/api/tasks").get_json()["tasks"]])
 
+    def test_listing_tasks_does_not_wait_on_deezer_nor_hold_the_tasks_lock(self):
+        import threading
+        import time
+
+        from core import config
+
+        save_playlists([{"id": "777", "accounts": [self.alice_nd]}])  # no title: load_playlists(refresh=True) would ask Deezer
+        task = config.create_task("Auto scan", kind="scan", playlist_id="777")
+        with mock.patch("core.deezer.fetch_deezer_playlist_info", side_effect=AssertionError("Deezer was asked")):
+            self.assertIn(task, [t["id"] for t in self.client.get("/api/tasks").get_json()["tasks"]])
+        release = threading.Event()
+        started = threading.Event()
+
+        def slow(task):
+            started.set()
+            release.wait(5)
+            return True
+
+        lister = threading.Thread(target=config.list_tasks, kwargs={"allow": slow})
+        lister.start()
+        started.wait(5)
+        began = time.monotonic()
+        config.create_task("Another")  # takes the lock: must not wait for the listing
+        self.assertLess(time.monotonic() - began, 1)
+        release.set()
+        lister.join()
+
+    def test_load_playlists_asks_deezer_only_when_told_to_and_a_dead_cover_is_not_retried(self):
+        from core import deezer
+
+        save_playlists([{"id": "777", "title": "T", "picture": "http://cover.example/x.jpg", "accounts": [self.alice_nd]}])
+        with mock.patch("core.deezer.requests.get", side_effect=OSError("down")) as get:
+            load_playlists()
+            self.assertEqual(0, get.call_count)
+            load_playlists(refresh=True)
+            load_playlists(refresh=True)
+            self.assertEqual(1, get.call_count)
+        deezer._refresh_failed_at.clear()
+
     def test_the_stream_of_your_own_task_works_and_not_that_of_another(self):
         from core import config
 

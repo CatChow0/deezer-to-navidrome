@@ -129,8 +129,8 @@ class PlaylistsFile(unittest.TestCase):
         deezer.add_entry({"id": "123", "title": "", "picture": ""})
         with mock.patch.object(deezer, "fetch_deezer_playlist_info", side_effect=RuntimeError("down")) as fetch, \
                 mock.patch.object(deezer, "cache_cover", return_value=None):
-            first = deezer.load_playlists()
-            deezer.load_playlists()
+            first = deezer.load_playlists(refresh=True)
+            deezer.load_playlists(refresh=True)
         self.assertEqual(1, fetch.call_count)
         self.assertEqual("Unknown title", first[0]["title"])
 
@@ -144,7 +144,7 @@ class PlaylistsFile(unittest.TestCase):
 
         with mock.patch.object(deezer, "fetch_deezer_playlist_info", side_effect=fetched), \
                 mock.patch.object(deezer, "cache_cover", return_value=None):
-            deezer.load_playlists()
+            deezer.load_playlists(refresh=True)
         entry = deezer.saved_entries()[0]
         self.assertEqual(("Mine", "http://pic", ["nd2"]), (entry["title"], entry["picture"], entry["accounts"]))
 
