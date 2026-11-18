@@ -93,6 +93,29 @@ class Routes(unittest.TestCase):
         task = create_task("T")
         self.assertEqual(self.client.post(f"/api/tasks/{task}/cancel").status_code, 409)
 
+    def test_a_standard_account_sees_and_stops_only_its_own_tasks(self):
+        from core import users
+
+        def asking(user):
+            return mock.patch("routes.system.me", return_value=user)
+
+        alice, bob, root = ({"id": "u9", "role": users.STANDARD}, {"id": "u8", "role": users.STANDARD},
+                            {"id": "u1", "role": users.SUPERADMIN})
+        task = create_task("Alice's", cancellable=True)
+        config.TASKS[task]["owner"] = "u9"
+        system_task = create_task("The app's", cancellable=True)
+        config.TASKS[system_task]["owner"] = None
+        for user, sees in ((alice, True), (bob, False), (root, True)):
+            with asking(user), self.subTest(user=user["id"]):
+                listed = [t["id"] for t in self.client.get("/api/tasks").get_json()["tasks"]]
+                self.assertEqual(sees, task in listed)
+                self.assertIn(system_task, listed)
+                if not sees:
+                    self.assertEqual(404, self.client.post(f"/api/tasks/{task}/cancel").status_code)
+                    self.assertFalse(cancel_requested(task))
+        with asking(alice):
+            self.assertEqual(200, self.client.post(f"/api/tasks/{task}/cancel").status_code)
+
     def test_stream_events_carry_the_clock_and_what_the_page_needs(self):
         task = create_task("T", cancellable=True)
         push_task_event(task, "working")

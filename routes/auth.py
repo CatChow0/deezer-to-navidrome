@@ -140,6 +140,8 @@ def first_password():
     user = me()
     if not user:
         return redirect(url_for("auth.login"))
+    if not user.get("must_change"):  # only a temporary password may be replaced without the current one
+        return redirect(url_for("playlists.home"))
     if request.method == "POST":
         if request.form.get("password") != request.form.get("confirm"):
             return _page("first", error="The two passwords differ.")

@@ -746,8 +746,16 @@ def status(playlist_id) -> dict:
                         conn.execute("SELECT * FROM publications WHERE playlist_id=?", (playlist_id,))}
     finally:
         conn.close()
+    from flask import g, has_request_context
+
+    from core import account_context
+
+    # Asked by an account of this app: only its own profiles, not the other accounts'.
+    mine = set(account_context.own_profiles(g.get("user"))) if has_request_context() else None
     accounts = []
     for account in nd_accounts.list_accounts():
+        if mine is not None and account["id"] not in mine:
+            continue
         public = nd_accounts.public(account)
         pub = publications.get(account["id"])
         accounts.append({"id": account["id"], "label": account["label"], "member": account["id"] in members,

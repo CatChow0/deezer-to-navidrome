@@ -21,7 +21,7 @@ def _profile():
 def _only_yours():
     """A playlist, or a profile's Navidrome covers, of your own profiles only."""
     args = request.view_args or {}
-    if request.endpoint == "api_v1.navidrome_cover":
+    if request.endpoint in ("api_v1.navidrome_cover", "api_v1.navidrome_playlist"):
         return made_in_navidrome.profile_refused(args.get("account_id"))
     return web.playlist_refused(args.get("playlist_id"))
 

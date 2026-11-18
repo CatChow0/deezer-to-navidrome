@@ -24,6 +24,20 @@ _AUTHELIA_BYPASS = [
 ]
 
 RELEASES = [
+    {"version": "1.21.6", "date": "2026-11-18", "title": "Accounts no longer reach each other's data",
+     "highlights": [
+         "An account without a Deezer account of its own no longer uses another user's one.",
+         "Playlists, profiles and tasks of other accounts are out of reach, also through the API.",
+         "Settings can no longer point a cache file at the app's own accounts and keys.",
+     ],
+     "actions": []},
+    {"version": "1.21.5", "date": "2026-11-18", "title": "Safer sessions, tasks and downloads",
+     "highlights": [
+         "Each account sees and stops only its own tasks and downloads; Admins see all.",
+         "A big download queue no longer forgets the downloads waiting in it.",
+         "Downloads no longer hold a whole track in memory; the image reports whether it is healthy.",
+     ],
+     "actions": []},
     {"version": "1.21.4", "date": "2026-11-18", "title": "Image security fixes",
      "highlights": [
          "The image takes Alpine's security fixes when it is built: no critical flaw left, half the high ones gone.",

@@ -52,6 +52,12 @@ class SettingsPaths(unittest.TestCase):
         inside = config.DATA_DIR / "sub" / "cache.json"
         self.assertEqual(inside, config.data_file(str(inside), config.LIBRARY_CACHE_FILE))
 
+    def test_the_apps_own_state_is_never_a_setting_chosen_file(self):
+        for name in ("users.json", "Users.JSON", "encryption.key", "devices.json", "stats/nd1.db", "backups/x.json"):
+            chosen = config.DATA_DIR / name
+            self.assertEqual(config.LIBRARY_CACHE_FILE, config.data_file(str(chosen), config.LIBRARY_CACHE_FILE), name)
+        self.assertEqual(config.LIBRARY_CACHE_FILE, config.data_file(str(config.DATA_DIR), config.LIBRARY_CACHE_FILE))
+
     def test_clearing_the_cache_never_deletes_a_file_elsewhere(self):
         victim = Path(tempfile.mkdtemp()) / "precious.json"
         victim.write_text("{}", encoding="utf-8")

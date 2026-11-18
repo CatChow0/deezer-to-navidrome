@@ -196,11 +196,12 @@ def _navidrome_user(conn, account):
     except sqlite3.DatabaseError:
         users = {}
     if profile.get("navidrome_user_id") in users:
-        return profile["navidrome_user_id"]
+        found = profile["navidrome_user_id"]
+        return None if nd_accounts.claimed_earlier(account, found, users[found]) else found
     name = (profile.get("username") or "").strip().casefold()
     for user_id, user_name in users.items():
         if name and user_name.casefold() == name:
-            return user_id
+            return None if nd_accounts.claimed_earlier(account, user_id, user_name) else user_id
     if account == maloja_account():
         players = [row[0] for row in conn.execute("SELECT DISTINCT user_id FROM scrobbles LIMIT 2")]
         if len(players) == 1:

@@ -429,7 +429,7 @@ paths:
         "401": {$ref: "#/components/responses/Error"}
   /api/v1/tasks:
     get:
-      summary: The tasks listed in Activity
+      summary: The tasks listed in Activity (your own, and the app's; an Admin sees all)
       parameters:
         - name: changed_since
           in: query

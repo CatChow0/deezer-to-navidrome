@@ -110,6 +110,13 @@ class TaskCancelled(Exception):
     """Raised by a task's next progress report once someone asked it to stop."""
 
 
+def _asker_id():
+    """The account whose request starts a task; None for the app's own (the scheduler)."""
+    from flask import g, has_request_context
+
+    return (g.get("user") or {}).get("id") or None if has_request_context() else None
+
+
 def create_task(title="Task", kind="task", playlist_id=None, visible=True, cancellable=False):
     """`visible` tasks are listed in Activity; small ones (single downloads) are not.
     `cancellable` is only for tasks known to stop cleanly at a progress report."""
@@ -118,6 +125,7 @@ def create_task(title="Task", kind="task", playlist_id=None, visible=True, cance
     with _tasks_lock:
         TASKS[task_id] = {
             "id": task_id,
+            "owner": _asker_id(),
             "title": title,
             "kind": kind,
             "playlist_id": str(playlist_id) if playlist_id else None,
@@ -218,10 +226,11 @@ def task_summary(task):
     )}
 
 
-def list_tasks():
+def list_tasks(allow=None):
+    """The tasks of Activity; `allow(task)` keeps the ones the asker may see."""
     _prune_tasks()
     with _tasks_lock:
-        tasks = [t for t in TASKS.values() if t["visible"]]
+        tasks = [t for t in TASKS.values() if t["visible"] and (allow is None or allow(t))]
     return [task_summary(t) for t in sorted(tasks, key=lambda t: t["created_at"], reverse=True)]
 
 
@@ -347,6 +356,13 @@ def save_config(cfg):
 
 
 _warned_paths = set()
+# What the app keeps in DATA_DIR besides the files a setting may name.
+_OWN_FILES = {
+    "users.json", "devices.json", "navidrome_accounts.json", "deezer_accounts.json", "encryption.key",
+    "recovery-code.txt", "config.json", "secrets.json", "scheduler.json", "crossplatform.json",
+    "dedup_report.json", "dedup_choices.json", "releases.json", "release_prefs.json",
+}
+_OWN_DIRS = {"stats", "backups"}
 
 
 def data_file(value, default: Path) -> Path:
@@ -357,12 +373,16 @@ def data_file(value, default: Path) -> Path:
         return default
     path = Path(value)
     try:
-        path.resolve().relative_to(DATA_DIR.resolve())
+        relative = path.resolve().relative_to(DATA_DIR.resolve())
     except ValueError:
+        relative = None
+    # Not the app's own state either (accounts, keys, tokens): these files are
+    # rewritten and deleted, and deleting users.json reopens the first-run setup.
+    if relative is None or not relative.parts or relative.name.lower() in _OWN_FILES or relative.parts[0] in _OWN_DIRS:
         # Once per path: the settings are read many times a minute.
         if path != default and str(path) not in _warned_paths:
             _warned_paths.add(str(path))
-            logger.warning("%s is outside DATA_DIR: %s is used instead", value, default)
+            logger.warning("%s is not a usable data file: %s is used instead", value, default)
         return default
     return path
 

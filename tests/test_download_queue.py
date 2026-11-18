@@ -31,6 +31,30 @@ class Joining(unittest.TestCase):
         self.assertIsNot(first, self.queue.enqueue("d", "track", "1"))
 
 
+class Listing(unittest.TestCase):
+    def test_a_long_list_drops_finished_downloads_never_waiting_ones(self):
+        queue = dq.DownloadQueue(workers=1)
+        with mock.patch.object(dq.DownloadQueue, "start"):
+            waiting = [queue.enqueue("d", "track", str(n)) for n in range(300)]
+        for task in waiting[:250]:
+            task.settled = True
+        queue.snapshot()
+        # The 50 oldest finished ones went; the 200 newest finished and the 50 waiting stayed.
+        self.assertEqual(250, len(queue.tasks))
+        self.assertTrue(all(t in queue.tasks for t in waiting[250:]))
+        # Asking again for a waiting one joins it instead of queueing it twice.
+        with mock.patch.object(dq.DownloadQueue, "start"):
+            self.assertIs(waiting[299], queue.enqueue("d", "track", "299"))
+
+    def test_the_list_can_be_limited_to_what_the_asker_may_see(self):
+        queue = dq.DownloadQueue(workers=1)
+        with mock.patch.object(dq.DownloadQueue, "start"):
+            queue.enqueue("d", "track", "1", deezer_account="a")
+            queue.enqueue("d", "track", "2", deezer_account="b")
+        seen = queue.snapshot(lambda t: t.deezer_account == "a")
+        self.assertEqual(["{'track_id': 1, 'add_to_playlist': False}"], [t["args"] for t in seen])
+
+
 class Discography(unittest.TestCase):
     def test_releases_of_another_main_artist_are_left_out(self):
         queue = dq.DownloadQueue(workers=1)

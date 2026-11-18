@@ -45,7 +45,7 @@ from core import scheduler
 from routes.auth import my_download_account
 from core import users
 from routes.auth import admin_only, me, refused
-from routes.playlists import render_app
+from routes.playlists import playlist_refused, render_app
 
 system_bp = Blueprint("system", __name__)
 
@@ -88,6 +88,29 @@ def latest_version_route():
 STREAM_SEGMENT_SECONDS = 45
 
 
+def may_see(task) -> bool:
+    """A task is its starter's, and an Admin's; one the app started itself (no owner) is everyone's,
+    unless it is about a playlist: then it is the playlist's."""
+    owner, pid = task.get("owner"), task.get("playlist_id")
+    if not owner and not pid:
+        return True
+    if owner and owner == (me() or {}).get("id") or users.can(me(), "admin"):
+        return True
+    if owner:
+        return False
+    from core import account_context
+    from core.deezer import load_playlists
+
+    entry = next((p for p in load_playlists() if p["id"] == pid), None)
+    return entry is not None and account_context.may_see_playlist(entry)
+
+
+def task_of(task_id):
+    """The task, or None when there is none or it is another account's."""
+    task = TASKS.get(task_id)
+    return task if task and may_see(task) else None
+
+
 @system_bp.get("/tasks/<task_id>/stream")
 def task_stream(task_id):
     # EventSource sends Last-Event-ID when it reconnects by itself; "from" is
@@ -96,9 +119,11 @@ def task_stream(task_id):
     from_arg = request.args.get("from", "")
     start = int(last_id) + 1 if last_id.isdigit() else int(from_arg) if from_arg.isdigit() else 0
 
+    seen = task_of(task_id) is not None  # asked here: the stream below runs after the request
+
     def generate():
         yield "retry: 1500\n\n"
-        if task_id not in TASKS:
+        if not seen:
             yield 'data: {"type":"status","message":"Task not found","done":true,"error":true}\n\n'
             return
         deadline = time.monotonic() + STREAM_SEGMENT_SECONDS
@@ -120,7 +145,7 @@ def task_stream(task_id):
 
 @system_bp.post("/api/tasks/<task_id>/cancel")
 def cancel_task_route(task_id):
-    if task_id not in TASKS:
+    if task_of(task_id) is None:
         return jsonify({"ok": False, "error": "Unknown task"}), 404
     if not request_cancel(task_id):
         return jsonify({"ok": False, "error": "This task cannot be stopped"}), 409
@@ -129,7 +154,7 @@ def cancel_task_route(task_id):
 
 @system_bp.get("/api/tasks")
 def tasks_route():
-    return jsonify({"ok": True, "tasks": list_tasks()})
+    return jsonify({"ok": True, "tasks": list_tasks(allow=may_see)})
 
 
 # What Settings edits, for the form and the API.
@@ -225,7 +250,8 @@ def scheduler_status():
     from core.deezer import load_playlists
 
     account = account_context.resolve(request, session)
-    playlists = [p for p in load_playlists() if not account or not p.get("accounts") or account in p["accounts"]]
+    # An account without a profile has no playlists (as on the dashboard), not all of them.
+    playlists = [p for p in load_playlists() if account and (not p.get("accounts") or account in p["accounts"])]
     state = scheduler.get_status()
     result = []
     enabled_count = 0
@@ -381,6 +407,8 @@ def _download_request(kind, music_id):
     if not deezer_dl.download_arl(account):
         return jsonify({"error": "No Deezer account for the downloads: add one in Settings → Deezer accounts."}), 400
     playlist_id = str(data.get("playlist_id") or "").strip() or None
+    if playlist_id and playlist_refused(playlist_id):  # the body is not covered by the URL guard
+        return jsonify({"error": "This playlist is not on your profiles."}), 403
     task_id = _start_download(kind, str(music_id), str(data.get("label") or ""), playlist_id, account)
     return jsonify({"task_id": task_id})
 
@@ -473,7 +501,10 @@ def deezer_dl_queue():
 
     Same shape as the queue of the separate downloader, so the pages reading
     it did not have to change."""
-    return jsonify(download_queue.queue_snapshot())
+    # Each account sees the downloads of its own Deezer account; an Admin sees all.
+    mine = my_download_account()
+    allow = None if users.can(me(), "admin") else (lambda task: task.deezer_account == mine)
+    return jsonify(download_queue.queue_snapshot(allow))
 
 
 @system_bp.post("/deezer-dl/download/start")

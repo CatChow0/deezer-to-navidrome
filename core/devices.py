@@ -8,7 +8,6 @@ device of an account of this app when its password changes: each device keeps
 its account's stamp at sign-in (core/users.stamp()), as the web sessions do."""
 import hashlib
 import hmac
-import json
 import secrets
 import threading
 import time
@@ -27,11 +26,9 @@ def _path() -> Path:
 
 
 def _read() -> dict:
-    try:
-        data = json.loads(_path().read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        # Missing or unreadable: no device is signed in, each signs in again.
-        return {"version": 1, "devices": []}
+    # A damaged file is set aside by read_json, a disk error raised: neither is
+    # silently replaced by a file holding only the next device.
+    data = files.read_json(_path(), {})
     if not isinstance(data, dict) or not isinstance(data.get("devices"), list):
         return {"version": 1, "devices": []}
     return data

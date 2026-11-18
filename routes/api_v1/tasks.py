@@ -25,7 +25,7 @@ def tasks_list():
     """The tasks listed in Activity; changed_since: those changed after this
     time (seconds), for an app catching up."""
     since = request.args.get("changed_since", type=float)
-    tasks = config.list_tasks()
+    tasks = config.list_tasks(allow=system.may_see)
     if since is not None:
         tasks = [t for t in tasks if (t.get("updated_at") or 0) > since]
     return ok({"tasks": tasks})
@@ -33,7 +33,7 @@ def tasks_list():
 
 @api_v1_bp.get("/tasks/<task_id>")
 def task_get(task_id):
-    task = config.TASKS.get(task_id)
+    task = system.task_of(task_id)
     if task is None:
         return error("not_found", "No such task.", 404)
     return ok({"task": _summary(task)})
@@ -43,7 +43,7 @@ def task_get(task_id):
 def task_events(task_id):
     """The events after index `after` (all of them without it). `wait`: up to
     25 s for the next one when there is none yet, unless the task is over."""
-    task = config.TASKS.get(task_id)
+    task = system.task_of(task_id)
     if task is None:
         return error("not_found", "No such task.", 404)
     after = request.args.get("after", default=-1, type=int)
@@ -72,7 +72,7 @@ COVERED.add(task_stream)
 @api_v1_bp.post("/tasks/<task_id>/cancel")
 @replaces(system.cancel_task_route)
 def task_cancel(task_id):
-    if task_id not in config.TASKS:
+    if system.task_of(task_id) is None:
         return error("not_found", "No such task.", 404)
     if not config.request_cancel(task_id):
         return error("not_cancellable", "This task cannot be stopped.", 409)

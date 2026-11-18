@@ -59,12 +59,12 @@ class GatewayReads(unittest.TestCase):
 
 
 class WhichAccount(unittest.TestCase):
-    def test_the_profiles_accounts_then_the_default_once_each(self):
+    def test_the_profiles_accounts_once_each_and_never_the_servers_default(self):
         own = {"nd1": "dz1", "nd2": "dz2", "nd3": "dz2"}
         with mock.patch("core.account_context.deezer_account_of", side_effect=lambda p: own[p]), \
                 mock.patch("core.deezer_accounts.default_id", return_value="dz1"):
-            self.assertEqual(["dz2", "dz1"], deezer._reading_accounts("5", profiles=["nd2", "nd3"]))
-            self.assertEqual(["dz1"], deezer._reading_accounts("5", profiles=[]))
+            self.assertEqual(["dz2"], deezer._reading_accounts("5", profiles=["nd2", "nd3"]))  # never the server's default one
+            self.assertEqual([], deezer._reading_accounts("5", profiles=[]))
 
     def test_no_deezer_account_at_all(self):
         with mock.patch("core.account_context.deezer_account_of", return_value=None), \
