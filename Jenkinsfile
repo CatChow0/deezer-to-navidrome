@@ -1,7 +1,8 @@
 // Deezer → Navidrome pipeline: every commit builds the Android app (its unit
 // tests run in that build) and the image that ships it, runs the Python tests
 // in that image, and checks the container answers on /health; only `main`
-// pushes the image.
+// pushes the image. Both test runs leave JUnit reports in reports/, which the
+// build page turns into its "Test results" graph.
 pipeline {
   agent { label 'docker' }
 
@@ -35,7 +36,7 @@ pipeline {
       // which the image built next ships. The key lives in two credentials:
       // android-keystore (secret file) and android-keystore-password (secret text).
       steps {
-        sh 'rm -rf dist/android'
+        sh 'rm -rf dist/android reports'
         script {
           def keyFound = true
           try {
@@ -81,12 +82,15 @@ pipeline {
       // The image holds the code and the libraries, not the tests (.dockerignore):
       // they are copied into a container of it, with the files some of them read.
       // docker cp and no bind mount, which also works when this agent runs in a
-      // container. A failing test stops the pipeline before the Push.
+      // container. A failing test stops the pipeline before the Push. The tests run
+      // under unittest-xml-reporting, which writes the JUnit reports (installed in
+      // this container only: the image does not ship it); they are copied out
+      // whatever the result, for the build page.
       environment {
         TEST_CONTAINER = "d2n-tests-${env.BUILD_NUMBER}"
       }
       steps {
-        sh 'docker create --name $TEST_CONTAINER $IMAGE:$SHA python -m unittest discover -s tests -t .'
+        sh 'docker create --name $TEST_CONTAINER $IMAGE:$SHA sh -c "pip install -q --no-cache-dir --root-user-action=ignore unittest-xml-reporting==4.0.0 && python -m xmlrunner discover -s tests -t . -o reports"'
         sh 'docker cp tests $TEST_CONTAINER:/app/tests'
         sh 'docker cp README.md $TEST_CONTAINER:/app/README.md'
         sh 'docker cp DOCKERHUB_README.md $TEST_CONTAINER:/app/DOCKERHUB_README.md'
@@ -96,6 +100,7 @@ pipeline {
       }
       post {
         always {
+          sh 'mkdir -p reports && docker cp $TEST_CONTAINER:/app/reports/. reports/ || true'
           sh 'docker rm -f $TEST_CONTAINER || true'
         }
       }
@@ -165,6 +170,9 @@ pipeline {
 
   post {
     always {
+      // The graph of the build page: the Python tests (reports/) and the Android
+      // ones (reports/android/, copied out of the app's build by build-apk.sh).
+      junit allowEmptyResults: true, testResults: 'reports/**/*.xml'
       sh 'docker logout || true'
       // The commit's tag, once pushed or tested: prune only takes untagged
       // images, so each build otherwise left a whole image on the agent.

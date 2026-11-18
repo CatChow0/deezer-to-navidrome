@@ -1,0 +1,7 @@
+<p>Nothing changes in the app: this version is about how it is built.</p>
+
+<ul class="help-list">
+  <li><strong>Tests before the image.</strong> Every build now runs the whole Python test suite in the image before it can be published, as the Android build already did with its own tests. A failing test stops the release.</li>
+  <li><strong>Test results graph.</strong> Both test runs leave JUnit reports, so the build page of Jenkins shows the graph of passed, skipped and failed tests, build after build.</li>
+  <li><strong>Update.</strong> Pull the new image: there is nothing to change in your settings.</li>
+</ul>
