@@ -24,6 +24,12 @@ _AUTHELIA_BYPASS = [
 ]
 
 RELEASES = [
+    {"version": "1.21.4", "date": "2026-11-18", "title": "Image security fixes",
+     "highlights": [
+         "The image takes Alpine's security fixes when it is built: no critical flaw left, half the high ones gone.",
+         "Docker Hub lists the image's contents (SBOM) and how it was built (provenance).",
+     ],
+     "actions": []},
     {"version": "1.21.3", "date": "2026-11-18", "title": "Repair downloads explained in the Android app",
      "highlights": [
          "The Android app says what Repair downloads does now: it also sorts the mixed album folders.",
