@@ -223,8 +223,10 @@ async function apply(mode, btn) {
   }
   const verb = mode === 'delete' ? 'deleted' : 'moved to quarantine';
   const skipped = (data.skipped || []).length;
-  toast(`${plural(data.processed, 'file')} ${verb}`
-    + (skipped ? `; ${plural(skipped, 'group')} left alone, with no copy kept` : ''), { tone: skipped ? 'error' : 'ok' });
+  const changed = data.changed || 0;
+  toast(`${plural(data.done ?? data.processed, 'file')} ${verb}`
+    + (changed ? `; ${plural(changed, 'file')} left alone, changed since the scan` : '')
+    + (skipped ? `; ${plural(skipped, 'group')} left alone, with no copy kept` : ''), { tone: skipped || changed ? 'error' : 'ok' });
   modal.close();
 }
 

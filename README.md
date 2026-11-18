@@ -2,7 +2,7 @@
 
 **A self-hosted web app that turns your Deezer playlists into Navidrome `.m3u8` playlists, matches them against your local library, and downloads what is missing straight from Deezer.**
 
-[![Docker Image Version](https://img.shields.io/badge/version-1.21.7-blue)](https://hub.docker.com/r/catchow/deezer-to-navidrome)
+[![Docker Image Version](https://img.shields.io/badge/version-1.22.0-blue)](https://hub.docker.com/r/catchow/deezer-to-navidrome)
 [![Python 3.12](https://img.shields.io/badge/python-3.12-blue)](https://www.python.org/)
 [![Flask](https://img.shields.io/badge/flask-web%20app-brightgreen)](https://flask.palletsprojects.com/)
 
@@ -250,9 +250,10 @@ Files are tagged with artist, title, album, track and disc number, date and the 
 ### The queue
 
 - Downloads run in a few threads at the same time (`DOWNLOAD_WORKERS`, 4 by default, also in **Settings → Performance**). Deezer throttles requests, so a low number is safer.
+- Once the list is empty, the library is indexed by itself, one time for the whole batch (**Settings → Performance → Refresh the library after downloads**, on by default; `AUTO_REFRESH_LIBRARY`). The refresh appears in **Activity**.
 - Each download appears in **Activity** and on its button: *Queued* while it waits for a free slot, then the percentage (track) or `done/total` (album, discography), then *Downloaded* or *Already there*.
 - When some tracks of an album fail, the button shows `saved/total saved` and lists the missing ones; clicking it again only fetches those.
-- In a playlist, **Download missing** queues every missing track and marks the rows as *Downloaded* as they finish. Run **Refresh library** and a **Quick scan** afterwards so they count as *In library*. With automation, the next automatic scan picks them up.
+- In a playlist, **Download missing** queues every missing track and marks the rows as *Downloaded* as they finish. The library is indexed by itself once the downloads are over, so a **Quick scan** afterwards counts them as *In library*. With automation, the next automatic scan picks them up.
 
 > Deezer's private gateway is undocumented. If Deezer changes it, downloads and mixes may stop working until the app is updated. Search uses the public API and is not affected. Playlists and the release feed are read through the gateway first, with the Deezer account (private playlists and profiles, playlists of any size); if it fails they fall back to the public API, which only reads public playlists and profiles.
 
@@ -802,6 +803,7 @@ The folder and performance variables are read **on first start** to create `conf
 | `MATCH_WORKERS` | `4` | Matching threads; set it to your CPU count |
 | `METADATA_WORKERS` | `4` | Files Fix missing metadata handles at once; up to your CPU count, about 80 MB of memory each, 2 on a spinning disk |
 | `DOWNLOAD_WORKERS` | `4` | Downloads running at the same time |
+| `AUTO_REFRESH_LIBRARY` | `true` | Index the library by itself once the downloads are over; also in **Settings → Performance** |
 | `DEEZER_ARL` | — | `arl` cookie of a Deezer account, the default one (mixes, release feed, downloads) |
 | `DEEZER_ARL_PREMIUM` | — | `arl` of a Deezer account marked for the downloads |
 | `SECRET_KEY` | random, kept in `secrets.json` | Session signing key |

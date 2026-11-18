@@ -24,6 +24,13 @@ _AUTHELIA_BYPASS = [
 ]
 
 RELEASES = [
+    {"version": "1.22.0", "date": "2026-11-18", "title": "The library refreshes itself after downloads",
+     "highlights": [
+         "Once the downloads are over, the library is indexed by itself, one time for the whole batch.",
+         "One duplicate scan at a time; a file replaced since the scan is left alone.",
+         "The list of finished downloads stays short, and a slow cover no longer holds a page.",
+     ],
+     "actions": []},
     {"version": "1.21.7", "date": "2026-11-18", "title": "Playlist pages no longer wait on Deezer",
      "highlights": [
          "Opening or acting on a playlist no longer waits for Deezer or a cover download.",

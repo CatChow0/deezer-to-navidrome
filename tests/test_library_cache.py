@@ -2,6 +2,7 @@
 refreshes at once never lose what the other found."""
 import tempfile
 import threading
+import time
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -35,6 +36,61 @@ class Base(unittest.TestCase):
 
     def cached(self):
         return sorted(e["path_str"] for e in library.load_library_cache(self.cache))
+
+
+class AfterDownloads(unittest.TestCase):
+    def setUp(self):
+        self.addCleanup(library._after_downloads.update, running=False, again=False)
+        self.config = mock.patch.object(library, "load_config", return_value={"auto_refresh_library": True})
+        self.config.start()
+        self.addCleanup(self.config.stop)
+
+    def wait_until_idle(self):
+        deadline = time.monotonic() + 5
+        while library._after_downloads["running"] and time.monotonic() < deadline:
+            time.sleep(0.01)
+        self.assertFalse(library._after_downloads["running"])
+
+    def test_it_indexes_in_the_background_when_on(self):
+        with mock.patch.object(library, "refresh_in_task") as refresh:
+            library.refresh_after_downloads()
+            self.wait_until_idle()
+        refresh.assert_called_once_with("Library refresh (after downloads)")
+
+    def test_it_does_nothing_when_turned_off(self):
+        with mock.patch.object(library, "load_config", return_value={"auto_refresh_library": False}), \
+                mock.patch.object(library, "refresh_in_task") as refresh:
+            library.refresh_after_downloads()
+            time.sleep(0.05)
+        refresh.assert_not_called()
+
+    def test_downloads_that_end_during_a_refresh_ask_for_one_more_never_two_at_once(self):
+        release, running, most = threading.Event(), [], []
+
+        def slow(title):
+            running.append(1)
+            most.append(len(running))
+            release.wait(5)
+            running.pop()
+
+        with mock.patch.object(library, "refresh_in_task", side_effect=slow) as refresh:
+            library.refresh_after_downloads()
+            deadline = time.monotonic() + 5
+            while not running and time.monotonic() < deadline:
+                time.sleep(0.01)
+            library.refresh_after_downloads()
+            library.refresh_after_downloads()
+            release.set()
+            self.wait_until_idle()
+        self.assertEqual((2, 1), (refresh.call_count, max(most)))
+
+    def test_a_refresh_that_fails_ends_its_task_and_raises_nothing(self):
+        from core import config
+
+        with mock.patch.object(library, "refresh_library_cache_incremental_with_progress", side_effect=OSError("gone")):
+            library.refresh_in_task("Library refresh (test)")
+        task = max((t for t in config.TASKS.values() if t["title"] == "Library refresh (test)"), key=lambda t: t["created_at"])
+        self.assertTrue(task["done"] and task["error"])
 
 
 class UnmountedDisk(Base):

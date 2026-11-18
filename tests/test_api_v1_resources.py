@@ -258,6 +258,35 @@ class Settings(Base):
             self.assertEqual((refused.status_code, refused.get_json()["error"]["code"]), (400, "invalid"))
             self.assertIn(words, refused.get_json()["error"]["message"])
 
+    def test_the_refresh_after_downloads_is_on_by_default_and_a_true_or_false(self):
+        read = self.client.get("/api/v1/settings", headers=self.auth).get_json()
+        self.assertIs(read["settings"]["auto_refresh_library"], True)
+        # The app reads the choices as lists of numbers: a boolean has no place among them.
+        self.assertNotIn("auto_refresh_library", read["choices"])
+        off = self.put({"auto_refresh_library": False})
+        self.assertIs(off.get_json()["settings"]["auto_refresh_library"], False)
+        self.assertIs(config.load_config()["auto_refresh_library"], False)
+        for wrong in ("yes", 1, None):
+            refused = self.put({"auto_refresh_library": wrong})
+            self.assertEqual((refused.status_code, refused.get_json()["error"]["code"]), (400, "invalid"))
+        self.assertIs(self.put({"match_workers": 4}).get_json()["settings"]["auto_refresh_library"], False)
+
+    def test_a_flag_that_is_neither_true_nor_false_says_so_and_keeps_the_default(self):
+        self.assertIs(config.as_flag("off"), False)
+        self.assertIs(config.as_flag(None), True)
+        with self.assertLogs("core.config", "WARNING"):
+            self.assertIs(config.as_flag("flase"), True)
+
+    def test_the_web_form_turns_it_off_and_on(self):
+        with mock.patch.dict(os.environ, {"DISABLE_AUTH": "true"}):
+            self.client.post("/config", data={"scan_dirs": "/music/a", "auto_refresh_library": "false"})
+            self.assertIs(config.load_config()["auto_refresh_library"], False)
+            page = self.client.get("/config", headers={"Accept": "text/html"}).get_data(as_text=True)
+            menu = re.search(r'<select name="auto_refresh_library">(.*?)</select>', page, re.S).group(1)
+            self.assertRegex(menu, r'value="false"\s+selected')
+            self.client.post("/config", data={"scan_dirs": "/music/a", "auto_refresh_library": "true"})
+            self.assertIs(config.load_config()["auto_refresh_library"], True)
+
     def test_the_app_gets_the_choices_of_the_menus(self):
         choices = self.client.get("/api/v1/settings", headers=self.auth).get_json()["choices"]
         with mock.patch.dict(os.environ, {"DISABLE_AUTH": "true"}):

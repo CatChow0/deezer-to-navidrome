@@ -8,7 +8,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 from core.files import write_json
-from core.config import get_paths_from_config
+from core.config import as_flag, get_paths_from_config, load_config
 from core.normalization import NORMALIZATION_VERSION, normalize_text, enrich_library_entry_for_dedup
 from core.utils import AUDIO_EXTS, read_tags, get_file_signature
 
@@ -374,6 +374,52 @@ def _absent_folders(scan_dirs, files, old_library) -> list:
 
 def refresh_library_cache_incremental():
     return refresh_library_cache_incremental_with_progress()
+
+
+def refresh_in_task(title) -> None:
+    """The incremental refresh as a task followed in Activity, with the webhook told
+    afterwards. An error ends the task; it never reaches the caller."""
+    from core.config import create_task, push_task_event
+    from core.webhook import notify
+
+    task_id = create_task(title, kind="library", cancellable=True)
+    try:
+        refresh_library_cache_incremental_with_progress(
+            progress_cb=lambda message=None, progress=None, stage=None: push_task_event(
+                task_id, message=message, progress=progress, stage=stage))
+        push_task_event(task_id, "Library refreshed", stage="done", progress=100, done=True)
+        notify("library.updated")
+    except Exception as e:
+        logger.error("Library refresh failed: %s", e)
+        push_task_event(task_id, f"Library refresh failed: {e}", stage="error", done=True, error=True)
+
+
+# The refresh after downloads: one runs at a time; downloads that end meanwhile ask for one more.
+_after_downloads = {"running": False, "again": False}
+_after_downloads_lock = threading.Lock()
+
+
+def refresh_after_downloads() -> None:
+    """Called when the download list has just emptied after downloads that saved files:
+    indexes them, in the background, unless Settings turned it off."""
+    if not as_flag(load_config().get("auto_refresh_library")):
+        return
+    with _after_downloads_lock:
+        if _after_downloads["running"]:
+            _after_downloads["again"] = True
+            return
+        _after_downloads["running"] = True
+    threading.Thread(target=_refresh_after_downloads_loop, name="library-refresh", daemon=True).start()
+
+
+def _refresh_after_downloads_loop() -> None:
+    while True:
+        refresh_in_task("Library refresh (after downloads)")
+        with _after_downloads_lock:
+            if not _after_downloads["again"]:
+                _after_downloads["running"] = False
+                return
+            _after_downloads["again"] = False
 
 
 def refresh_library_cache_incremental_with_progress(progress_cb=None):

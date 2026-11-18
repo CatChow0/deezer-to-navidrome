@@ -32,6 +32,7 @@ import io.github.catchow0.d2n.ui.components.ListRow
 import io.github.catchow0.d2n.ui.components.LocalOnline
 import io.github.catchow0.d2n.ui.components.ScreenScaffold
 import io.github.catchow0.d2n.ui.components.SectionHeader
+import io.github.catchow0.d2n.ui.components.ToggleRow
 import io.github.catchow0.d2n.ui.components.remote
 import io.github.catchow0.d2n.ui.theme.D2nColors
 
@@ -147,6 +148,14 @@ fun MusicSettingsScreen(vm: MusicSettingsViewModel, onBack: () -> Unit) {
                     FieldNote("Up to the CPU cores given to the container. Each thread takes about 80 MB of memory. Use 2 on a spinning disk.")
                     Workers("Playlist matching threads", "match_workers", d.matchWorkers, choices) { n -> vm.edit { it.copy(matchWorkers = n) } }
                     FieldNote("Set it to the number of CPU cores given to the container.")
+                    d.autoRefreshLibrary?.let { on ->
+                        ToggleRow(
+                            "Refresh the library after downloads",
+                            on,
+                            { v -> vm.edit { it.copy(autoRefreshLibrary = v) } },
+                            description = "Indexes the new files once the download list is empty, not after each track.",
+                        )
+                    }
                 }
             }
             item(key = "feed") {
@@ -198,7 +207,7 @@ fun MaintenanceScreen(vm: MaintenanceViewModel, isAdmin: Boolean, onBack: () -> 
         item(key = "index") {
             SectionHeader("Library index")
             GlassCard(Modifier.fillMaxWidth()) {
-                Action("Refresh library", "Indexes new and changed files only. Use this after downloads.", "refresh" in busy || !online, vm::refreshLibrary)
+                Action("Refresh library", "Indexes new and changed files only. It runs by itself once the downloads are over (Music and downloads); use it after adding files another way.", "refresh" in busy || !online, vm::refreshLibrary)
                 Action("Rebuild from scratch", "Reads every file again. Slow on large libraries." + if (isAdmin) "" else " An Admin runs it.", "rebuild" in busy || !online || !isAdmin) { ask = "rebuild" }
                 Action("Fix missing metadata", "Finds the tempo and genre your files lack and adds them to their tags. Existing values are kept.", "metadata" in busy || !online) { ask = "metadata" }
                 Action("Repair downloads", "Replaces the damaged files saved by versions 1.10.0 to 1.11.0 (noise, skips), and sorts the album folders where the explicit and clean versions were mixed before 1.21.1. Only what is missing is downloaded again.", "repair" in busy || !online, vm::repairDownloads)

@@ -200,7 +200,7 @@ def fetch_deezer_playlist_info(playlist_id: str, profiles=None):
     if found:
         return found
     url = f"https://api.deezer.com/playlist/{playlist_id}"
-    r = requests.get(url, timeout=20)
+    r = requests.get(url, timeout=10)
     r.raise_for_status()
     data = r.json()
     if "error" in data:
@@ -225,11 +225,11 @@ def cache_cover(playlist, fetch=True):
     if target.exists():
         return target.name
     key = f"cover:{playlist_id}"
-    if not fetch or not picture or time.time() - _refresh_failed_at.get(key, 0) < _REFRESH_BACKOFF:
+    if not fetch or not picture or time.time() - _refresh_failed_at.get(key, 0) < _COVER_BACKOFF:
         return None
 
     try:
-        r = requests.get(picture, timeout=30)
+        r = requests.get(picture, timeout=5)  # decoration: a slow host must not hold a page
         r.raise_for_status()
         target.write_bytes(r.content)
         return target.name
@@ -332,6 +332,7 @@ def _save_playlists(playlists):
 # Playlist ID -> when Deezer last failed to give its title or picture: asked
 # again an hour later, not on each of the scheduler's 30-second passes.
 _REFRESH_BACKOFF = 3600
+_COVER_BACKOFF = 600  # a cover is only decoration, but one slow answer must not hide it for long
 _refresh_failed_at = {}
 
 

@@ -157,6 +157,14 @@
             </select>
             <small>Set it to the number of CPU cores given to the container.</small>
           </label>
+          <label class="form-field">
+            <span>Refresh the library after downloads</span>
+            <select name="auto_refresh_library">
+              <option value="true" {% if config.auto_refresh_library | default(true) %}selected{% endif %}>On, once the downloads are over (default)</option>
+              <option value="false" {% if not (config.auto_refresh_library | default(true)) %}selected{% endif %}>Off, I refresh it myself</option>
+            </select>
+            <small>Indexes the new files once the download list is empty, not after each track.</small>
+          </label>
         </div>
       </section>
     </div>
@@ -323,7 +331,7 @@
       <div class="cell-body cache-actions set-columns set-columns--pairs">
         <div class="cache-action">
           <button type="button" class="btn btn--ghost btn--block" data-action="cache-refresh" data-mode="incremental">Refresh library</button>
-          <p>Indexes new and changed files only. Use this after downloads.</p>
+          <p>Indexes new and changed files only. It runs by itself once the downloads are over (see Performance); use it after adding files another way.</p>
         </div>
         <div class="cache-action">
           <button type="button" class="btn btn--ghost btn--block" data-action="cache-refresh" data-mode="full" {% if not is_admin %}disabled{% endif %}>Rebuild from scratch</button>

@@ -6,7 +6,7 @@ from collections import defaultdict
 from pathlib import Path
 
 from core import files
-from core.utils import FILES_LOCK
+from core.utils import FILES_LOCK, get_file_signature
 from core.config import (
     DEDUP_CHOICES_FILE,
     DEDUP_QUARANTINE_DIR,
@@ -345,11 +345,23 @@ def quarantine_file(path_str: str):
         while target.exists():
             target = DEDUP_QUARANTINE_DIR / f"{src.stem}__{suffix}{src.suffix}"
             suffix += 1
-        shutil.move(str(src), str(target))
+        # Written first: a kill between the two leaves a line for a file that did not move
+        # (harmless), never a moved file nobody knows the origin of.
         with open(DEDUP_QUARANTINE_DIR / QUARANTINE_MANIFEST, "a", encoding="utf-8") as manifest:
             manifest.write(json.dumps({"from": str(src), "to": str(target), "at": int(time.time())},
                                       ensure_ascii=False) + "\n")
+        shutil.move(str(src), str(target))
     return {"path": path_str, "status": "moved", "target": str(target)}
+
+
+def _changed_since_scan(entry) -> bool:
+    """The file is not the one the scan saw: another copy dropped in its place since."""
+    if entry.get("mtime_ns") is None or entry.get("size") is None:
+        return False  # a report from before this check: nothing to compare
+    try:
+        return get_file_signature(Path(entry["path_str"])) != (entry["mtime_ns"], entry["size"])
+    except OSError:
+        return False  # gone: moving or deleting it says "missing"
 
 
 def apply_dedup_decisions(decisions, mode="quarantine"):
@@ -392,6 +404,9 @@ def apply_dedup_decisions(decisions, mode="quarantine"):
             path_str = entry.get("path_str")
             if not path_str:
                 continue
+            if _changed_since_scan(entry):
+                results.append({"path": path_str, "status": "changed"})
+                continue
 
             if mode == "quarantine":
                 results.append(quarantine_file(path_str))
@@ -418,4 +433,8 @@ def apply_dedup_decisions(decisions, mode="quarantine"):
 
     save_dedup_choices(existing_choices)
 
-    return {"processed": len(results), "results": results, "skipped": skipped}
+    def count(*statuses):
+        return sum(r["status"] in statuses for r in results)
+
+    return {"processed": len(results), "done": count("moved", "deleted"), "changed": count("changed"),
+            "results": results, "skipped": skipped}

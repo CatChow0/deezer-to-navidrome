@@ -13,7 +13,7 @@ for a button ("Queued", "42%", "3/14").
 import threading
 import traceback
 
-from core import deezer_dl
+from core import deezer_dl, library
 from core.config import load_config
 
 WAITING = "waiting"
@@ -36,7 +36,6 @@ class DownloadTask:
         self.exception = None
         self.progress = 0
         self.progress_maximum = 0
-        self.finished_at = 0
         # Called with (task, result, error) once the download is over; `joined`
         # for the callers who asked for the same download while it was queued.
         self.on_done = on_done
@@ -83,6 +82,7 @@ class DownloadQueue:
         self.threads = []
         self.workers = workers
         self._started = False
+        self._saved_since_refresh = False
         self.wakeup = threading.Condition(self.lock)
 
     def start(self):
@@ -99,6 +99,7 @@ class DownloadQueue:
         task = DownloadTask(description, kind, music_id, on_done=on_done, on_progress=on_progress, base_dir=base_dir,
                             deezer_account=deezer_account)
         with self.lock:
+            self._prune()
             # The same download already waiting or running: joined, not made
             # twice (the automatic downloads ask again at every scan).
             same = next((t for t in self.tasks if t.state in (WAITING, ACTIVE) and not t.settled
@@ -144,14 +145,26 @@ class DownloadQueue:
             print(traceback.format_exc(), flush=True)
             task.exception = e
             task.state = FAILED
-        task.finished_at = 1
         with self.lock:
             # Read under the lock: a caller joining from now on gets a new task.
             task.settled = True
             callbacks = [c for c in (task.on_done, *task.joined) if c]
+            # Not those with a `base_dir` (a mix's trial folder): the mix indexes them itself, when it needs them.
+            if task.state == DONE and (task.result or {}).get("saved") and not task.result.get("already") \
+                    and not task.base_dir:
+                self._saved_since_refresh = True
+            # The list is empty: what the downloads saved is indexed once, not once per file.
+            drained = self._saved_since_refresh and not self.queue and not any(t.state == ACTIVE for t in self.tasks)
+            if drained:
+                self._saved_since_refresh = False
         for callback in callbacks:
             try:
                 callback(task, task.result, task.exception)
+            except Exception:
+                print(traceback.format_exc(), flush=True)
+        if drained:
+            try:
+                library.refresh_after_downloads()
             except Exception:
                 print(traceback.format_exc(), flush=True)
 
@@ -267,19 +280,23 @@ class DownloadQueue:
     def snapshot(self, allow=None):
         """The tasks as the page reads them; `allow(task)` keeps the ones the asker may see."""
         with self.lock:
-            # The oldest finished entries are dropped so the list does not grow
-            # forever. Never a waiting or running one: it would vanish from the
-            # page, and asking for it again would queue it a second time.
-            excess = sum(t.settled for t in self.tasks) - 200
-            if excess > 0:
-                kept = []
-                for t in self.tasks:
-                    if t.settled and excess > 0:
-                        excess -= 1
-                    else:
-                        kept.append(t)
-                self.tasks = kept
+            self._prune()
             return [t.as_dict() for t in self.tasks if allow is None or allow(t)]
+
+    def _prune(self):
+        """Under the lock. The oldest finished entries are dropped so the list does
+        not grow forever (nobody may be reading it) nor slow `enqueue` down. Never a
+        waiting or running one: it would vanish from the page, and asking for it
+        again would queue it a second time."""
+        excess = sum(t.settled for t in self.tasks) - 200
+        if excess > 0:
+            kept = []
+            for t in self.tasks:
+                if t.settled and excess > 0:
+                    excess -= 1
+                else:
+                    kept.append(t)
+            self.tasks = kept
 
 
 _queue = None

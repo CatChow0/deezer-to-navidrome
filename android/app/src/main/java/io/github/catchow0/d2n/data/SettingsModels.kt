@@ -22,6 +22,8 @@ data class SettingsValues(
     @SerialName("download_workers") val downloadWorkers: Int? = null,
     @SerialName("metadata_workers") val metadataWorkers: Int? = null,
     @SerialName("release_refresh_hours") val releaseRefreshHours: Int? = null,
+    /** Null from a server older than 1.22.0: the setting is not shown. */
+    @SerialName("auto_refresh_library") val autoRefreshLibrary: Boolean? = null,
 )
 
 @Serializable
@@ -55,6 +57,7 @@ data class SettingsChange(
     @SerialName("download_workers") val downloadWorkers: Int? = null,
     @SerialName("metadata_workers") val metadataWorkers: Int? = null,
     @SerialName("release_refresh_hours") val releaseRefreshHours: Int? = null,
+    @SerialName("auto_refresh_library") val autoRefreshLibrary: Boolean? = null,
 )
 
 @Serializable
@@ -364,11 +367,14 @@ data class DuplicateApply(val decisions: List<DuplicateDecision>, val mode: Stri
 
 @Serializable
 data class DuplicateApplyAnswer(val processed: Int = 0, val results: List<DuplicateOutcome> = emptyList()) {
-    /** Files really moved or deleted; the others were already gone. */
+    /** Files really moved or deleted; the others were already gone, or changed since the scan. */
     val done: Int get() = results.count { it.status == "moved" || it.status == "deleted" }
     val missing: Int get() = results.count { it.status == "missing" }
+
+    /** Files left alone: not the ones the scan saw (another copy was dropped in their place). */
+    val changed: Int get() = results.count { it.status == "changed" }
 }
 
-/** What happened to one file: "moved", "deleted" or "missing". */
+/** What happened to one file: "moved", "deleted", "missing" or "changed". */
 @Serializable
 data class DuplicateOutcome(val path: String = "", val status: String = "")

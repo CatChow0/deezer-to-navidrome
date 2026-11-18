@@ -46,6 +46,14 @@ class Listing(unittest.TestCase):
         with mock.patch.object(dq.DownloadQueue, "start"):
             self.assertIs(waiting[299], queue.enqueue("d", "track", "299"))
 
+    def test_finished_downloads_are_dropped_without_anyone_reading_the_list(self):
+        queue = dq.DownloadQueue(workers=1)
+        with mock.patch.object(dq.DownloadQueue, "start"):
+            for n in range(300):
+                queue.enqueue("d", "track", str(n)).settled = True
+            queue.enqueue("d", "track", "last")  # no snapshot() in between
+        self.assertLessEqual(len(queue.tasks), 201)
+
     def test_the_list_can_be_limited_to_what_the_asker_may_see(self):
         queue = dq.DownloadQueue(workers=1)
         with mock.patch.object(dq.DownloadQueue, "start"):
@@ -53,6 +61,76 @@ class Listing(unittest.TestCase):
             queue.enqueue("d", "track", "2", deezer_account="b")
         seen = queue.snapshot(lambda t: t.deezer_account == "a")
         self.assertEqual(["{'track_id': 1, 'add_to_playlist': False}"], [t["args"] for t in seen])
+
+
+class RefreshAfterDownloads(unittest.TestCase):
+    """The library is indexed once the download list is empty, not after each track."""
+
+    def setUp(self):
+        self.queue = dq.DownloadQueue(workers=1)
+        start = mock.patch.object(dq.DownloadQueue, "start")
+        start.start()
+        self.addCleanup(start.stop)
+        refresh = mock.patch.object(dq.library, "refresh_after_downloads")
+        self.refresh = refresh.start()
+        self.addCleanup(refresh.stop)
+
+    def run_next(self, result=None, error=None):
+        task = self.queue.queue.pop(0)
+        task.state = dq.ACTIVE
+        with mock.patch.object(self.queue, "_run", return_value=result, side_effect=error):
+            self.queue._run_task(task)
+
+    def test_one_refresh_for_a_batch_after_the_last_download(self):
+        for n in range(3):
+            self.queue.enqueue("d", "track", str(n))
+        self.run_next({"saved": 1})
+        self.run_next({"saved": 1})
+        self.refresh.assert_not_called()
+        self.run_next({"saved": 1})
+        self.refresh.assert_called_once()
+
+    def test_a_mixs_trial_download_leaves_the_indexing_to_the_mix(self):
+        self.queue.enqueue("d", "track", "1", base_dir="/trial")
+        self.run_next({"saved": 1})
+        self.refresh.assert_not_called()
+        self.queue.enqueue("d", "track", "2")
+        self.run_next({"saved": 1})
+        self.refresh.assert_called_once()
+
+    def test_a_download_that_saved_nothing_asks_for_no_refresh(self):
+        self.queue.enqueue("d", "track", "1")
+        self.queue.enqueue("d", "track", "2")
+        self.queue.enqueue("d", "track", "3")
+        self.run_next({"saved": 1, "already": True})
+        self.run_next(error=RuntimeError("deezer said no"))
+        self.run_next({"saved": 0, "failed": ["x"]})
+        self.refresh.assert_not_called()
+
+    def test_a_last_download_that_fails_still_indexes_what_the_others_saved(self):
+        self.queue.enqueue("d", "track", "1")
+        self.queue.enqueue("d", "track", "2")
+        self.run_next({"saved": 1})
+        self.run_next(error=RuntimeError("deezer said no"))
+        self.refresh.assert_called_once()
+
+    def test_not_while_another_download_is_still_running(self):
+        self.queue.enqueue("d", "track", "1")
+        other = self.queue.enqueue("d", "track", "2")
+        self.queue.queue.remove(other)
+        other.state = dq.ACTIVE
+        self.run_next({"saved": 1})
+        self.refresh.assert_not_called()
+        other.state = dq.DONE
+        self.queue.enqueue("d", "track", "3")
+        self.run_next({"saved": 1})
+        self.refresh.assert_called_once()
+
+    def test_a_refresh_that_breaks_never_stops_the_download_worker(self):
+        self.refresh.side_effect = RuntimeError("no disk")
+        self.queue.enqueue("d", "track", "1")
+        self.run_next({"saved": 1})
+        self.assertTrue(self.queue.tasks[0].settled)
 
 
 class Discography(unittest.TestCase):

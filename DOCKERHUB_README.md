@@ -2,7 +2,7 @@
 
 **Turn your Deezer playlists into Navidrome `.m3u8` playlists, match them against your local library, and download what is missing straight from Deezer.**
 
-[![Version](https://img.shields.io/badge/version-1.21.7-blue)](https://hub.docker.com/r/catchow/deezer-to-navidrome)
+[![Version](https://img.shields.io/badge/version-1.22.0-blue)](https://hub.docker.com/r/catchow/deezer-to-navidrome)
 [![Python 3.12](https://img.shields.io/badge/python-3.12-blue)](https://www.python.org/)
 [![Flask](https://img.shields.io/badge/flask-web%20app-brightgreen)](https://flask.palletsprojects.com/)
 [![GitHub](https://img.shields.io/badge/GitHub-source%20%26%20full%20docs-black)](https://github.com/CatChow0/deezer-to-navidrome)
@@ -141,6 +141,7 @@ The **Stats** tab keeps its own play history in `stats.db`, one per Navidrome ac
 | `MATCH_WORKERS` | `4` | Matching threads. Set to your CPU count |
 | `METADATA_WORKERS` | `4` | Files Fix missing metadata handles at once. Up to your CPU count, 2 on a spinning disk |
 | `DOWNLOAD_WORKERS` | `4` | Downloads at the same time |
+| `AUTO_REFRESH_LIBRARY` | `true` | Index the library by itself once the downloads are over |
 | `DEEZER_ARL` | — | Cookie of a Deezer account, the default one (downloads, mixes, release feed) |
 | `DEEZER_ARL_PREMIUM` | — | Cookie of a Deezer account marked for the downloads |
 | `SECRET_KEY` | random, kept in `secrets.json` | Session key |
@@ -197,7 +198,7 @@ M3U8 contains:  /deezer-dl/songs/Artist - Song.mp3   ← what Navidrome sees
 2. **Rebuild from scratch** → build the library index
 3. **From Deezer**: add your Deezer playlists, or follow its mixes (a link or a CSV work too)
 4. **Full scan** → match tracks; writes `.m3u8` + `report.json` + `missing.txt`
-5. **Download missing** → then **Refresh library** and **Quick scan**
+5. **Download missing** → the library is indexed by itself when the downloads end, then **Quick scan**
 6. *(Optional)* **Automation** → scan on a schedule and download what is missing
 7. Navidrome imports the `.m3u8` file
 
