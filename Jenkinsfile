@@ -1,6 +1,7 @@
-// Deezer → Navidrome pipeline: every commit builds the Android app and the
-// image that ships it, and checks the container answers on /health; only
-// `main` pushes the image.
+// Deezer → Navidrome pipeline: every commit builds the Android app (its unit
+// tests run in that build) and the image that ships it, runs the Python tests
+// in that image, and checks the container answers on /health; only `main`
+// pushes the image.
 pipeline {
   agent { label 'docker' }
 
@@ -73,6 +74,30 @@ pipeline {
         // default since Docker Engine 29); without it BuildKit stops here with
         // "Attestation is not supported for the docker driver".
         sh 'docker build --pull --sbom=true --provenance=mode=max -t $IMAGE:$SHA .'
+      }
+    }
+
+    stage('Python tests') {
+      // The image holds the code and the libraries, not the tests (.dockerignore):
+      // they are copied into a container of it, with the files some of them read.
+      // docker cp and no bind mount, which also works when this agent runs in a
+      // container. A failing test stops the pipeline before the Push.
+      environment {
+        TEST_CONTAINER = "d2n-tests-${env.BUILD_NUMBER}"
+      }
+      steps {
+        sh 'docker create --name $TEST_CONTAINER $IMAGE:$SHA python -m unittest discover -s tests -t .'
+        sh 'docker cp tests $TEST_CONTAINER:/app/tests'
+        sh 'docker cp README.md $TEST_CONTAINER:/app/README.md'
+        sh 'docker cp DOCKERHUB_README.md $TEST_CONTAINER:/app/DOCKERHUB_README.md'
+        sh 'docker cp docs $TEST_CONTAINER:/app/docs'
+        // Exits with the tests' exit code: a failing test fails the stage.
+        sh 'docker start -a $TEST_CONTAINER'
+      }
+      post {
+        always {
+          sh 'docker rm -f $TEST_CONTAINER || true'
+        }
       }
     }
 

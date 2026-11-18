@@ -81,6 +81,7 @@ class MusicSettingsViewModel(deps: ScreenDeps) : D2nViewModel(deps) {
                         downloadWorkers = d.downloadWorkers,
                         metadataWorkers = d.metadataWorkers,
                         releaseRefreshHours = d.releaseRefreshHours,
+                        autoRefreshLibrary = d.autoRefreshLibrary,
                     ),
                 )
             },
@@ -444,7 +445,8 @@ class DuplicatesViewModel(deps: ScreenDeps) : D2nViewModel(deps) {
             done = { answer ->
                 val verb = if (mode == "delete") "deleted" else "moved to quarantine"
                 val gone = if (answer.missing > 0) ", ${plural(answer.missing, "file")} already gone" else ""
-                Notice("${plural(answer.done, "file")} $verb$gone")
+                val left = if (answer.changed > 0) ", ${plural(answer.changed, "file")} left alone, changed since the scan" else ""
+                Notice("${plural(answer.done, "file")} $verb$gone$left")
             },
             after = { refresh() },
         )

@@ -190,13 +190,14 @@ class MoreScreensViewModelTest {
         t.reply("settings", settings)
         t.reply("saveSettings", settings)
         val vm = MusicSettingsViewModel(t.deps)
-        vm.edit { it.copy(scanDirs = it.scanDirs + "  ", mappings = it.mappings + PathMapping("/x", ""), downloadWorkers = 2) }
+        vm.edit { it.copy(scanDirs = it.scanDirs + "  ", mappings = it.mappings + PathMapping("/x", ""), downloadWorkers = 2, autoRefreshLibrary = false) }
         assertTrue(vm.dirty)
         vm.save()
         val change = t.api.calls.first { it.first == "saveSettings" }.second.single() as SettingsChange
         assertEquals(listOf("/music/library", "/music/deezer-dl"), change.scanDirs)
         assertEquals(listOf(PathMapping("/music/library", "/music")), change.mappings)
         assertEquals(2, change.downloadWorkers)
+        assertEquals(false, change.autoRefreshLibrary)
         assertEquals("Settings saved", t.notices.single().message)
     }
 
@@ -238,6 +239,19 @@ class MoreScreensViewModelTest {
         assertEquals(setOf("g1", "g2"), sent.decisions.map { it.groupId }.toSet())
         // What the server did, not what was asked: one file was already gone.
         assertEquals("2 files moved to quarantine, 1 file already gone", t.notices.single().message)
+    }
+
+    @Test
+    fun `duplicates changed since the scan are said to be left alone`() = runTest(main.dispatcher) {
+        val t = TestDeps(backgroundScope)
+        t.reply("duplicates", D2nJson.decodeFromString(DuplicateReportAnswer.serializer(), fixture("dedup_report.json")))
+        t.reply(
+            "applyDuplicates",
+            DuplicateApplyAnswer(2, listOf(DuplicateOutcome("/a", "moved"), DuplicateOutcome("/b", "changed"))),
+        )
+        val vm = DuplicatesViewModel(t.deps)
+        vm.apply("delete")
+        assertEquals("1 file deleted, 1 file left alone, changed since the scan", t.notices.single().message)
     }
 
     @Test

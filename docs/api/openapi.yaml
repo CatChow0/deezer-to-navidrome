@@ -825,6 +825,7 @@ paths:
   /api/v1/dedup/start:
     post:
       summary: Look for duplicates in the library
+      description: One scan at a time. While one runs, the answer is the task of that scan.
       responses:
         "200": {$ref: "#/components/responses/Task"}
   /api/v1/dedup/report:
@@ -836,6 +837,9 @@ paths:
   /api/v1/dedup/apply:
     post:
       summary: Apply decisions on duplicates
+      description: >
+        Answers `processed`, `done` (moved or deleted) and `changed` (left alone: the file is not the one the
+        scan saw), with each file's `status` in `results` (moved, deleted, missing, changed).
       requestBody:
         content:
           application/json:
@@ -1228,6 +1232,7 @@ paths:
                 release_refresh_hours: {type: integer, enum: [6, 12, 24, 48, 168, 0], description: 0 is never.}
                 download_workers: {type: integer, enum: [1, 2, 4, 6, 8]}
                 metadata_workers: {type: integer, enum: [1, 2, 4, 6, 8, 12, 16]}
+                auto_refresh_library: {type: boolean, description: "Index the library once the downloads are over. Not among the choices: those are lists of numbers."}
       responses:
         "200": {$ref: "#/components/responses/Object"}
         "400": {$ref: "#/components/responses/Error"}

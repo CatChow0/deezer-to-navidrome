@@ -88,7 +88,9 @@ class MoreScreensApiTest {
     fun `settings are read whole and saved field by field`() = runBlocking {
         answer(fixture("settings.json"))
         answer(fixture("settings.json"))
+        answer(fixture("settings.json"))
         val settings = apiCall { api.settings() }
+        assertEquals(true, settings.settings.autoRefreshLibrary)
         assertEquals(listOf("/music/library", "/music/deezer-dl"), settings.settings.scanDirs)
         assertEquals(PathMapping("/music/library", "/music"), settings.settings.mappings.single())
         assertNull(settings.settings.previewStateFile)
@@ -98,6 +100,9 @@ class MoreScreensApiTest {
         apiCall { api.saveSettings(SettingsChange(scanDirs = listOf("/music"), mappings = emptyList(), downloadWorkers = 2)) }
         // Lists stay lists, numbers stay whole numbers, and what did not change is left out.
         assertEquals("PUT /d2n/api/v1/settings" to """{"scan_dirs":["/music"],"host_to_navidrome_roots":[],"download_workers":2}""", sent())
+        // A boolean stays a boolean: the server refuses "false" as text.
+        apiCall { api.saveSettings(SettingsChange(autoRefreshLibrary = false)) }
+        assertEquals("PUT /d2n/api/v1/settings" to """{"auto_refresh_library":false}""", sent())
     }
 
     @Test

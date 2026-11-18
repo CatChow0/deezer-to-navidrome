@@ -13,7 +13,6 @@ from core.config import (
     whats_new_state,
 )
 from core import deezer_dl
-from core import download_queue
 from core.download_queue import enqueue_download
 from core.deezer import (
     playlist_title,
@@ -56,13 +55,17 @@ class PlaylistError(ValueError):
     """Shown to the user as it is."""
 
 
+def _is_saved(playlist_id) -> bool:
+    return any(str(e.get("id")) == playlist_id for e in saved_entries())
+
+
 def playlist_refused(playlist_id):
     """A playlist that is not on your profiles is not reached by its ID (here and under /api/v1):
     one of another account's, or one saved by nobody (it would be read and published with the
     server's accounts)."""
     if not playlist_id:
         return None
-    if not any(str(e.get("id")) == playlist_id for e in saved_entries()):
+    if not _is_saved(playlist_id):
         return refused("No such playlist.", 404)
     # Not load_playlists(): this runs before every playlist route and must not wait on Deezer.
     if not account_context.may_see_playlist({"accounts": accounts_for(playlist_id)}):
@@ -72,7 +75,10 @@ def playlist_refused(playlist_id):
 
 @playlists_bp.before_request
 def _only_your_playlists():
-    return playlist_refused((request.view_args or {}).get("playlist_id"))
+    playlist_id = (request.view_args or {}).get("playlist_id")
+    if request.endpoint == "playlists.delete_playlist" and playlist_id and not _is_saved(playlist_id):
+        return redirect(url_for("playlists.home"))  # a second click on Delete: it is gone already
+    return playlist_refused(playlist_id)
 
 
 def dashboard_playlists(account):

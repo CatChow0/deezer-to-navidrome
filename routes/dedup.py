@@ -3,16 +3,31 @@ import time
 
 from flask import Blueprint, jsonify, request
 
-from core.config import create_task, push_task_event, push_task_payload
+from core.config import TASKS, create_task, push_task_event, push_task_payload
 from core.dedup import apply_dedup_decisions, load_dedup_report, run_dedup_analysis
 from routes.auth import admin_only
 
 dedup_bp = Blueprint("dedup", __name__)
 
+# One scan at a time: each reads the whole library. Asking again while one runs
+# follows that one, as the download queue joins the same download (an account that
+# may not see that task is told to wait: the report is shared).
+_scan_lock = threading.Lock()
+_scan_task = None
+
 
 @dedup_bp.post("/dedup/start")
 def dedup_start():
-    task_id = create_task("Duplicate scan", kind="dedup", cancellable=True)
+    global _scan_task
+    with _scan_lock:
+        if _scan_task:
+            from routes.system import may_see
+
+            running = TASKS.get(_scan_task)
+            if running and may_see(running):
+                return jsonify({"task_id": _scan_task})
+            return jsonify({"ok": False, "error": "A duplicate scan is already running: wait for it to end, then open the last report."}), 409
+        task_id = _scan_task = create_task("Duplicate scan", kind="dedup", cancellable=True)
 
     def on_progress(message=None, progress=None, stage=None, payload=None):
         push_task_event(task_id, message=message, progress=progress, stage=stage)
@@ -20,6 +35,7 @@ def dedup_start():
             push_task_payload(task_id, {"type": "dedup_result", "payload": payload, "timestamp": int(time.time())})
 
     def runner():
+        global _scan_task
         try:
             push_task_event(task_id, "Initializing duplicate analysis", stage="init", progress=0)
             report = run_dedup_analysis(progress_cb=on_progress)
@@ -32,6 +48,9 @@ def dedup_start():
             )
         except Exception as e:
             push_task_event(task_id, f"Dedup error: {e}", stage="error", done=True, error=True)
+        finally:
+            with _scan_lock:
+                _scan_task = None
 
     threading.Thread(target=runner, daemon=True).start()
     return jsonify({"task_id": task_id})

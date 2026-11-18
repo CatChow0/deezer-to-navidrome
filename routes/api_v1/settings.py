@@ -34,6 +34,9 @@ def settings_save():
     for key, kind in _LISTS.items():
         if key in data and (not isinstance(data[key], list) or not all(isinstance(i, kind) for i in data[key])):
             return error("invalid", f"{key} must be a list.", 400)
+    # Not among the choices: the app reads those as lists of numbers.
+    if "auto_refresh_library" in data and not isinstance(data["auto_refresh_library"], bool):
+        return error("invalid", "auto_refresh_library must be true or false.", 400)
     for key, values in system.SETTING_CHOICES.items():
         if key in data and (isinstance(data[key], bool) or data[key] not in values):
             return error("invalid", f"{key} must be one of {', '.join(map(str, values))}.", 400)

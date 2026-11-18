@@ -1,9 +1,11 @@
 """Duplicate removal never removes every copy of a track, and what goes to the
 quarantine can be put back."""
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from core import config, dedup
 
@@ -90,6 +92,56 @@ class Apply(Base):
         lines = (config.DEDUP_QUARANTINE_DIR / dedup.QUARANTINE_MANIFEST).read_text(encoding="utf-8").splitlines()
         self.assertIn({"from": b, "to": target}, [{k: v for k, v in json.loads(l).items() if k != "at"} for l in lines])
         self.assertTrue(Path(target).exists())
+
+    def test_the_origin_is_written_before_the_file_moves(self):
+        a = self.file("x/song.flac")
+        self.addCleanup(lambda: [p.unlink() for p in config.DEDUP_QUARANTINE_DIR.glob("*")])
+        with mock.patch("core.dedup.shutil.move", side_effect=OSError("killed")):
+            with self.assertRaises(OSError):
+                dedup.quarantine_file(a)
+        lines = (config.DEDUP_QUARANTINE_DIR / dedup.QUARANTINE_MANIFEST).read_text(encoding="utf-8").splitlines()
+        self.assertEqual(a, json.loads(lines[-1])["from"])
+        self.assertTrue(Path(a).exists())
+
+
+class Changed(Base):
+    """A copy replaced after the scan is not the one the person chose to remove."""
+
+    def scanned(self, name):
+        path = self.file(name)
+        stat = os.stat(path)
+        return {"path_str": path, "mtime_ns": stat.st_mtime_ns, "size": stat.st_size}
+
+    def report(self, keep, remove):
+        dedup.save_dedup_report({"groups": [{"group_id": "g", "identity": {"artist": "A", "album": "B",
+                                                                           "base_title": "T", "version_flags": []},
+                                             "entries": [keep, remove], "keeper": keep}]})
+
+    def test_a_file_replaced_since_the_scan_is_left_alone_in_both_modes(self):
+        for mode in ("quarantine", "delete"):
+            with self.subTest(mode=mode):
+                keep, remove = self.scanned(f"{mode}/keep.flac"), self.scanned(f"{mode}/remove.flac")
+                self.report(keep, remove)
+                Path(remove["path_str"]).write_bytes(b"a better rip, longer than before")
+                self.addCleanup(lambda: [p.unlink() for p in config.DEDUP_QUARANTINE_DIR.glob("*")])
+                result = dedup.apply_dedup_decisions([{"group_id": "g", "keep_paths": [keep["path_str"]]}], mode=mode)
+                self.assertEqual((0, 1), (result["done"], result["changed"]))
+                self.assertEqual("changed", result["results"][0]["status"])
+                self.assertTrue(Path(remove["path_str"]).exists())
+
+    def test_a_file_as_scanned_is_still_removed(self):
+        keep, remove = self.scanned("keep.flac"), self.scanned("remove.flac")
+        self.report(keep, remove)
+        result = dedup.apply_dedup_decisions([{"group_id": "g", "keep_paths": [keep["path_str"]]}], mode="delete")
+        self.assertEqual((1, 0), (result["done"], result["changed"]))
+        self.assertFalse(Path(remove["path_str"]).exists())
+
+    def test_a_file_already_gone_is_missing_not_changed(self):
+        keep, remove = self.scanned("keep.flac"), self.scanned("remove.flac")
+        self.report(keep, remove)
+        Path(remove["path_str"]).unlink()
+        result = dedup.apply_dedup_decisions([{"group_id": "g", "keep_paths": [keep["path_str"]]}], mode="delete")
+        self.assertEqual(("missing", 0, 0), (result["results"][0]["status"], result["done"], result["changed"]))
 
 
 if __name__ == "__main__":

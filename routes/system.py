@@ -18,6 +18,7 @@ from core.config import (
     PLAYLIST_IDS_FILE,
     PREVIEW_STATE_FILE,
     TASKS,
+    as_flag,
     clear_dedup_choices_file,
     clear_dedup_report_file,
     clear_library_cache_file,
@@ -159,7 +160,7 @@ def tasks_route():
 # What Settings edits, for the form and the API.
 SETTINGS_KEYS = ("scan_dirs", "playlists_base_dir", "playlist_ids_file", "library_cache_file", "preview_state_file",
                  "host_to_navidrome_roots", "deezer_dl_dir", "library_workers_per_dir", "match_workers",
-                 "release_refresh_hours", "download_workers", "metadata_workers")
+                 "release_refresh_hours", "download_workers", "metadata_workers", "auto_refresh_library")
 # key: (default, lowest)
 _NUMBERS = {"library_workers_per_dir": (2, 1), "match_workers": (4, 1), "release_refresh_hours": (24, 0),
             "download_workers": (4, 1), "metadata_workers": (4, 1)}
@@ -210,6 +211,7 @@ def save_settings_values(values: dict) -> dict:
         "preview_state_file": str(data_file(str(values.get("preview_state_file") or "").strip(), PREVIEW_STATE_FILE)),
         "host_to_navidrome_roots": mappings,
         "deezer_dl_dir": deezer_dl_dir,
+        "auto_refresh_library": as_flag(values.get("auto_refresh_library")),
         **numbers,
         **kept_config_keys(),
     }

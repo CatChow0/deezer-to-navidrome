@@ -134,23 +134,10 @@ def _run_playlist(pl, cfg):
 
 
 def _refresh_library_after_scans(count):
-    from core.config import create_task, push_task_event
-    from core.library import refresh_library_cache_incremental_with_progress
+    from core.library import refresh_in_task
 
     logger.info(f"[auto-scan] {count} playlist(s) processed — running incremental cache refresh")
-    task_id = create_task("Library refresh (after auto scan)", kind="library", cancellable=True)
-    try:
-        refresh_library_cache_incremental_with_progress(
-            progress_cb=lambda message=None, progress=None, stage=None: push_task_event(
-                task_id, message=message, progress=progress, stage=stage
-            )
-        )
-        push_task_event(task_id, "Library refreshed", stage="done", progress=100, done=True)
-        from core.webhook import notify
-        notify("library.updated")
-    except Exception as e:
-        logger.error(f"[auto-scan] Cache refresh failed: {e}")
-        push_task_event(task_id, f"Library refresh failed: {e}", stage="error", done=True, error=True)
+    refresh_in_task("Library refresh (after auto scan)")
 
 
 _last_mix_check = 0.0

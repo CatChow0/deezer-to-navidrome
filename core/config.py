@@ -36,6 +36,21 @@ def env_list(name: str, default=None):
     return [item.strip() for item in raw.split(",") if item.strip()]
 
 
+def as_flag(value, default=True) -> bool:
+    """A setting that is on or off: a JSON boolean, a form value ("true", "off"...) or an
+    environment variable. Anything else is `default`."""
+    if isinstance(value, bool):
+        return value
+    text = str(value if value is not None else "").strip().lower()
+    if text in ("1", "true", "yes", "on"):
+        return True
+    if text in ("0", "false", "no", "off"):
+        return False
+    if text:
+        logger.warning("%r is not true or false: %s is used", text, default)
+    return default
+
+
 def env_host_to_navidrome_roots(name: str, default=None):
     raw = os.environ.get(name, "").strip()
     if not raw:
@@ -82,6 +97,8 @@ DEFAULT_CONFIG = {
     # Threads downloading from Deezer at the same time.
     "download_workers": int(os.environ.get("DOWNLOAD_WORKERS", "4") or "4"),
     "metadata_workers": int(os.environ.get("METADATA_WORKERS", "4") or "4"),
+    # Index the library again once the downloads are over (the download list empty).
+    "auto_refresh_library": as_flag(os.environ.get("AUTO_REFRESH_LIBRARY")),
     # Hours between automatic refreshes of the release feed; 0 = manual only.
     "release_refresh_hours": 24,
     "notes_seen": WHATS_NEW_ID,

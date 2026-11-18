@@ -148,6 +148,13 @@ class Audit(Base):
             self.assertEqual(1, get.call_count)
         deezer._refresh_failed_at.clear()
 
+    def test_deleting_a_playlist_twice_is_not_an_error_the_second_time(self):
+        save_playlists([{"id": "777", "title": "Mine", "accounts": [self.alice_nd]}])
+        with mock.patch("routes.playlists.publish.remove_from", return_value=True):
+            self.assertEqual(302, self.client.post("/playlist/777/delete").status_code)
+            self.assertEqual(302, self.client.post("/playlist/777/delete").status_code)
+        self.assertEqual(404, self.client.get("/playlist/777/preview").status_code)
+
     def test_the_stream_of_your_own_task_works_and_not_that_of_another(self):
         from core import config
 
