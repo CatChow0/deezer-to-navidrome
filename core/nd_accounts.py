@@ -105,6 +105,22 @@ def accounts_of(user_id) -> list:
     return [a for a in list_accounts() if users.effective_owner(a.get("owner")) == user_id]
 
 
+def claimed_earlier(account_id, user_id, user_name) -> bool:
+    """Whether this Navidrome user was named first by a profile of another
+    account of this app (by the link a test found, or by its user name): its plays
+    and stars are that profile's. A typed name proves nothing, so the first to
+    name a Navidrome user keeps it."""
+    from core import users
+
+    accounts = list_accounts()  # in the order they were made
+    mine = next((a for a in accounts if a["id"] == account_id), None)
+    name = (user_name or "").strip().casefold()
+    for account in accounts:
+        if account.get("navidrome_user_id") == user_id or (name and (account.get("username") or "").strip().casefold() == name):
+            return mine is None or users.effective_owner(account.get("owner")) != users.effective_owner(mine.get("owner"))
+    return False
+
+
 def set_owner(account_ids, owner) -> None:
     """Gives these Navidrome accounts to another account of this app."""
     with _lock:

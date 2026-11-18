@@ -27,6 +27,9 @@ def _deezer_account():
     return account_context.deezer_account(request, session)
 
 
+NO_DEEZER = "No Deezer account for this profile: add one in Settings → Deezer accounts, or ask its owner to share one."
+
+
 def _download_status():
     """What the Deezer account the asker's downloads go through can do."""
     from core import deezer_dl
@@ -193,6 +196,8 @@ def account_route():
 @account_bp.get("/api/deezer/mixes")
 def mixes_route():
     deezer_account = _deezer_account()
+    if not deezer_account:  # None is "no account to use", never "the server's one"
+        return jsonify({"ok": False, "error": NO_DEEZER}), 400
     try:
         found = available_mixes(deezer_account)
     except DeezerAccountError as e:
@@ -218,6 +223,8 @@ def follow_mix_route():
     kind, source_id = data.get("kind"), str(data.get("source_id") or "")
     if kind not in ("stl", "flow") or not source_id:
         return jsonify({"ok": False, "error": "Unknown mix"}), 400
+    if not _deezer_account():
+        return jsonify({"ok": False, "error": NO_DEEZER}), 400
     profile = _profile()
     try:
         pid, added = follow_mix(kind, source_id, str(data.get("title") or "Mix"),
@@ -255,13 +262,14 @@ def releases_route():
                         **merged})
     account_id = _deezer_account()
     account = deezer_accounts.get(account_id) if account_id else None
+    feed = load_releases(account_id) if account_id else {"updated_at": None, "artists": 0, "releases": []}
     return jsonify({
         "ok": True,
         "connected": bool(account_id and deezer_accounts.arl(account_id)),
         "deezer_account": {"id": account_id, "label": account["label"], "name": account.get("name") or ""} if account else None,
         "refresh_hours": refresh_hours(),
-        "muted": load_prefs(account_id)["muted"],
-        **load_releases(account_id),
+        "muted": load_prefs(account_id)["muted"] if account_id else {},
+        **feed,
     })
 
 
@@ -271,6 +279,8 @@ def mute_artist_route():
     artist_id = str(data.get("artist_id") or "")
     if not artist_id.isdigit():
         return jsonify({"ok": False, "error": "Unknown artist"}), 400
+    if not _deezer_account():
+        return jsonify({"ok": False, "error": NO_DEEZER}), 400
     prefs = set_muted(artist_id, str(data.get("name") or ""), bool(data.get("muted")), account=_deezer_account())
     notify("releases.updated", deezer_account=_deezer_account(), reason="muted")
     return jsonify({"ok": True, "muted": prefs["muted"]})

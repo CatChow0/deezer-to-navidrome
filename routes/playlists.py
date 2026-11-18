@@ -56,9 +56,15 @@ class PlaylistError(ValueError):
 
 
 def playlist_refused(playlist_id):
-    """A playlist of another account's profiles is not reached by its ID (here and under /api/v1)."""
-    playlist = next((p for p in load_playlists() if p["id"] == playlist_id), None) if playlist_id else None
-    if playlist is not None and not account_context.may_see_playlist(playlist):
+    """A playlist that is not on your profiles is not reached by its ID (here and under /api/v1):
+    one of another account's, or one saved by nobody (it would be read and published with the
+    server's accounts)."""
+    if not playlist_id:
+        return None
+    playlist = next((p for p in load_playlists() if p["id"] == playlist_id), None)
+    if playlist is None:
+        return refused("No such playlist.", 404)
+    if not account_context.may_see_playlist(playlist):
         return refused("This playlist is not on your profiles.")
     return None
 
@@ -150,15 +156,16 @@ def add_playlist_for(value, account) -> dict:
     pid = extract_playlist_id(value)
     if not pid:
         raise PlaylistError("Invalid ID or URL")
-    if any(p["id"] == pid for p in load_playlists()):
-        return {"id": pid, "added": False, "open": False, "task_id": None,
-                "message": _share_existing(pid, account) if account else "Playlist already saved"}
     try:
         # Read with this profile's Deezer account first: a private playlist of its own works.
+        # Also for one already saved by another account: joining it is not a way to read it.
         info = fetch_deezer_playlist_info(pid, profiles=[account] if account else None)
     except RuntimeError as e:
         # Deezer answered with an error: no such playlist, or a private one of another account.
         raise PlaylistError("Deezer has no playlist with this ID that your Deezer account can read") from e
+    if any(p["id"] == pid for p in load_playlists()):
+        return {"id": pid, "added": False, "open": False, "task_id": None,
+                "message": _share_existing(pid, account) if account else "Playlist already saved"}
     if account:
         info["accounts"] = [account]
     add_entry(info)
@@ -367,6 +374,10 @@ def update_playlist_automation(playlist_id):
     pl = {"auto_scan_enabled": bool(data.get("auto_scan_enabled")), "auto_scan_interval_minutes": interval,
           "auto_download_after_scan": bool(data.get("auto_download_after_scan"))}
     found = []
+    # The downloads go through the Deezer account of the first profile's owner: only that
+    # owner decides whether they happen. Another member's choice is left as it was.
+    if accounts_for(playlist_id)[:1] and accounts_for(playlist_id)[0] not in account_context.own_profiles(g.get("user")):
+        pl.pop("auto_download_after_scan")
 
     def change(entries):
         for entry in entries:

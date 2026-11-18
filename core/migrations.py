@@ -116,6 +116,33 @@ def app_accounts() -> bool:
     return made
 
 
+def rewrap_account_secrets() -> int:
+    """The encrypted fields of the account stores, with the key in use now: set
+    D2N_ENCRYPTION_KEY later and encryption.key no longer opens any of them (as
+    config.encrypt_stored_secrets does for secrets.json). Returns how many changed."""
+    from core import crypto, deezer_accounts, nd_accounts, users
+
+    changed = 0
+    for store, key, fields in ((nd_accounts, "accounts", ("secret",)), (deezer_accounts, "accounts", ("arl",)),
+                               (users, "users", ("api_token", "webhook_url"))):
+        with store._lock:
+            data = store._read()
+            before = changed
+            for record in data[key]:
+                for name in fields:
+                    value = record.get(name)
+                    if isinstance(value, str) and crypto.needs_rewrap(value):
+                        try:
+                            record[name] = crypto.encrypt(crypto.decrypt(value))
+                        except crypto.DecryptError:
+                            logger.error("A %s of %s was encrypted with another key: enter it again", name, record.get("id"))
+                            continue
+                        changed += 1
+            if changed != before:
+                store._write(data)
+    return changed
+
+
 def run() -> None:
     from core import config, library, nd_accounts
 
@@ -125,6 +152,12 @@ def run() -> None:
             logger.info("Encrypted %s secrets in secrets.json", changed)
     except Exception as e:
         logger.error("Could not encrypt secrets.json: %s", e)
+    try:
+        changed = rewrap_account_secrets()
+        if changed:
+            logger.info("Encrypted %s account secrets with the key in use", changed)
+    except Exception as e:
+        logger.error("Could not encrypt the account secrets: %s", e)
     try:
         renormalized = library.renormalize_cache()
         if renormalized:

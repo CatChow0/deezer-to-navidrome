@@ -356,6 +356,13 @@ def save_config(cfg):
 
 
 _warned_paths = set()
+# What the app keeps in DATA_DIR besides the files a setting may name.
+_OWN_FILES = {
+    "users.json", "devices.json", "navidrome_accounts.json", "deezer_accounts.json", "encryption.key",
+    "recovery-code.txt", "config.json", "secrets.json", "scheduler.json", "crossplatform.json",
+    "dedup_report.json", "dedup_choices.json", "releases.json", "release_prefs.json",
+}
+_OWN_DIRS = {"stats", "backups"}
 
 
 def data_file(value, default: Path) -> Path:
@@ -366,12 +373,16 @@ def data_file(value, default: Path) -> Path:
         return default
     path = Path(value)
     try:
-        path.resolve().relative_to(DATA_DIR.resolve())
+        relative = path.resolve().relative_to(DATA_DIR.resolve())
     except ValueError:
+        relative = None
+    # Not the app's own state either (accounts, keys, tokens): these files are
+    # rewritten and deleted, and deleting users.json reopens the first-run setup.
+    if relative is None or not relative.parts or relative.name.lower() in _OWN_FILES or relative.parts[0] in _OWN_DIRS:
         # Once per path: the settings are read many times a minute.
         if path != default and str(path) not in _warned_paths:
             _warned_paths.add(str(path))
-            logger.warning("%s is outside DATA_DIR: %s is used instead", value, default)
+            logger.warning("%s is not a usable data file: %s is used instead", value, default)
         return default
     return path
 

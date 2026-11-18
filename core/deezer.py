@@ -167,12 +167,13 @@ def _saved_profiles(playlist_id: str) -> list:
 
 
 def _reading_accounts(playlist_id: str, profiles=None) -> list:
-    """The Deezer accounts to read a playlist with: those of its profiles, then
-    the default one. A private playlist is readable by its owner's account only."""
-    from core import account_context, deezer_accounts
+    """The Deezer accounts to read a playlist with: those of its profiles, never the
+    server's default one (it may be another user's). A private playlist is readable by
+    its owner's account only."""
+    from core import account_context
 
     profiles = _saved_profiles(playlist_id) if profiles is None else profiles
-    ids = [account_context.deezer_account_of(p) for p in profiles] + [deezer_accounts.default_id()]
+    ids = [account_context.deezer_account_of(p) for p in profiles]
     return [a for i, a in enumerate(ids) if a and a not in ids[:i]]
 
 

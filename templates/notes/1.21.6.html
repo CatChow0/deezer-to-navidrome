@@ -1,0 +1,13 @@
+<p>Fixes found by a security audit of 1.21.0.</p>
+
+<ul class="help-list">
+  <li><strong>Deezer accounts.</strong> An account that owns no Deezer account, and has none shared with it, no longer reads or downloads through another user's: mixes, releases, downloads and automatic downloads now say that a Deezer account is needed. With sign-in off, nothing changes.</li>
+  <li><strong>Playlists.</strong> A playlist saved by nobody is no longer reached by its ID. Joining a playlist already saved needs a Deezer account that can read it, and only the owner of a playlist's first profile turns its automatic downloads on.</li>
+  <li><strong>Other accounts' data.</strong> The API no longer opens another account's Navidrome playlists, the playlist status lists only your own profiles, an account without a profile sees no playlists in the scheduler, and the automatic scans of a playlist show only to its accounts.</li>
+  <li><strong>Plays and stars.</strong> The first profile to name a Navidrome user keeps its plays and stars: a later profile of another account with the same name no longer imports them.</li>
+  <li><strong>Passwords.</strong> The page and the API for the first password only work for a temporary password, as set by an Admin.</li>
+  <li><strong>Settings.</strong> The cache files chosen in Settings can no longer be the app's own files (accounts, keys, tokens).</li>
+  <li><strong>Keys.</strong> Setting <code>D2N_ENCRYPTION_KEY</code> later now encrypts the stored Navidrome passwords, Deezer ARLs and API tokens with it too, so <code>encryption.key</code> no longer opens them.</li>
+  <li><strong>Activity.</strong> The progress of a task you started shows again as it runs.</li>
+  <li><strong>Update.</strong> Pull the new image: there is nothing to change in your settings. Do not expose port 8080 beyond a network you trust without a reverse proxy in front: see "Behind a reverse proxy" in the README.</li>
+</ul>

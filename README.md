@@ -2,7 +2,7 @@
 
 **A self-hosted web app that turns your Deezer playlists into Navidrome `.m3u8` playlists, matches them against your local library, and downloads what is missing straight from Deezer.**
 
-[![Docker Image Version](https://img.shields.io/badge/version-1.21.5-blue)](https://hub.docker.com/r/catchow/deezer-to-navidrome)
+[![Docker Image Version](https://img.shields.io/badge/version-1.21.6-blue)](https://hub.docker.com/r/catchow/deezer-to-navidrome)
 [![Python 3.12](https://img.shields.io/badge/python-3.12-blue)](https://www.python.org/)
 [![Flask](https://img.shields.io/badge/flask-web%20app-brightgreen)](https://flask.palletsprojects.com/)
 
@@ -693,7 +693,7 @@ The app works behind Traefik, nginx, Caddy or any proxy that serves it over HTTP
 
 - **Tell it the proxy is there**: `TRUSTED_PROXIES=1` (the number of proxies in front of it; `2` with Cloudflare's proxy in front of yours). The limit on failed sign-ins then counts each visitor's own address instead of the proxy's, and the app knows the page is served over HTTPS. Leave it at `0` without a proxy: anyone could then pretend to be another address.
 - **Keep the session cookie on HTTPS**: `COOKIE_SECURE=true`.
-- **No port to publish**: drop `ports:` when the proxy reaches the container on a shared Docker network.
+- **No port to publish**: drop `ports:` when the proxy reaches the container on a shared Docker network. The app's own server (gunicorn) serves 16 requests at once and gives no time limit to one that never finishes sending its headers: a few such connections from anyone who reaches port 8080 make the app stop answering. A proxy that buffers requests (all of those above do) keeps them away; without one, do not expose the port beyond a network you trust.
 - **Let task streams through as they come.** Activity follows each task through a Server-Sent Events stream (`/tasks/<id>/stream`, `/api/v1/tasks/<id>/stream`): the proxy must neither buffer nor compress it. Traefik does not buffer, but keep any `compress` middleware off these paths; nginx needs `proxy_buffering off`.
 - **A login in front (Authelia…)** must let `/api/v1/` through, or the Android app cannot sign in: see [API v1](#api-v1).
 

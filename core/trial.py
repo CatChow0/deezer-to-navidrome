@@ -718,11 +718,12 @@ def _user_of(account, users, rows):
 
     profile = nd_accounts.get(account) or {}
     if profile.get("navidrome_user_id") in users:
-        return profile["navidrome_user_id"]
+        found = profile["navidrome_user_id"]
+        return None if nd_accounts.claimed_earlier(account, found, users[found]) else found
     name = (profile.get("username") or "").strip().casefold()
     for user_id, user_name in users.items():
         if name and user_name.casefold() == name:
-            return user_id
+            return None if nd_accounts.claimed_earlier(account, user_id, user_name) else user_id
     if account == (nd_accounts.owner_fallback() or stats_db.FIRST_ACCOUNT):
         if len(users) == 1:
             return next(iter(users))

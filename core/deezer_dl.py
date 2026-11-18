@@ -70,11 +70,13 @@ def using(account_id):
 
 
 def download_account():
-    """The account the downloads on this thread use, else the one marked for
-    the downloads (code that has no account of this app to ask for)."""
-    from core import deezer_accounts
+    """The account the downloads on this thread use. The one marked for the
+    downloads only when this app has no accounts (DISABLE_AUTH, or none made yet):
+    for an account that may use none, nothing is "the server's one" to fall back to."""
+    from core import auth, deezer_accounts, users
 
-    return getattr(_current, "account", None) or deezer_accounts.download_id()
+    account = getattr(_current, "account", None)
+    return account or (deezer_accounts.download_id() if auth.auth_disabled() or not users.exists() else None)
 
 
 def download_arl(account_id=None):

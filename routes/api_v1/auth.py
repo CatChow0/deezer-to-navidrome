@@ -79,6 +79,8 @@ def auth_first_password():
     """The password of an account made by an Admin, chosen by its user; answers
     the recovery code, shown once. This device stays signed in."""
     user = sign_in.me()
+    if not user.get("must_change"):
+        return error("conflict", "This password is not temporary: change it with the current one.", 409)
     try:
         users.set_password(user["id"], str(body().get("password") or ""))
     except users.UserError as e:
